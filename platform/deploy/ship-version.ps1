@@ -102,8 +102,12 @@ if (-not $status) {
 }
 
 if (-not $SkipTag) {
+    $prevErr = $ErrorActionPreference
+    $ErrorActionPreference = 'SilentlyContinue'
     git rev-parse --verify "refs/tags/$tag" 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) {
+    $tagExists = ($LASTEXITCODE -eq 0)
+    $ErrorActionPreference = $prevErr
+    if ($tagExists) {
         Write-Host "==> Tag $tag exists, skip" -ForegroundColor Yellow
     } else {
         git tag -a $tag -m "$Message ($date)"

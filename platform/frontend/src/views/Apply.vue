@@ -59,6 +59,9 @@ watch(() => form.value.channelId, async (id) => {
   form.value.initDept = ch?.dept || '';
   form.value.channelName = ch?.name || '';
   channelSteps.value = ch?.steps || [];
+  if (ch?.approvalFlow?.steps) {
+    channelSteps.value = ch.approvalFlow.steps.map((s) => s.label);
+  }
   const { data } = await api.get(`/applications/channel-materials/${id}`);
   materials.value = data.materials;
 });
@@ -221,7 +224,9 @@ async function submitApply() {
     channelName: ch?.name,
     payload,
   });
-  ElMessage.success(`立项申报已提交（${data.code}）${data.fileCount ? `，附件 ${data.fileCount} 个已入库` : ''}`);
+  await api.post(`/applications/${data.id}/submit`);
+  const flowNote = ch?.approvalFlow?.type === 'filing' ? '（报备类，审签通过后自动归档）' : '';
+  ElMessage.success(`立项申报已提交审签（${data.code}）${flowNote}${data.fileCount ? `，附件 ${data.fileCount} 个已入库` : ''}`);
   resetForm();
 }
 

@@ -67,26 +67,85 @@ export function dashboardTitle(role) {
   return ROLES[id]?.dashboard || '工作台';
 }
 
+/** 登录后默认落地页（按角色职责） */
+export function homeRouteForRole(role) {
+  const id = normalizeRole(role);
+  const routes = {
+    project_team: '/apply',
+    chief_l1: '/approvals',
+    chief_l2: '/approvals',
+    mgmt_hq: '/approvals',
+    mgmt_unit: '/approvals',
+    finance: '/ledger',
+    admin: '/dashboard',
+  };
+  return routes[id] || '/dashboard';
+}
+
+/** 登录门户分组（V18 审签职责） */
+export const LOGIN_PORTALS = [
+  {
+    id: 'fill',
+    title: '填报入口',
+    subtitle: '项目联系人 · 项目负责人',
+    roles: ['project_team'],
+    desc: '立项申报、材料上传、驳回修改、流程撤销',
+    accent: '#4682B4',
+  },
+  {
+    id: 'review',
+    title: '审签入口',
+    subtitle: '总师 · 单位管理 · 总部科技部',
+    roles: ['chief_l1', 'chief_l2', 'mgmt_hq', 'mgmt_unit'],
+    desc: '分级审批、驳回留痕、附件审阅、报备追溯',
+    accent: '#2d6a4f',
+  },
+  {
+    id: 'finance',
+    title: '经费入口',
+    subtitle: '单位财务部门负责人',
+    roles: ['finance'],
+    desc: '经费台账审签节点、预算合规审核',
+    accent: '#9a7026',
+  },
+  {
+    id: 'ops',
+    title: '运维入口',
+    subtitle: '超级管理员',
+    roles: ['admin'],
+    desc: '人员配置、渠道流程、全平台运维',
+    accent: '#5c4d7a',
+  },
+];
+
+export function portalForRole(role) {
+  const id = normalizeRole(role);
+  return LOGIN_PORTALS.find((p) => p.roles.includes(id)) || LOGIN_PORTALS[0];
+}
+
 const MENUS = {
   project_team: [
     { path: '/dashboard', label: '工作台', icon: '💼' },
     { path: '/ledger', label: '我的项目', icon: '📋' },
-    { path: '/todos', label: '我的待办', icon: '✓' },
-    { path: '/apply', label: '立项申报/上传', icon: '📝' },
+    { path: '/approvals', label: '我的申报', icon: '📝' },
+    { path: '/apply', label: '立项申报', icon: '➕' },
     { path: '/channels', label: '渠道流程', icon: '🔀' },
   ],
   chief_l1: [
+    { path: '/approvals', label: '审签中心', icon: '✓' },
     { path: '/dashboard', label: '总师工作台', icon: '🎓' },
     { path: '/ledger', label: '经手项目', icon: '📋' },
     { path: '/board', label: '可视化看板', icon: '📊' },
-    { path: '/todos', label: '节点审核', icon: '✓' },
+    { path: '/channels', label: '渠道流程', icon: '🔀' },
   ],
   chief_l2: [
+    { path: '/approvals', label: '审签中心', icon: '✓' },
     { path: '/dashboard', label: '总师工作台', icon: '🎓' },
     { path: '/ledger', label: '经手项目', icon: '📋' },
-    { path: '/todos', label: '节点审核', icon: '✓' },
+    { path: '/channels', label: '渠道流程', icon: '🔀' },
   ],
   mgmt_hq: [
+    { path: '/approvals', label: '审签中心', icon: '✓' },
     { path: '/dashboard', label: '总部治理台', icon: '🏛' },
     { path: '/ledger', label: '项目台账', icon: '📋' },
     { path: '/channels', label: '渠道流程', icon: '🔀' },
@@ -94,24 +153,25 @@ const MENUS = {
     { path: '/risks', label: '风险看板', icon: '⚠' },
     { path: '/outcomes', label: '成果转化', icon: '🎯' },
     { path: '/partners', label: '协作评价', icon: '🤝' },
-    { path: '/todos', label: '待办审批', icon: '✓' },
     { path: '/ai', label: '智能助手', icon: '✦' },
   ],
   mgmt_unit: [
+    { path: '/approvals', label: '审签中心', icon: '✓' },
     { path: '/dashboard', label: '单位治理台', icon: '🏢' },
     { path: '/ledger', label: '项目台账', icon: '📋' },
     { path: '/channels', label: '渠道流程', icon: '🔀' },
     { path: '/risks', label: '风险看板', icon: '⚠' },
     { path: '/partners', label: '协作评价', icon: '🤝' },
-    { path: '/todos', label: '待办审批', icon: '✓' },
   ],
   finance: [
     { path: '/dashboard', label: '经费管理台', icon: '💰' },
+    { path: '/approvals', label: '经费审签', icon: '✓' },
     { path: '/ledger', label: '经费台账', icon: '📋' },
     { path: '/board', label: '可视化看板', icon: '📊' },
   ],
   admin: [
     { path: '/dashboard', label: '运维概览', icon: '⚙' },
+    { path: '/approvals', label: '审签总览', icon: '✓' },
     { path: '/ledger', label: '项目台账', icon: '📋' },
     { path: '/channels', label: '渠道流程', icon: '🔀' },
     { path: '/board', label: '可视化看板', icon: '📊' },

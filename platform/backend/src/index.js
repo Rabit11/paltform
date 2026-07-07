@@ -4,6 +4,14 @@ import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
 import { authMiddleware, signToken, projectScope, canExport, canApply, canEditProject, canManageUsers, ROLES, normalizeRole } from './middleware/auth.js';
 import { CHANNEL_FLOWS, getChannelFlow } from './channelFlows.js';
+import { getApprovalFlow, APPROVAL_RULES, listApprovalFlows } from './approvalFlows.js';
+import {
+  buildApprovalState,
+  canUserApproveStep,
+  inUserInbox,
+  isSubmitter,
+  parsePayload,
+} from './approvalService.js';
 import { buildChannelFlowPayload, aggregateStepCounts, resolveFlowStep } from './flowUtils.js';
 import { LIFECYCLE_FRAMEWORK } from './lifecycleFramework.js';
 import { seedDatabase, syncDemoUsers } from './seed.js';
@@ -90,6 +98,7 @@ app.get('/api/channels', authMiddleware, async (_req, res) => {
       projectTotal: channelProjects.length,
       avgProgress,
       dept: def?.dept || ch.dept,
+      approvalFlow: getApprovalFlow(ch.id),
     };
   });
   res.json(items);
@@ -103,6 +112,207 @@ app.get('/api/channels/:id/flow', authMiddleware, (req, res) => {
 
 app.get('/api/channel-flows', authMiddleware, (_req, res) => {
   res.json(CHANNEL_FLOWS);
+});
+
+app.get('/api/approval-flows', authMiddleware, (_req, res) => {
+  res.json({ rules: APPROVAL_RULES, flows: listApprovalFlows() });
+});
+
+app.get('/api/approval-flows/:channelId', authMiddleware, (req, res) => {
+  const flow = getApprovalFlow(req.params.channelId);
+  res.json({ channelId: req.params.channelId, ...flow, rules: APPROVAL_RULES });
+});
+
+app.get('/api/applications', authMiddleware, async (req, res) => {
+  const { status, mine } = req.query;
+  const where = {};
+  if (status) where.status = status;
+  if (mine === '1' || mine === 'true') where.applicant = req.user.name;
+  const apps = await prisma.application.findMany({
+    where,
+    orderBy: { updatedAt: 'desc' },
+    include: { records: { orderBy: { createdAt: 'asc' } }, _count: { select: { files: true } } },
+  });
+  const items = apps.map((app) => {
+    const flowDef = getApprovalFlow(app.channelId);
+    const payload = parsePayload(app);
+    const approval = buildApprovalState(app, flowDef);
+    const canApprove = app.status === 'pending' && canUserApproveStep(req.user, flowDef.steps[app.currentStep], app, payload);
+    return {
+      ...app,
+      payload,
+      approval,
+      canApprove,
+      canRevoke: isSubmitter(req.user, app) && ['pending', 'submitted', 'rejected'].includes(app.status),
+    };
+  });
+  res.json({ items });
+});
+
+app.get('/api/approvals/inbox', authMiddleware, async (req, res) => {
+  const apps = await prisma.application.findMany({
+    where: { status: { in: ['pending', 'draft', 'rejected', 'archived'] } },
+    orderBy: { updatedAt: 'desc' },
+    include: { records: { orderBy: { createdAt: 'asc' } }, _count: { select: { files: true } } },
+  });
+  const items = apps
+    .map((app) => {
+      const flowDef = getApprovalFlow(app.channelId);
+      const payload = parsePayload(app);
+      const approval = buildApprovalState(app, flowDef);
+      const canApprove = app.status === 'pending' && canUserApproveStep(req.user, flowDef.steps[app.currentStep], app, payload);
+      const isMine = isSubmitter(req.user, app);
+      return {
+        id: app.id,
+        channelId: app.channelId,
+        channelName: app.channelName,
+        org: app.org,
+        applicant: app.applicant,
+        status: app.status,
+        rejectReason: app.rejectReason,
+        projectCode: app.projectCode || payload.code,
+        name: payload.name || app.channelName,
+        updatedAt: app.updatedAt,
+        fileCount: app._count.files,
+        approval,
+        canApprove,
+        isMine,
+        canRevoke: isMine && ['pending', 'rejected'].includes(app.status),
+        canEdit: isMine && ['draft', 'rejected'].includes(app.status),
+      };
+    })
+    .filter((item) => {
+      const flowDef = getApprovalFlow(item.channelId);
+      const app = apps.find((a) => a.id === item.id);
+      return inUserInbox(req.user, app, flowDef);
+    });
+  res.json({
+    items,
+    pendingCount: items.filter((i) => i.canApprove).length,
+    rules: APPROVAL_RULES,
+  });
+});
+
+app.get('/api/applications/:id', authMiddleware, async (req, res) => {
+  const app = await prisma.application.findUnique({
+    where: { id: req.params.id },
+    include: { records: { orderBy: { createdAt: 'asc' } }, files: true },
+  });
+  if (!app) return res.status(404).json({ error: '申报不存在' });
+  const flowDef = getApprovalFlow(app.channelId);
+  const payload = parsePayload(app);
+  const approval = buildApprovalState(app, flowDef);
+  res.json({
+    ...app,
+    payload,
+    approval,
+    canApprove: app.status === 'pending' && canUserApproveStep(req.user, flowDef.steps[app.currentStep], app, payload),
+    canRevoke: isSubmitter(req.user, app) && ['pending', 'submitted', 'rejected'].includes(app.status),
+    canEdit: isSubmitter(req.user, app) && ['draft', 'rejected'].includes(app.status),
+  });
+});
+
+async function recordApproval(appId, step, user, action, comment) {
+  return prisma.approvalRecord.create({
+    data: {
+      applicationId: appId,
+      stepIndex: step?.index ?? 0,
+      stepName: step?.label || step?.stepName || '—',
+      actorRole: normalizeRole(user.role),
+      actorName: user.name,
+      action,
+      comment: comment || null,
+    },
+  });
+}
+
+app.post('/api/applications/:id/submit', authMiddleware, async (req, res) => {
+  const app = await prisma.application.findUnique({ where: { id: req.params.id } });
+  if (!app) return res.status(404).json({ error: '申报不存在' });
+  if (!isSubmitter(req.user, app)) return res.status(403).json({ error: '仅填报人可提交' });
+  if (!['draft', 'rejected'].includes(app.status)) return res.status(400).json({ error: '当前状态不可提交' });
+  const flowDef = getApprovalFlow(app.channelId);
+  const steps = flowDef.steps;
+  let startStep = steps.findIndex((s) => s.key !== 'contact');
+  if (startStep < 0) startStep = 0;
+  const updated = await prisma.application.update({
+    where: { id: app.id },
+    data: { status: 'pending', currentStep: startStep, rejectReason: null },
+  });
+  await recordApproval(app.id, { index: 0, label: '提交申报' }, req.user, 'submit', '提交审签');
+  await prisma.auditLog.create({
+    data: { actor: req.user.name, action: '立项审签提交', detail: `${app.channelName} · ${parsePayload(app).name || ''}`, source: 'human' },
+  });
+  res.json({ ...updated, approval: buildApprovalState(updated, flowDef) });
+});
+
+app.post('/api/applications/:id/approve', authMiddleware, async (req, res) => {
+  const app = await prisma.application.findUnique({ where: { id: req.params.id } });
+  if (!app) return res.status(404).json({ error: '申报不存在' });
+  if (app.status !== 'pending') return res.status(400).json({ error: '非待审状态' });
+  const flowDef = getApprovalFlow(app.channelId);
+  const steps = flowDef.steps;
+  const step = steps[app.currentStep];
+  const payload = parsePayload(app);
+  if (!canUserApproveStep(req.user, step, app, payload)) {
+    return res.status(403).json({ error: `当前节点需由【${step?.label}】角色审批` });
+  }
+  const comment = req.body?.comment || '';
+  const nextStep = app.currentStep + 1;
+  const isLast = nextStep >= steps.length || steps[nextStep]?.role === 'offline';
+  let status = 'pending';
+  if (isLast) {
+    status = flowDef.type === 'filing' ? 'archived' : 'approved';
+  }
+  const updated = await prisma.application.update({
+    where: { id: app.id },
+    data: {
+      status,
+      currentStep: isLast ? app.currentStep : nextStep,
+      projectCode: payload.code || app.projectCode,
+    },
+  });
+  await recordApproval(app.id, { index: app.currentStep, label: step.label }, req.user, 'approve', comment);
+  await prisma.auditLog.create({
+    data: { actor: req.user.name, action: '审签通过', detail: `${step.label} → ${isLast ? status : steps[nextStep]?.label}`, source: 'human' },
+  });
+  res.json({ ...updated, approval: buildApprovalState(updated, flowDef) });
+});
+
+app.post('/api/applications/:id/reject', authMiddleware, async (req, res) => {
+  const { comment } = req.body || {};
+  if (!comment?.trim()) return res.status(400).json({ error: '请填写驳回意见' });
+  const app = await prisma.application.findUnique({ where: { id: req.params.id } });
+  if (!app || app.status !== 'pending') return res.status(400).json({ error: '无法驳回' });
+  const flowDef = getApprovalFlow(app.channelId);
+  const step = flowDef.steps[app.currentStep];
+  const payload = parsePayload(app);
+  if (!canUserApproveStep(req.user, step, app, payload)) return res.status(403).json({ error: '无权驳回' });
+  const updated = await prisma.application.update({
+    where: { id: app.id },
+    data: { status: 'rejected', currentStep: 0, rejectReason: comment.trim() },
+  });
+  await recordApproval(app.id, { index: app.currentStep, label: step.label }, req.user, 'reject', comment.trim());
+  await prisma.auditLog.create({
+    data: { actor: req.user.name, action: '审签驳回', detail: comment.trim(), source: 'human' },
+  });
+  res.json({ ...updated, approval: buildApprovalState(updated, flowDef) });
+});
+
+app.post('/api/applications/:id/revoke', authMiddleware, async (req, res) => {
+  const app = await prisma.application.findUnique({ where: { id: req.params.id } });
+  if (!app) return res.status(404).json({ error: '申报不存在' });
+  if (!isSubmitter(req.user, app)) return res.status(403).json({ error: '仅填报人可撤销' });
+  const flowDef = getApprovalFlow(app.channelId);
+  const updated = await prisma.application.update({
+    where: { id: app.id },
+    data: { status: 'draft', currentStep: 0, revokedAt: new Date(), rejectReason: null },
+  });
+  await recordApproval(app.id, { index: app.currentStep, label: '撤销' }, req.user, 'revoke', req.body?.comment || '填报人撤销');
+  await prisma.auditLog.create({
+    data: { actor: req.user.name, action: '审签撤销', detail: '回归草稿状态', source: 'human' },
+  });
+  res.json({ ...updated, approval: buildApprovalState(updated, flowDef) });
 });
 
 app.get('/api/lifecycle/framework', authMiddleware, (_req, res) => {
@@ -428,6 +638,7 @@ app.post('/api/applications', authMiddleware, async (req, res) => {
   const channelName = req.body.channelName || channel?.name || body.channelName;
   const initDept = channel?.dept || body.initDept;
   const code = body.code?.trim() || (await generateProjectCode(prisma));
+  const flowDef = getApprovalFlow(body.channelId);
   const app = await prisma.application.create({
     data: {
       level: body.level,
@@ -435,7 +646,10 @@ app.post('/api/applications', authMiddleware, async (req, res) => {
       channelName,
       org: body.org || req.user.org || '',
       applicant: req.user.name,
-      status: 'submitted',
+      applicantId: req.user.id,
+      status: 'draft',
+      flowType: flowDef.type,
+      currentStep: 0,
       payload: JSON.stringify({ ...body, code, channelName, initDept }),
     },
   });
@@ -444,24 +658,46 @@ app.post('/api/applications', authMiddleware, async (req, res) => {
     body,
     uploadedBy: req.user.name,
   });
-  await prisma.todo.create({
-    data: {
-      title: `立项申报审核：${body.name || channelName}`,
-      type: 'apply_review',
-      roles: 'mgmt_unit,project_team,mgmt_hq',
-      orgs: body.org || req.user.org,
-      status: 'pending',
-    },
-  });
   await prisma.auditLog.create({
     data: {
       actor: req.user.name,
-      action: '立项申报提交',
+      action: '立项申报保存',
       detail: `${code} ${body.name}${fileCount ? ` · 附件${fileCount}个` : ''}`,
       source: 'human',
     },
   });
-  res.status(201).json({ ...app, code, fileCount });
+  res.status(201).json({ ...app, code, fileCount, approval: buildApprovalState(app, flowDef) });
+});
+
+app.patch('/api/applications/:id', authMiddleware, async (req, res) => {
+  const app = await prisma.application.findUnique({ where: { id: req.params.id } });
+  if (!app) return res.status(404).json({ error: '申报不存在' });
+  if (!isSubmitter(req.user, app)) return res.status(403).json({ error: '仅填报人可修改' });
+  if (!['draft', 'rejected'].includes(app.status)) return res.status(400).json({ error: '当前状态不可修改' });
+  const body = req.body?.payload || req.body || {};
+  const channel = await prisma.channel.findUnique({ where: { id: body.channelId || app.channelId } });
+  const channelName = body.channelName || channel?.name || app.channelName;
+  const code = body.code?.trim() || parsePayload(app).code || app.projectCode;
+  const updated = await prisma.application.update({
+    where: { id: app.id },
+    data: {
+      level: body.level || app.level,
+      channelId: body.channelId || app.channelId,
+      channelName,
+      org: body.org || app.org,
+      payload: JSON.stringify({ ...parsePayload(app), ...body, code, channelName }),
+      rejectReason: null,
+    },
+  });
+  if (req.body?.folderFiles?.length) {
+    await persistFolderFiles({
+      applicationId: app.id,
+      body: req.body,
+      uploadedBy: req.user.name,
+    });
+  }
+  const flowDef = getApprovalFlow(updated.channelId);
+  res.json({ ...updated, payload: parsePayload(updated), approval: buildApprovalState(updated, flowDef) });
 });
 
 app.post('/api/projects/upload', authMiddleware, async (req, res) => {

@@ -8,6 +8,7 @@ import { STEEL } from '../utils/flowUtils';
 const router = useRouter();
 const channels = ref([]);
 const activeLevel = ref('国家级');
+const expandTab = ref({});
 
 const levels = ['国家级', '地方级', '公司级'];
 
@@ -33,6 +34,15 @@ function goLedger(channelId) {
 
 function goProject(id) {
   if (id) router.push(`/projects/${id}`);
+}
+
+function expandTabFor(rowId) {
+  if (!expandTab.value[rowId]) expandTab.value[rowId] = 'lifecycle';
+  return expandTab.value[rowId];
+}
+
+function setExpandTab(rowId, tab) {
+  expandTab.value[rowId] = tab;
 }
 
 function heatOpacity(count, max) {
@@ -80,51 +90,68 @@ function heatOpacity(count, max) {
             <template #default="{ row }">
               <div class="expand-panel">
                 <div class="expand-panel__head">
-                  <span>规范流程 · {{ row.name }}</span>
+                  <span>{{ row.name }}</span>
                   <el-button size="small" link type="primary" @click.stop="goLedger(row.id)">
                     查看该渠道全部项目 →
                   </el-button>
                 </div>
-                <ChannelFlowTimeline
-                  :steps="row.steps"
-                  :current-step="-1"
-                  :step-counts="row.stepCounts"
-                />
-                <div v-if="row.projectTotal" class="step-heatmap">
-                  <div class="step-heatmap__title">在管项目节点分布</div>
-                  <div class="step-heatmap__row">
-                    <div
-                      v-for="(step, i) in row.steps"
-                      :key="i"
-                      class="heat-cell"
-                      :style="{
-                        background: `rgba(70, 130, 180, ${heatOpacity(row.stepCounts?.[i], Math.max(...(row.stepCounts || [0]), 1))})`,
-                        borderColor: STEEL,
-                      }"
-                    >
-                      <span class="heat-cell__n">{{ row.stepCounts?.[i] || 0 }}</span>
-                      <span class="heat-cell__t">{{ step }}</span>
-                    </div>
-                  </div>
-                  <div class="step-projects">
-                    <template v-for="(projs, i) in row.projectsByStep" :key="i">
-                      <div v-if="projs?.length" class="step-project-group">
-                        <span class="step-project-group__label">节点{{ i + 1 }} · {{ row.steps[i] }}</span>
-                        <el-tag
-                          v-for="p in projs"
-                          :key="p.id"
-                          size="small"
-                          class="proj-tag"
-                          @click.stop="goProject(p.id)"
+                <el-tabs
+                  :model-value="expandTabFor(row.id)"
+                  class="expand-tabs"
+                  @tab-change="(t) => setExpandTab(row.id, t)"
+                  @click.stop
+                >
+                  <el-tab-pane label="全周期管理流程" name="lifecycle">
+                    <ChannelFlowTimeline
+                      :steps="row.steps"
+                      :current-step="-1"
+                      :step-counts="row.stepCounts"
+                    />
+                    <div v-if="row.projectTotal" class="step-heatmap">
+                      <div class="step-heatmap__title">在管项目节点分布</div>
+                      <div class="step-heatmap__row">
+                        <div
+                          v-for="(step, i) in row.steps"
+                          :key="i"
+                          class="heat-cell"
+                          :style="{
+                            background: `rgba(70, 130, 180, ${heatOpacity(row.stepCounts?.[i], Math.max(...(row.stepCounts || [0]), 1))})`,
+                            borderColor: STEEL,
+                          }"
                         >
-                          <span class="risk-dot" :class="p.risk" style="margin-right:4px" />
-                          {{ p.code }}
-                        </el-tag>
+                          <span class="heat-cell__n">{{ row.stepCounts?.[i] || 0 }}</span>
+                          <span class="heat-cell__t">{{ step }}</span>
+                        </div>
                       </div>
-                    </template>
-                  </div>
-                </div>
-                <p v-else class="muted expand-empty">该渠道暂无在管项目</p>
+                      <div class="step-projects">
+                        <template v-for="(projs, i) in row.projectsByStep" :key="i">
+                          <div v-if="projs?.length" class="step-project-group">
+                            <span class="step-project-group__label">节点{{ i + 1 }} · {{ row.steps[i] }}</span>
+                            <el-tag
+                              v-for="p in projs"
+                              :key="p.id"
+                              size="small"
+                              class="proj-tag"
+                              @click.stop="goProject(p.id)"
+                            >
+                              <span class="risk-dot" :class="p.risk" style="margin-right:4px" />
+                              {{ p.code }}
+                            </el-tag>
+                          </div>
+                        </template>
+                      </div>
+                    </div>
+                    <p v-else class="muted expand-empty">该渠道暂无在管项目</p>
+                  </el-tab-pane>
+                  <el-tab-pane label="审签流程（V18）" name="approval">
+                    <p v-if="row.approvalFlow?.note" class="approval-note">{{ row.approvalFlow.note }}</p>
+                    <ChannelFlowTimeline
+                      :nodes="(row.approvalFlow?.steps || []).map((s, i) => ({ index: i, name: s.label, status: 'pending' }))"
+                      :current-step="-1"
+                    />
+                    <p class="muted expand-hint">立项申报按此链条逐级审签，线下报批节点由科技部办理</p>
+                  </el-tab-pane>
+                </el-tabs>
               </div>
             </template>
           </el-table-column>
@@ -242,6 +269,16 @@ function heatOpacity(count, max) {
   color: #cbd5e1;
 }
 .expand-empty { font-size: 12px; margin: 8px 0; }
+.expand-hint { font-size: 11px; margin-top: 8px; }
+.approval-note {
+  font-size: 12px;
+  color: #5a9bc9;
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  background: rgba(70, 130, 180, 0.1);
+  border-radius: 4px;
+}
+.expand-tabs :deep(.el-tabs__item.is-active) { color: var(--steel); }
 
 .step-heatmap { margin-top: 16px; }
 .step-heatmap__title { font-size: 11px; color: #64748b; margin-bottom: 8px; }

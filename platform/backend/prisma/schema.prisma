@@ -174,16 +174,37 @@ model Personnel {
 }
 
 model Application {
-  id        String   @id @default(cuid())
-  level     String
-  channelId String
-  channelName String
-  org       String
-  applicant String
-  status    String   @default("draft")
-  payload   String
-  createdAt DateTime @default(now())
-  files     ProjectFile[]
+  id            String   @id @default(cuid())
+  level         String
+  channelId     String
+  channelName   String
+  org           String
+  applicant     String
+  applicantId   String?
+  status        String   @default("draft")
+  flowType      String   @default("approval")
+  currentStep   Int      @default(0)
+  rejectReason  String?
+  revokedAt     DateTime?
+  projectCode   String?
+  payload       String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  files         ProjectFile[]
+  records       ApprovalRecord[]
+}
+
+model ApprovalRecord {
+  id            String   @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  stepIndex     Int
+  stepName      String
+  actorRole     String
+  actorName     String
+  action        String
+  comment       String?
+  createdAt     DateTime @default(now())
 }
 
 model ProjectFile {
