@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
 import { authMiddleware, signToken, projectScope, canExport, canApply, canEditProject, canManageUsers, ROLES, normalizeRole } from './middleware/auth.js';
 import { CHANNEL_FLOWS, getChannelFlow } from './channelFlows.js';
+import { buildChannelFlowPayload, aggregateStepCounts, resolveFlowStep } from './flowUtils.js';
 import { LIFECYCLE_FRAMEWORK } from './lifecycleFramework.js';
 import { seedDatabase, syncDemoUsers } from './seed.js';
 import {
@@ -58,9 +59,38 @@ app.get('/api/meta/roles', authMiddleware, (_req, res) => {
 
 app.get('/api/channels', authMiddleware, async (_req, res) => {
   const dbChannels = await prisma.channel.findMany({ orderBy: [{ level: 'asc' }, { name: 'asc' }] });
+  const allProjects = await prisma.project.findMany({
+    select: {
+      id: true, code: true, name: true, channelId: true, flowStep: true, phase: true, status: true, risk: true, org: true,
+    },
+  });
   const items = dbChannels.map((ch) => {
     const def = getChannelFlow(ch.id);
-    return { ...ch, steps: def?.steps || ch.flow.split('→') };
+    const steps = def?.steps || (ch.flow ? ch.flow.split('→') : []);
+    const channelProjects = allProjects.filter((p) => p.channelId === ch.id);
+    const stepCounts = aggregateStepCounts(channelProjects, steps);
+    const projectsByStep = steps.map((_, i) =>
+      channelProjects
+        .filter((p) => resolveFlowStep(p, steps) === i)
+        .map((p) => ({ id: p.id, code: p.code, name: p.name, risk: p.risk, org: p.org })),
+    );
+    const avgProgress = channelProjects.length
+      ? Math.round(
+          channelProjects.reduce((s, p) => {
+            const idx = resolveFlowStep(p, steps);
+            return s + ((idx + 0.5) / Math.max(steps.length, 1)) * 100;
+          }, 0) / channelProjects.length,
+        )
+      : 0;
+    return {
+      ...ch,
+      steps,
+      stepCounts,
+      projectsByStep,
+      projectTotal: channelProjects.length,
+      avgProgress,
+      dept: def?.dept || ch.dept,
+    };
   });
   res.json(items);
 });
@@ -156,12 +186,39 @@ app.get('/api/projects/:id', authMiddleware, async (req, res) => {
     },
   });
   if (!project) return res.status(404).json({ error: '项目不存在或无权查看' });
-  const channelFlow = getChannelFlow(project.channelId);
+  const channelDef = getChannelFlow(project.channelId);
+  const channelFlow = channelDef ? buildChannelFlowPayload(project, channelDef) : null;
   res.json({
     ...project,
     canEdit: canEditProject(req.user, project),
-    channelFlow: channelFlow ? { steps: channelFlow.steps, currentStep: project.flowStep ?? 0 } : null,
+    channelFlow,
   });
+});
+
+app.patch('/api/projects/:id/flow-step', authMiddleware, async (req, res) => {
+  const step = Number(req.body?.step);
+  if (Number.isNaN(step) || step < 0) return res.status(400).json({ error: '无效的流程节点' });
+  const where = buildProjectWhere(req.user, { id: req.params.id });
+  const project = await prisma.project.findFirst({ where });
+  if (!project) return res.status(404).json({ error: '项目不存在或无权操作' });
+  if (!canEditProject(req.user, project)) return res.status(403).json({ error: '无权更新流程节点' });
+  const def = getChannelFlow(project.channelId);
+  const max = (def?.steps?.length || 1) - 1;
+  const flowStep = Math.min(step, max);
+  const updated = await prisma.project.update({
+    where: { id: project.id },
+    data: { flowStep },
+  });
+  await prisma.auditLog.create({
+    data: {
+      projectId: project.id,
+      actor: req.user.name || req.user.username,
+      action: '更新流程节点',
+      detail: `节点 ${flowStep + 1}/${max + 1}：${def?.steps?.[flowStep] || ''}`,
+    },
+  });
+  const channelFlow = def ? buildChannelFlowPayload(updated, def) : null;
+  res.json({ ...updated, channelFlow });
 });
 
 app.get('/api/dashboard', authMiddleware, async (req, res) => {

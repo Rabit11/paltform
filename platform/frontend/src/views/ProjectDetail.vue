@@ -2,19 +2,34 @@
 import { ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import api from '../api';
+import ChannelFlowTimeline from '../components/ChannelFlowTimeline.vue';
 
 const route = useRoute();
 const router = useRouter();
 const project = ref(null);
+const flowSaving = ref(false);
 
-onMounted(async () => {
+async function loadProject() {
   const { data } = await api.get(`/projects/${route.params.id}`);
   project.value = data;
-});
+}
+
+onMounted(loadProject);
 
 const phaseSteps = ['立项', '实施', '验收', '协作评价', '成果转化', '后评价'];
 
 const riskLabel = { red: '红', yellow: '黄', blue: '蓝', green: '绿' };
+
+async function setFlowStep(step) {
+  if (!project.value?.canEdit) return;
+  flowSaving.value = true;
+  try {
+    const { data } = await api.patch(`/projects/${project.value.id}/flow-step`, { step });
+    project.value = { ...project.value, ...data, canEdit: project.value.canEdit };
+  } finally {
+    flowSaving.value = false;
+  }
+}
 </script>
 
 <template>
@@ -27,16 +42,43 @@ const riskLabel = { red: '红', yellow: '黄', blue: '蓝', green: '绿' };
     </div>
     <p class="muted">{{ project.code }} · {{ project.level }} · {{ project.channelName }} · {{ project.org }}</p>
 
-    <el-card v-if="project.channelFlow?.steps?.length" shadow="never" style="margin: 16px 0">
-      <template #header>渠道全周期管理流程 <small class="muted">（V18 · {{ project.channelName }}）</small></template>
-      <el-steps :active="project.channelFlow.currentStep" finish-status="success" align-center style="flex-wrap:wrap">
-        <el-step v-for="(step, i) in project.channelFlow.steps" :key="i" :title="step" />
+    <section v-if="project.channelFlow?.nodes?.length" class="flow-section">
+      <div class="flow-section__head">
+        <div>
+          <h3>渠道全周期管理流程</h3>
+          <p class="muted">
+            {{ project.channelFlow.level }} · {{ project.channelFlow.dept }} · {{ project.channelName }}
+            · 当前节点：{{ project.channelFlow.currentStepName }}
+          </p>
+        </div>
+        <div v-if="project.canEdit" class="flow-actions">
+          <el-button
+            size="small"
+            :disabled="flowSaving || project.channelFlow.currentStep <= 0"
+            @click="setFlowStep(project.channelFlow.currentStep - 1)"
+          >
+            上一节点
+          </el-button>
+          <el-button
+            size="small"
+            type="primary"
+            plain
+            :disabled="flowSaving || project.channelFlow.currentStep >= project.channelFlow.steps.length - 1"
+            @click="setFlowStep(project.channelFlow.currentStep + 1)"
+          >
+            推进至下一节点
+          </el-button>
+        </div>
+      </div>
+      <ChannelFlowTimeline :nodes="project.channelFlow.nodes" />
+    </section>
+
+    <el-card shadow="never" class="phase-card">
+      <template #header>生命周期阶段 <small class="muted">（平台统一六阶段）</small></template>
+      <el-steps :active="Math.max(0, phaseSteps.indexOf(project.phase))" finish-status="success" align-center>
+        <el-step v-for="s in phaseSteps" :key="s" :title="s" />
       </el-steps>
     </el-card>
-
-    <el-steps :active="phaseSteps.indexOf(project.phase)" finish-status="success" style="margin: 24px 0">
-      <el-step v-for="s in phaseSteps" :key="s" :title="s" />
-    </el-steps>
 
     <el-card shadow="never" style="margin-bottom:16px">
       <template #header>项目所属信息 <small class="muted">（V18 台账表头）</small></template>
@@ -172,3 +214,25 @@ const riskLabel = { red: '红', yellow: '黄', blue: '蓝', green: '绿' };
     </el-card>
   </div>
 </template>
+
+<style scoped>
+.flow-section {
+  margin: 16px 0;
+  padding: 16px;
+  background: #0c1220;
+  border: 1px solid rgba(70, 130, 180, 0.18);
+  border-left: 3px solid #4682B4;
+  border-radius: 4px;
+}
+.flow-section__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.flow-section__head h3 { margin: 0 0 4px; font-size: 14px; color: #f1f5f9; }
+.flow-section__head p { margin: 0; font-size: 12px; }
+.flow-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.phase-card { margin-bottom: 16px; }
+</style>

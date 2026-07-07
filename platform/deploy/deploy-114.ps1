@@ -2,7 +2,7 @@ param(
     [string]$TargetHost = "10.90.111.114",
     [string]$TargetUser = "yanghuiran",
     # 114 上 docker compose 实际运行目录
-    [string]$RemoteDir = "/home/yanghuiran/yuyanplatform/platform",
+    [string]$RemoteDir = "/data_SSD_21T/users/yanghuiran/yanghuiran/yuyanplatform/platform",
     [int]$Port = 8084,
     [switch]$NoCache
 )

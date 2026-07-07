@@ -9,7 +9,7 @@ const user = JSON.parse(localStorage.getItem('keyan_user') || '{}');
 const role = normalizeRole(user.role);
 const items = ref([]);
 const showExport = ref(false);
-const filters = ref({ search: '', level: '', risk: '', phase: '' });
+const filters = ref({ search: '', level: '', risk: '', phase: '', channel: '' });
 
 const pageTitle = computed(() => {
   if (role === 'finance') return '经费台账';
@@ -34,6 +34,7 @@ onMounted(() => {
   if (q.level) filters.value.level = q.level;
   if (q.risk) filters.value.risk = q.risk;
   if (q.phase) filters.value.phase = q.phase;
+  if (q.channel) filters.value.channel = q.channel;
   if (q.search) filters.value.search = q.search;
   load();
 });

@@ -4,7 +4,7 @@ param(
     [string]$Branch = "master",
     [string]$TargetHost = "10.90.111.114",
     [string]$TargetUser = "yanghuiran",
-    [string]$RemoteDir = "/home/yanghuiran/yuyanplatform/platform",
+    [string]$RemoteDir = "/data_SSD_21T/users/yanghuiran/yanghuiran/yuyanplatform/platform",
     [switch]$NoCache,
     [switch]$SkipPush,
     [switch]$SkipDeploy

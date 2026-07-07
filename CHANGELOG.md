@@ -1,0 +1,15 @@
+﻿# 变更日志
+
+本文件记录科研项目信息化管理平台每次发布的版本说明。  
+Git 历史与标签 `v*` 永久保留，**不会覆盖旧版本**。
+
+
+## [0.2.1] - 2026-07-07
+
+- feat: channel flow mapped to projects with timeline UI
+## [0.2.0] - 2026-07-07
+
+- 初始版本号文件
+- Board.vue 钢蓝 #4682B4 央企看板风格
+- Cursor Skills 安装与使用说明文档
+
