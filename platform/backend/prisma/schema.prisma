@@ -15,9 +15,10 @@ model User {
   role      String
   org       String?
   title     String?
+  teamRole  String?
+  specialty String?
   createdAt DateTime @default(now())
   todos     Todo[]
-  audits    AuditLog[]
 }
 
 model Channel {
@@ -39,6 +40,24 @@ model Project {
   org           String
   owner         String
   ownerId       String?
+  techOwner     String?
+  pmName        String?
+  chiefL1       String?
+  chiefL2       String?
+  initDept      String?
+  partnerUnit1  String?
+  partnerWork1  String?
+  partnerUnit2  String?
+  partnerWork2  String?
+  partnerUnitsExtra String?
+  mgmtHqDirector    String?
+  mgmtHqSupervisor  String?
+  mgmtUnitMinister  String?
+  mgmtUnitSupervisor String?
+  financeHq           String?
+  financeUnitMinister String?
+  financeUnitSupervisor String?
+  flowStep      Int      @default(0)
   phase         String
   risk          String   @default("blue")
   budgetTotal   Float    @default(0)
@@ -58,6 +77,7 @@ model Project {
   partners      Partner[]
   outcomes      Outcome[]
   deliverables  Deliverable[]
+  files         ProjectFile[]
   todos         Todo[]
   audits        AuditLog[]
 }
@@ -68,10 +88,13 @@ model Milestone {
   project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   year        Int
   title       String
+  yearGoal    String?
+  planContent String?
   dueDate     String?
   status      String  @default("进行中")
   risk        String  @default("blue")
   completion  String?
+  planStatus  String?
 }
 
 model Partner {
@@ -80,6 +103,7 @@ model Partner {
   project      Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   name         String
   type         String
+  evaluator    String?
   score        Float?
   level        String?
   evalStatus   String  @default("待评价")
@@ -100,6 +124,9 @@ model Outcome {
   planDate    String?
   actualDate  String?
   summary     String?
+  transformBrief String?
+  responsibleUnit String?
+  deliverableCount Int @default(0)
 }
 
 model Deliverable {
@@ -139,6 +166,13 @@ model AuditLog {
   createdAt DateTime @default(now())
 }
 
+model Personnel {
+  id        String @id @default(cuid())
+  name      String
+  specialty String
+  org       String?
+}
+
 model Application {
   id        String   @id @default(cuid())
   level     String
@@ -149,4 +183,21 @@ model Application {
   status    String   @default("draft")
   payload   String
   createdAt DateTime @default(now())
+  files     ProjectFile[]
+}
+
+model ProjectFile {
+  id           String   @id @default(cuid())
+  projectId    String?
+  project      Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  applicationId String?
+  application  Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  folderName   String
+  relativePath String
+  fileName     String
+  mimeType     String?
+  size         Int      @default(0)
+  storageKey   String
+  uploadedBy   String
+  createdAt    DateTime @default(now())
 }

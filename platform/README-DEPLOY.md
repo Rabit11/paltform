@@ -38,7 +38,29 @@
 
 - Docker 20+ 与 Docker Compose v2
 - 开放 80 端口
-- SSH 访问权限
+- SSH 访问权限（**用户名 + 密码或私钥**，见下方排错）
+
+## SSH 登录失败排错
+
+若出现 `Permission denied (publickey,password)`：
+
+1. **不要默认用 root** — 很多内网机禁用了 root 密码登录，需向运维确认实际账号（常见：`deploy`、`ubuntu`、`admin` 或你的个人账号如 `yanghuiran`）。
+2. **优先用密钥登录**（若运维发过 `.pem` / `id_ed25519`）：
+   ```bash
+   ssh -i ~/.ssh/你的私钥 用户名@10.90.111.114
+   ```
+3. **确认密码** — 三次 `Permission denied` 表示密码错误，不是指纹提示的问题；`yes` 接受主机指纹是正确的。
+4. **有账号但无 root** — 可部署到用户目录，无需 root：
+   ```bash
+   export REMOTE_DIR=~/keyan-platform
+   ./deploy.sh 10.90.111.114 你的用户名
+   ```
+   并在 `docker-compose.yml` 里把 nginx 的 `ports` 改成 `"8080:80"`，访问 `http://10.90.111.114:8080`（需运维放行 8080 或加入 docker 组）。
+5. **加入 docker 组**（非 root 用户必做，只需运维执行一次）：
+   ```bash
+   sudo usermod -aG docker $USER
+   # 重新登录 SSH 后生效
+   ```
 
 ## 快速部署
 

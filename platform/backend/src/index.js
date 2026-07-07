@@ -2,15 +2,36 @@ import express from 'express';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
-import { authMiddleware, signToken, projectScope, canExport, canApply } from './middleware/auth.js';
-import { seedDatabase } from './seed.js';
+import { authMiddleware, signToken, projectScope, canExport, canApply, canEditProject, canManageUsers, ROLES, normalizeRole } from './middleware/auth.js';
+import { CHANNEL_FLOWS, getChannelFlow } from './channelFlows.js';
+import { LIFECYCLE_FRAMEWORK } from './lifecycleFramework.js';
+import { seedDatabase, syncDemoUsers } from './seed.js';
+import {
+  pickProjectFields,
+  validateProjectUpload,
+  generateProjectCode,
+  generateOutcomeCode,
+  calcPartnerLevel,
+  calcPlanRisk,
+} from './projectUpload.js';
+import {
+  buildBoardAnalytics,
+  buildBoardFilters,
+  filterProjects,
+  canAccessBoard,
+} from './boardAnalytics.js';
+import {
+  buildProjectFieldChart,
+  buildPersonnelFieldChart,
+  derivePersonnelFromProjects,
+} from './charts.js';
 
 const prisma = new PrismaClient();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'keyan-platform' }));
 
@@ -21,7 +42,7 @@ app.post('/api/auth/login', async (req, res) => {
     return res.status(401).json({ error: '用户名或密码错误' });
   }
   const { password: _, ...safe } = user;
-  res.json({ token: signToken(safe), user: safe });
+  res.json({ token: signToken(safe), user: { ...safe, role: normalizeRole(user.role) } });
 });
 
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
@@ -32,45 +53,87 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
 });
 
 app.get('/api/meta/roles', authMiddleware, (_req, res) => {
-  res.json([
-    { id: 'hq', label: '总部治理', desc: '全公司项目统筹、流程配置、后评价管理' },
-    { id: 'leader', label: '领导驾驶舱', desc: '宏观决策、风险研判、指标溯源' },
-    { id: 'dept', label: '单位治理', desc: '本单位项目计划、经费、风险统筹' },
-    { id: 'pm', label: '项目主管', desc: '跨单位项目监控、审批协调' },
-    { id: 'owner', label: '项目负责人', desc: '单项目全周期填报与推进' },
-    { id: 'member', label: '项目成员', desc: '参与项目资料填报与节点执行' },
-  ]);
+  res.json(Object.values(ROLES));
 });
 
 app.get('/api/channels', authMiddleware, async (_req, res) => {
-  const channels = await prisma.channel.findMany({ orderBy: [{ level: 'asc' }, { name: 'asc' }] });
-  res.json(channels);
+  const dbChannels = await prisma.channel.findMany({ orderBy: [{ level: 'asc' }, { name: 'asc' }] });
+  const items = dbChannels.map((ch) => {
+    const def = getChannelFlow(ch.id);
+    return { ...ch, steps: def?.steps || ch.flow.split('→') };
+  });
+  res.json(items);
+});
+
+app.get('/api/channels/:id/flow', authMiddleware, (req, res) => {
+  const def = getChannelFlow(req.params.id);
+  if (!def) return res.status(404).json({ error: '渠道不存在' });
+  res.json(def);
+});
+
+app.get('/api/channel-flows', authMiddleware, (_req, res) => {
+  res.json(CHANNEL_FLOWS);
+});
+
+app.get('/api/lifecycle/framework', authMiddleware, (_req, res) => {
+  res.json(LIFECYCLE_FRAMEWORK);
+});
+
+app.get('/api/board', authMiddleware, async (req, res) => {
+  const role = normalizeRole(req.user.role);
+  if (!canAccessBoard(role)) {
+    return res.status(403).json({ error: '当前角色无权查看可视化看板' });
+  }
+  const scope = projectScope(req.user);
+  const allProjects = await prisma.project.findMany({
+    where: role === 'finance' ? {} : scope.OR ? { OR: scope.OR } : scope,
+    include: {
+      milestones: true,
+      deliverables: true,
+      outcomes: true,
+    },
+  });
+  const filterOptions = buildBoardFilters(allProjects);
+  const projects = filterProjects(allProjects, req.query);
+  const projectIds = projects.map((p) => p.id);
+  const milestones = projects.flatMap((p) => p.milestones);
+  const deliverables = projects.flatMap((p) => p.deliverables);
+  const outcomes = projects.flatMap((p) => p.outcomes);
+  const todos = await prisma.todo.findMany({ where: { status: 'pending', projectId: { in: projectIds } } });
+
+  const analytics = buildBoardAnalytics(projects, { milestones, deliverables, outcomes, todos });
+  res.json({
+    filters: filterOptions,
+    applied: req.query,
+    ...analytics,
+    note: '看板基于台账底层数据自动运算渲染 · 经费为汇总观察口径',
+  });
 });
 
 function buildProjectWhere(user, extra = {}) {
   const scope = projectScope(user);
-  const where = { ...extra };
-  if (scope.org) where.org = scope.org;
-  if (scope.owner) where.owner = scope.owner;
-  if (scope.id === '__none__') where.id = '__none__';
-  return where;
+  if (scope.id === '__none__') return { id: '__none__', ...extra };
+  const parts = scope.OR ? [{ OR: scope.OR }] : [scope];
+  if (Object.keys(extra).length) parts.push(extra);
+  return parts.length === 1 ? parts[0] : { AND: parts };
 }
 
 app.get('/api/projects', authMiddleware, async (req, res) => {
   const { level, channel, risk, phase, search } = req.query;
-  const where = buildProjectWhere(req.user);
-  if (level) where.level = level;
-  if (channel) where.channelId = channel;
-  if (risk) where.risk = risk;
-  if (phase) where.phase = phase;
+  const filters = {};
+  if (level) filters.level = level;
+  if (channel) filters.channelId = channel;
+  if (risk) filters.risk = risk;
+  if (phase) filters.phase = phase;
   if (search) {
-    where.OR = [
+    filters.OR = [
       { name: { contains: search } },
       { code: { contains: search } },
       { org: { contains: search } },
       { owner: { contains: search } },
     ];
   }
+  const where = buildProjectWhere(req.user, filters);
   const projects = await prisma.project.findMany({
     where,
     orderBy: { updatedAt: 'desc' },
@@ -88,11 +151,17 @@ app.get('/api/projects/:id', authMiddleware, async (req, res) => {
       partners: true,
       outcomes: true,
       deliverables: true,
+      files: { orderBy: { relativePath: 'asc' } },
       audits: { orderBy: { createdAt: 'desc' }, take: 20 },
     },
   });
   if (!project) return res.status(404).json({ error: '项目不存在或无权查看' });
-  res.json(project);
+  const channelFlow = getChannelFlow(project.channelId);
+  res.json({
+    ...project,
+    canEdit: canEditProject(req.user, project),
+    channelFlow: channelFlow ? { steps: channelFlow.steps, currentStep: project.flowStep ?? 0 } : null,
+  });
 });
 
 app.get('/api/dashboard', authMiddleware, async (req, res) => {
@@ -127,7 +196,18 @@ app.get('/api/dashboard', authMiddleware, async (req, res) => {
     if (t.orgs && req.user.role === 'dept' && !t.orgs.includes(req.user.org)) return false;
     return true;
   });
-  res.json({ role: req.user.role, stats, todos: filteredTodos });
+
+  let charts = null;
+  if (['mgmt_hq', 'admin'].includes(req.user.role)) {
+    const basePersonnel = await prisma.personnel.findMany({ orderBy: { name: 'asc' } });
+    const personnel = derivePersonnelFromProjects(projects, basePersonnel);
+    charts = {
+      projectByField: buildProjectFieldChart(projects),
+      personnelByField: buildPersonnelFieldChart(personnel),
+    };
+  }
+
+  res.json({ role: req.user.role, stats, todos: filteredTodos, charts });
 });
 
 app.get('/api/todos', authMiddleware, async (req, res) => {
@@ -182,30 +262,184 @@ app.get('/api/risks', authMiddleware, async (req, res) => {
   res.json(projects);
 });
 
+app.get('/api/projects/next-code', authMiddleware, async (_req, res) => {
+  const code = await generateProjectCode(prisma);
+  res.json({ code });
+});
+
+async function persistProjectNestedData(projectId, projectCode, body) {
+  const year = new Date().getFullYear();
+  for (const plan of body.annualPlans || []) {
+    if (!plan.yearGoal && !plan.planContent) continue;
+    const risk = calcPlanRisk(plan.dueDate, plan.completion);
+    await prisma.milestone.create({
+      data: {
+        projectId,
+        year,
+        title: plan.planContent || plan.yearGoal || '年度计划',
+        yearGoal: plan.yearGoal || null,
+        planContent: plan.planContent || null,
+        dueDate: plan.dueDate || null,
+        completion: plan.completion || null,
+        planStatus: { green: '绿', yellow: '黄', blue: '蓝', red: '红' }[risk],
+        status: plan.completion || '进行中',
+        risk,
+      },
+    });
+  }
+  for (const d of body.deliverables || []) {
+    if (!d.name) continue;
+    const ownership = Array.isArray(d.ownership) ? d.ownership.join('、') : d.ownership;
+    await prisma.deliverable.create({
+      data: {
+        projectId,
+        name: d.name,
+        type: d.type || '其他',
+        status: d.status || '待交付',
+        ownership: ownership || null,
+        outcomeCode: d.outcomeCode || null,
+        risk: d.status === '已交付' ? 'green' : 'blue',
+      },
+    });
+  }
+  for (const p of body.partners || []) {
+    if (!p.name) continue;
+    const level = calcPartnerLevel(p.score);
+    await prisma.partner.create({
+      data: {
+        projectId,
+        name: p.name,
+        type: p.type || '参研',
+        evaluator: p.evaluator || null,
+        score: p.score != null ? Number(p.score) : null,
+        level: level || p.level || null,
+        evalDate: p.evalDate || null,
+        evalStatus: p.score != null ? '已评价' : '待评价',
+      },
+    });
+  }
+  const deliverableCountByCode = {};
+  for (const d of body.deliverables || []) {
+    if (d.outcomeCode) deliverableCountByCode[d.outcomeCode] = (deliverableCountByCode[d.outcomeCode] || 0) + 1;
+  }
+  for (const o of body.outcomes || []) {
+    if (!o.name) continue;
+    const code = o.code || (await generateOutcomeCode(prisma));
+    await prisma.outcome.create({
+      data: {
+        projectId,
+        code,
+        name: o.name,
+        summary: o.summary || null,
+        method: o.method || null,
+        form: o.form || null,
+        planDate: o.planDate || null,
+        actualDate: o.actualDate || null,
+        status: o.status || '已启动',
+        transformBrief: o.transformBrief || null,
+        responsibleUnit: o.responsibleUnit || null,
+        deliverableCount: deliverableCountByCode[code] || deliverableCountByCode[o.code] || 0,
+      },
+    });
+  }
+}
+
+async function persistFolderFiles({ projectId, applicationId, body, uploadedBy }) {
+  const files = body.folderFiles || [];
+  if (!files.length) return 0;
+  const records = await saveProjectFiles({
+    projectId,
+    applicationId,
+    folderName: body.folderName,
+    files,
+    uploadedBy,
+  });
+  for (const r of records) {
+    await prisma.projectFile.create({ data: r });
+  }
+  return records.length;
+}
+
 app.post('/api/applications', authMiddleware, async (req, res) => {
   if (!canApply(req.user.role)) return res.status(403).json({ error: '当前角色无权立项申报' });
-  const { level, channelId, channelName, payload } = req.body;
+  const body = req.body?.payload || req.body || {};
+  const missing = validateProjectUpload(body);
+  if (missing.length) {
+    return res.status(400).json({ error: `请填写必填表头：${missing.join('、')}` });
+  }
+  const channel = await prisma.channel.findUnique({ where: { id: body.channelId } });
+  const channelName = req.body.channelName || channel?.name || body.channelName;
+  const initDept = channel?.dept || body.initDept;
+  const code = body.code?.trim() || (await generateProjectCode(prisma));
   const app = await prisma.application.create({
     data: {
-      level,
-      channelId,
+      level: body.level,
+      channelId: body.channelId,
       channelName,
-      org: req.user.org || '',
+      org: body.org || req.user.org || '',
       applicant: req.user.name,
       status: 'submitted',
-      payload: JSON.stringify(payload || {}),
+      payload: JSON.stringify({ ...body, code, channelName, initDept }),
     },
+  });
+  const fileCount = await persistFolderFiles({
+    applicationId: app.id,
+    body,
+    uploadedBy: req.user.name,
   });
   await prisma.todo.create({
     data: {
-      title: `立项申报审核：${payload?.name || channelName}`,
+      title: `立项申报审核：${body.name || channelName}`,
       type: 'apply_review',
-      roles: 'dept,pm,hq',
-      orgs: req.user.org,
+      roles: 'mgmt_unit,project_team,mgmt_hq',
+      orgs: body.org || req.user.org,
       status: 'pending',
     },
   });
-  res.status(201).json(app);
+  await prisma.auditLog.create({
+    data: {
+      actor: req.user.name,
+      action: '立项申报提交',
+      detail: `${code} ${body.name}${fileCount ? ` · 附件${fileCount}个` : ''}`,
+      source: 'human',
+    },
+  });
+  res.status(201).json({ ...app, code, fileCount });
+});
+
+app.post('/api/projects/upload', authMiddleware, async (req, res) => {
+  if (!canApply(req.user.role) && !canManageUsers(req.user.role)) {
+    return res.status(403).json({ error: '当前角色无权上传项目' });
+  }
+  const body = req.body || {};
+  const missing = validateProjectUpload(body);
+  if (missing.length) {
+    return res.status(400).json({ error: `请填写必填表头：${missing.join('、')}` });
+  }
+  const code = body.code?.trim() || (await generateProjectCode(prisma));
+  const exists = await prisma.project.findUnique({ where: { code } });
+  if (exists) return res.status(409).json({ error: '项目编号已存在' });
+
+  const channel = await prisma.channel.findUnique({ where: { id: body.channelId } });
+  const channelName = channel?.name || body.channelName;
+  const initDept = channel?.dept || body.initDept;
+  const id = `p_${Date.now()}`;
+  const data = pickProjectFields(body, channelName, initDept, code);
+
+  const project = await prisma.project.create({ data: { id, ...data } });
+  await persistProjectNestedData(id, code, body);
+  const fileCount = await persistFolderFiles({ projectId: id, body, uploadedBy: req.user.name });
+
+  await prisma.auditLog.create({
+    data: {
+      projectId: id,
+      actor: req.user.name,
+      action: '项目信息上传',
+      detail: `${data.code} ${data.name}${fileCount ? ` · 附件${fileCount}个` : ''}`,
+      source: 'human',
+    },
+  });
+  res.status(201).json({ ...project, fileCount });
 });
 
 app.get('/api/applications/channel-materials/:channelId', authMiddleware, (req, res) => {
@@ -223,14 +457,26 @@ app.post('/api/ai/extract', authMiddleware, (req, res) => {
   const { text } = req.body || {};
   res.json({
     extracted: {
+      code: `KY-${new Date().getFullYear()}-NEW`,
       name: '基于材料自动识别的项目名称（演示）',
       goal: '从上传材料中抽取的项目目标摘要',
+      mainWork: '主要工作内容摘要（演示）',
       budgetTotal: 1200,
+      budgetSpent: 0,
+      budgetYear: 400,
+      budgetYearSpent: 0,
       startDate: '2025-01-01',
       endDate: '2027-12-31',
       org: req.user.org,
       owner: req.user.name,
-      deliverables: ['专利2项', '技术标准1项', '样机1套'],
+      techOwner: '',
+      pmName: '',
+      chiefL1: '张总师',
+      chiefL2: '王总师',
+      status: '进行中',
+      outcomeStatus: '技术储备待应用',
+      risk: 'green',
+      deliverables: [{ name: '专利2项', type: '专利', status: '待交付', ownership: '牵头单位', outcomeCode: '' }],
     },
     source: text ? '材料解析' : '模拟抽取',
     note: 'AI 仅提议不执行，请人工核对后提交',
@@ -261,6 +507,133 @@ app.post('/api/ai/chat', authMiddleware, async (req, res) => {
     answer = `在管项目 ${projects.length} 个。可询问：红色预警、临期项目、经费执行等情况。`;
   }
   res.json({ answer, citations: ['项目台账', '四色预警规则 V18', '经费汇总观察口径'] });
+});
+
+function adminOnly(req, res, next) {
+  if (!canManageUsers(req.user.role)) {
+    return res.status(403).json({ error: '仅超级管理员可操作' });
+  }
+  next();
+}
+
+function omitPassword(user) {
+  const { password: _, ...safe } = user;
+  return safe;
+}
+
+app.get('/api/admin/users', authMiddleware, adminOnly, async (_req, res) => {
+  const users = await prisma.user.findMany({ orderBy: [{ role: 'asc' }, { username: 'asc' }] });
+  res.json(users.map(omitPassword));
+});
+
+app.post('/api/admin/users', authMiddleware, adminOnly, async (req, res) => {
+  const { username, password, name, role, org, title, teamRole } = req.body || {};
+  if (!username?.trim() || !password || !name?.trim() || !role) {
+    return res.status(400).json({ error: '用户名、密码、姓名、角色为必填' });
+  }
+  if (!ROLES[normalizeRole(role)]) {
+    return res.status(400).json({ error: '无效角色' });
+  }
+  const exists = await prisma.user.findUnique({ where: { username: username.trim() } });
+  if (exists) return res.status(409).json({ error: '用户名已存在' });
+  const user = await prisma.user.create({
+    data: {
+      username: username.trim(),
+      password: await bcrypt.hash(password, 10),
+      name: name.trim(),
+      role: normalizeRole(role),
+      org: org || null,
+      title: title || null,
+      teamRole: teamRole || null,
+    },
+  });
+  await prisma.auditLog.create({
+    data: { actor: req.user.name, action: '创建账号', detail: `${user.username} (${user.role})`, source: 'human' },
+  });
+  res.status(201).json(omitPassword(user));
+});
+
+app.put('/api/admin/users/:id', authMiddleware, adminOnly, async (req, res) => {
+  const { password, name, role, org, title, teamRole } = req.body || {};
+  const existing = await prisma.user.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ error: '用户不存在' });
+  const data = {};
+  if (name?.trim()) data.name = name.trim();
+  if (role) data.role = normalizeRole(role);
+  if (org !== undefined) data.org = org || null;
+  if (title !== undefined) data.title = title || null;
+  if (teamRole !== undefined) data.teamRole = teamRole || null;
+  if (password) data.password = await bcrypt.hash(password, 10);
+  const user = await prisma.user.update({ where: { id: req.params.id }, data });
+  await prisma.auditLog.create({
+    data: { actor: req.user.name, action: '更新账号', detail: `${user.username}`, source: 'human' },
+  });
+  res.json(omitPassword(user));
+});
+
+app.delete('/api/admin/users/:id', authMiddleware, adminOnly, async (req, res) => {
+  if (req.params.id === req.user.id) {
+    return res.status(400).json({ error: '不能删除当前登录账号' });
+  }
+  const existing = await prisma.user.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ error: '用户不存在' });
+  await prisma.user.delete({ where: { id: req.params.id } });
+  await prisma.auditLog.create({
+    data: { actor: req.user.name, action: '删除账号', detail: `${existing.username}`, source: 'human' },
+  });
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/sync-demo-users', authMiddleware, adminOnly, async (req, res) => {
+  const count = await syncDemoUsers();
+  await prisma.auditLog.create({
+    data: { actor: req.user.name, action: '同步演示账号', detail: `${count} 个账号`, source: 'human' },
+  });
+  res.json({ ok: true, count, message: `已同步 ${count} 个演示账号，密码 Keyan@2026` });
+});
+
+app.get('/api/admin/personnel', authMiddleware, adminOnly, async (_req, res) => {
+  const items = await prisma.personnel.findMany({ orderBy: { name: 'asc' } });
+  res.json(items);
+});
+
+app.post('/api/admin/personnel', authMiddleware, adminOnly, async (req, res) => {
+  const { name, specialty, org } = req.body || {};
+  if (!name?.trim() || !specialty?.trim()) {
+    return res.status(400).json({ error: '姓名和专业为必填' });
+  }
+  const item = await prisma.personnel.create({
+    data: { name: name.trim(), specialty: specialty.trim(), org: org?.trim() || null },
+  });
+  await prisma.auditLog.create({
+    data: { actor: req.user.name, action: '新增人员', detail: item.name, source: 'human' },
+  });
+  res.status(201).json(item);
+});
+
+app.put('/api/admin/personnel/:id', authMiddleware, adminOnly, async (req, res) => {
+  const { name, specialty, org } = req.body || {};
+  const existing = await prisma.personnel.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ error: '人员不存在' });
+  const data = {};
+  if (name?.trim()) data.name = name.trim();
+  if (specialty?.trim()) data.specialty = specialty.trim();
+  if (org !== undefined) data.org = org?.trim() || null;
+  const item = await prisma.personnel.update({ where: { id: req.params.id }, data });
+  await prisma.auditLog.create({
+    data: { actor: req.user.name, action: '更新人员', detail: item.name, source: 'human' },
+  });
+  res.json(item);
+});
+
+app.delete('/api/admin/personnel/:id', authMiddleware, adminOnly, async (req, res) => {
+  const existing = await prisma.personnel.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ error: '人员不存在' });
+  await prisma.personnel.delete({ where: { id: req.params.id } });
+  await prisma.auditLog.create({
+    data: { actor: req.user.name, action: '删除人员', detail: existing.name, source: 'human' },
+  });
+  res.json({ ok: true });
 });
 
 app.get('/api/audit', authMiddleware, async (req, res) => {

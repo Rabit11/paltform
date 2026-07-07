@@ -4,7 +4,13 @@ set -euo pipefail
 
 TARGET_HOST="${1:-10.90.111.114}"
 TARGET_USER="${2:-root}"
-REMOTE_DIR="/opt/keyan-platform"
+if [ -z "${REMOTE_DIR:-}" ]; then
+  if [ "$TARGET_USER" = "root" ]; then
+    REMOTE_DIR="/opt/keyan-platform"
+  else
+    REMOTE_DIR='~/keyan-platform'
+  fi
+fi
 
 echo "==> 打包平台代码..."
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"

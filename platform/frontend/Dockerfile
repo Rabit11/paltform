@@ -1,4 +1,5 @@
 FROM node:20-alpine AS build
+RUN apk add --no-cache openssl
 WORKDIR /app
 ARG VITE_API_BASE=/api
 ENV VITE_API_BASE=$VITE_API_BASE

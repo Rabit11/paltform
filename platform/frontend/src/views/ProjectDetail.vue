@@ -13,6 +13,8 @@ onMounted(async () => {
 });
 
 const phaseSteps = ['立项', '实施', '验收', '协作评价', '成果转化', '后评价'];
+
+const riskLabel = { red: '红', yellow: '黄', blue: '蓝', green: '绿' };
 </script>
 
 <template>
@@ -21,31 +23,67 @@ const phaseSteps = ['立项', '实施', '验收', '协作评价', '成果转化'
       <el-button @click="router.back()">← 返回</el-button>
       <h2 class="page-title" style="margin:0">{{ project.name }}</h2>
       <span class="risk-dot" :class="project.risk" />
+      <el-tag size="small">{{ riskLabel[project.risk] || project.risk }}预警</el-tag>
     </div>
     <p class="muted">{{ project.code }} · {{ project.level }} · {{ project.channelName }} · {{ project.org }}</p>
+
+    <el-card v-if="project.channelFlow?.steps?.length" shadow="never" style="margin: 16px 0">
+      <template #header>渠道全周期管理流程 <small class="muted">（V18 · {{ project.channelName }}）</small></template>
+      <el-steps :active="project.channelFlow.currentStep" finish-status="success" align-center style="flex-wrap:wrap">
+        <el-step v-for="(step, i) in project.channelFlow.steps" :key="i" :title="step" />
+      </el-steps>
+    </el-card>
 
     <el-steps :active="phaseSteps.indexOf(project.phase)" finish-status="success" style="margin: 24px 0">
       <el-step v-for="s in phaseSteps" :key="s" :title="s" />
     </el-steps>
 
+    <el-card shadow="never" style="margin-bottom:16px">
+      <template #header>项目所属信息 <small class="muted">（V18 台账表头）</small></template>
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="项目编号">{{ project.code }}</el-descriptions-item>
+        <el-descriptions-item label="名称">{{ project.name }}</el-descriptions-item>
+        <el-descriptions-item label="目标" :span="2">{{ project.goal }}</el-descriptions-item>
+        <el-descriptions-item label="开始时间">{{ project.startDate }}</el-descriptions-item>
+        <el-descriptions-item label="结束时间">{{ project.endDate }}</el-descriptions-item>
+        <el-descriptions-item label="层级">{{ project.level }}</el-descriptions-item>
+        <el-descriptions-item label="立项部门">{{ project.initDept || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="渠道类别">{{ project.channelName }}</el-descriptions-item>
+        <el-descriptions-item label="牵头单位">{{ project.org }}</el-descriptions-item>
+        <el-descriptions-item label="项目状态">{{ project.status }}</el-descriptions-item>
+        <el-descriptions-item label="成果转化状态">{{ project.outcomeStatus }}</el-descriptions-item>
+        <el-descriptions-item label="预警">{{ riskLabel[project.risk] || project.risk }}</el-descriptions-item>
+        <el-descriptions-item label="主要工作内容" :span="2">{{ project.mainWork || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="参研单位 1">{{ project.partnerUnit1 || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="主要工作内容 1">{{ project.partnerWork1 || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="参研单位 2">{{ project.partnerUnit2 || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="主要工作内容 2">{{ project.partnerWork2 || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="预留参研单位" :span="2">{{ project.partnerUnitsExtra || '—' }}</el-descriptions-item>
+      </el-descriptions>
+    </el-card>
+
+    <el-card shadow="never" style="margin-bottom:16px">
+      <template #header>人员团队</template>
+      <el-descriptions :column="3" border size="small">
+        <el-descriptions-item label="项目负责人">{{ project.owner }}</el-descriptions-item>
+        <el-descriptions-item label="技术负责人">{{ project.techOwner || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="项目主管">{{ project.pmName || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="一级总师">{{ project.chiefL1 || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="二级总师">{{ project.chiefL2 || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="总部处室处长">{{ project.mgmtHqDirector || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="总部处室主管">{{ project.mgmtHqSupervisor || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="单位科技部长">{{ project.mgmtUnitMinister || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="单位科技主管">{{ project.mgmtUnitSupervisor || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="总部财务主管">{{ project.financeHq || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="单位财务部长">{{ project.financeUnitMinister || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="单位财务主管">{{ project.financeUnitSupervisor || '—' }}</el-descriptions-item>
+      </el-descriptions>
+    </el-card>
+
     <el-row :gutter="16">
       <el-col :span="12">
         <el-card shadow="never">
-          <template #header>项目所属信息</template>
-          <el-descriptions :column="1" border size="small">
-            <el-descriptions-item label="目标">{{ project.goal }}</el-descriptions-item>
-            <el-descriptions-item label="周期">{{ project.startDate }} ~ {{ project.endDate }}</el-descriptions-item>
-            <el-descriptions-item label="负责人">{{ project.owner }}</el-descriptions-item>
-            <el-descriptions-item label="状态">{{ project.status }}</el-descriptions-item>
-            <el-descriptions-item label="成果转化">{{ project.outcomeStatus }}</el-descriptions-item>
-            <el-descriptions-item label="后评价">
-              <span v-if="!project.over100M">不适用（未超1亿）</span>
-              <span v-else>{{ project.postEvalStatus }}</span>
-            </el-descriptions-item>
-          </el-descriptions>
-        </el-card>
-        <el-card shadow="never" style="margin-top:12px">
-          <template #header>科研经费 <small class="muted">（汇总观察口径，两套体系独立存储）</small></template>
+          <template #header>科研经费 <small class="muted">（汇总观察口径）</small></template>
           <el-descriptions :column="2" border size="small">
             <el-descriptions-item label="总经费">{{ project.budgetTotal }} 万</el-descriptions-item>
             <el-descriptions-item label="历年支出">{{ project.budgetSpent }} 万</el-descriptions-item>
@@ -53,31 +91,78 @@ const phaseSteps = ['立项', '实施', '验收', '协作评价', '成果转化'
             <el-descriptions-item label="年度支出">{{ project.budgetYearSpent }} 万</el-descriptions-item>
           </el-descriptions>
         </el-card>
+        <el-card shadow="never" style="margin-top:12px">
+          <template #header>后评价</template>
+          <p v-if="!project.over100M" class="muted">不适用（未超1亿）</p>
+          <p v-else>{{ project.postEvalStatus }}</p>
+        </el-card>
       </el-col>
       <el-col :span="12">
         <el-card shadow="never">
-          <template #header>年度里程碑</template>
+          <template #header>科研年度目标及计划</template>
           <el-table :data="project.milestones" size="small">
-            <el-table-column prop="title" label="节点" />
-            <el-table-column prop="dueDate" label="到期" width="110" />
-            <el-table-column width="40"><template #default="{ row }"><span class="risk-dot" :class="row.risk" /></template></el-table-column>
-            <el-table-column prop="status" label="状态" width="80" />
-          </el-table>
-        </el-card>
-        <el-card shadow="never" style="margin-top:12px">
-          <template #header>协作单位评价</template>
-          <el-table :data="project.partners" size="small">
-            <el-table-column prop="name" label="单位" />
-            <el-table-column prop="type" label="类型" width="70" />
-            <el-table-column prop="score" label="得分" width="60" />
-            <el-table-column prop="level" label="等级" width="70" />
+            <el-table-column prop="yearGoal" label="年度目标" show-overflow-tooltip />
+            <el-table-column prop="planContent" label="计划内容" show-overflow-tooltip />
+            <el-table-column prop="dueDate" label="完成时间" width="100" />
+            <el-table-column prop="completion" label="完成情况" width="90" />
+            <el-table-column prop="planStatus" label="计划状态" width="80" />
           </el-table>
         </el-card>
       </el-col>
     </el-row>
 
+    <el-row :gutter="16" style="margin-top:12px">
+      <el-col :span="12">
+        <el-card shadow="never">
+          <template #header>交付物</template>
+          <el-table :data="project.deliverables" size="small">
+            <el-table-column prop="name" label="名称" />
+            <el-table-column prop="type" label="类型" width="70" />
+            <el-table-column prop="status" label="状态" width="80" />
+            <el-table-column prop="ownership" label="权属" width="80" />
+            <el-table-column prop="outcomeCode" label="成果编号" width="90" />
+          </el-table>
+        </el-card>
+      </el-col>
+      <el-col :span="12">
+        <el-card shadow="never">
+          <template #header>协作单位评价</template>
+          <el-table :data="project.partners" size="small">
+            <el-table-column prop="name" label="单位" />
+            <el-table-column prop="type" label="类型" width="60" />
+            <el-table-column prop="evaluator" label="评价人" width="80" />
+            <el-table-column prop="score" label="得分" width="50" />
+            <el-table-column prop="level" label="等级" width="60" />
+          </el-table>
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <el-card v-if="project.outcomes?.length" shadow="never" style="margin-top:12px">
+      <template #header>成果转化</template>
+      <el-table :data="project.outcomes" size="small">
+        <el-table-column prop="code" label="成果编号" width="110" />
+        <el-table-column prop="name" label="成果名称" />
+        <el-table-column prop="method" label="转化方式" width="90" />
+        <el-table-column prop="form" label="转化形式" width="90" />
+        <el-table-column prop="status" label="转化状态" width="110" />
+      </el-table>
+    </el-card>
+
+    <el-card v-if="project.files?.length" shadow="never" style="margin-top:12px">
+      <template #header>项目材料文件夹 <small class="muted">（{{ project.files.length }} 个文件）</small></template>
+      <el-table :data="project.files" size="small" max-height="280">
+        <el-table-column prop="folderName" label="文件夹" width="120" />
+        <el-table-column prop="relativePath" label="路径" show-overflow-tooltip />
+        <el-table-column prop="size" label="大小" width="90">
+          <template #default="{ row }">{{ (row.size / 1024).toFixed(1) }} KB</template>
+        </el-table-column>
+        <el-table-column prop="uploadedBy" label="上传人" width="90" />
+      </el-table>
+    </el-card>
+
     <el-card shadow="never" style="margin-top:16px">
-      <template #header>操作留痕 <small class="muted">（人与 AI 同轨）</small></template>
+      <template #header>操作留痕</template>
       <el-timeline>
         <el-timeline-item v-for="a in project.audits" :key="a.id" :timestamp="new Date(a.createdAt).toLocaleString()">
           {{ a.actor }} · {{ a.action }} — {{ a.detail }}
