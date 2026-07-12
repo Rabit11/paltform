@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>待补充更新需求V19 ↔ 平台功能更新V19对照矩阵</title>
+</head>
+<body>
+<style>
+  :root {
+    --bg: #F5F7FB; --panel: #FFFFFF; --panel2: #EDF1F8;
+    --ink: #1B2537; --dim: #5B6B84; --line: #E2E8F2; --line2: #CBD6E6;
+    --accent: #0369A1; --accent-soft: rgba(3, 105, 161, 0.08);
+    --update: #0369A1; --update-soft: rgba(3, 105, 161, 0.09);
+    --add: #B91C1C; --add-soft: rgba(185, 28, 28, 0.09);
+    --sync: #047857; --sync-soft: rgba(4, 120, 87, 0.09);
+    --confirm: #A16207; --confirm-soft: rgba(161, 98, 7, 0.11);
+    --suspend: #64748B; --suspend-soft: rgba(100, 116, 139, 0.12);
+    --mono: "JetBrains Mono", "Cascadia Code", Consolas, "Courier New", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0B1120; --panel: #111A2E; --panel2: #16213A;
+      --ink: #E2E8F0; --dim: #94A3B8; --line: rgba(148,163,184,0.14); --line2: rgba(148,163,184,0.3);
+      --accent: #38BDF8; --accent-soft: rgba(56, 189, 248, 0.11);
+      --update: #38BDF8; --update-soft: rgba(56, 189, 248, 0.11);
+      --add: #F87171; --add-soft: rgba(248, 113, 113, 0.13);
+      --sync: #34D399; --sync-soft: rgba(52, 211, 153, 0.11);
+      --confirm: #FBBF24; --confirm-soft: rgba(251, 191, 36, 0.13);
+      --suspend: #A8B3C6; --suspend-soft: rgba(168, 179, 198, 0.13);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0B1120; --panel: #111A2E; --panel2: #16213A;
+    --ink: #E2E8F0; --dim: #94A3B8; --line: rgba(148,163,184,0.14); --line2: rgba(148,163,184,0.3);
+    --accent: #38BDF8; --accent-soft: rgba(56, 189, 248, 0.11);
+    --update: #38BDF8; --update-soft: rgba(56, 189, 248, 0.11);
+    --add: #F87171; --add-soft: rgba(248, 113, 113, 0.13);
+    --sync: #34D399; --sync-soft: rgba(52, 211, 153, 0.11);
+    --confirm: #FBBF24; --confirm-soft: rgba(251, 191, 36, 0.13);
+    --suspend: #A8B3C6; --suspend-soft: rgba(168, 179, 198, 0.13);
+  }
+  :root[data-theme="light"] {
+    --bg: #F5F7FB; --panel: #FFFFFF; --panel2: #EDF1F8;
+    --ink: #1B2537; --dim: #5B6B84; --line: #E2E8F2; --line2: #CBD6E6;
+    --accent: #0369A1; --accent-soft: rgba(3, 105, 161, 0.08);
+    --update: #0369A1; --update-soft: rgba(3, 105, 161, 0.09);
+    --add: #B91C1C; --add-soft: rgba(185, 28, 28, 0.09);
+    --sync: #047857; --sync-soft: rgba(4, 120, 87, 0.09);
+    --confirm: #A16207; --confirm-soft: rgba(161, 98, 7, 0.11);
+    --suspend: #64748B; --suspend-soft: rgba(100, 116, 139, 0.12);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.65 "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 40px 28px 72px; }
+  .eyebrow { font: 11px/1 var(--mono); letter-spacing: 0.24em; color: var(--accent); text-transform: uppercase; }
+  h1 { font-size: 25px; margin: 10px 0 6px; text-wrap: balance; }
+  .sub { color: var(--dim); font-size: 13px; max-width: 82ch; }
+  .stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin: 22px 0 8px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .stat b { display: block; font: 600 22px/1.2 var(--mono); font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 11.5px; color: var(--dim); }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 14px 0 4px; font-size: 12px; color: var(--dim); }
+  .toc { display: flex; flex-wrap: wrap; gap: 7px; margin: 18px 0 6px; }
+  .toc a {
+    font-size: 12px; color: var(--dim); text-decoration: none; padding: 4px 11px;
+    border: 1px solid var(--line); border-radius: 999px; background: var(--panel); white-space: nowrap;
+  }
+  .toc a:hover { color: var(--accent); border-color: var(--accent); }
+  section { margin-top: 34px; }
+  h2 { font-size: 16.5px; margin: 0 0 3px; }
+  h2 .sec { font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: 0.12em; margin-right: 8px; }
+  .h2sub { font-size: 12px; color: var(--dim); margin-bottom: 12px; }
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+  table { width: 100%; border-collapse: collapse; min-width: 1040px; }
+  th {
+    text-align: left; font-size: 11px; letter-spacing: 0.1em; color: var(--dim); font-weight: 500;
+    padding: 10px 12px; background: var(--panel2); border-bottom: 1px solid var(--line2);
+  }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 13px; }
+  tr:last-child td { border-bottom: none; }
+  td:first-child { width: 26%; }
+  td:nth-child(2) { width: 34%; color: var(--ink); }
+  td:nth-child(3) { width: 27%; color: var(--dim); }
+  td:nth-child(4) { width: 13%; }
+  .no { font: 11px/1 var(--mono); color: var(--dim); margin-right: 6px; }
+  .src {
+    display: inline-block; font-size: 11px; color: var(--accent); background: var(--accent-soft);
+    border-radius: 5px; padding: 0.5px 6px; margin: 0 2px 2px 0; white-space: nowrap;
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+    font-size: 11.5px; border-radius: 999px; padding: 2px 9px;
+  }
+  .chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .c-update { color: var(--update); background: var(--update-soft); }
+  .c-add { color: var(--add); background: var(--add-soft); }
+  .c-sync { color: var(--sync); background: var(--sync-soft); }
+  .c-confirm { color: var(--confirm); background: var(--confirm-soft); }
+  .c-suspend { color: var(--suspend); background: var(--suspend-soft); }
+  .foot { margin-top: 40px; font-size: 12px; color: var(--dim); border-top: 1px solid var(--line); padding-top: 16px; }
+  code { font-family: var(--mono); font-size: 12px; background: var(--panel2); border-radius: 4px; padding: 0 5px; }
+  @media (max-width: 820px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .wrap { padding: 28px 18px 56px; }
+  }
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">Requirement Update Matrix</div>
+  <h1>待补充更新需求 V19 ↔ 平台功能更新 V19 对照矩阵</h1>
+  <p class="sub">依据《科研项目信息化管理平台需求V19-411582批注整理.md》和《科研预研平台二次反馈（群聊天记录）.docx》整理，并沿用《需求V18-平台功能对照矩阵.html》的版式与状态标注方式。本矩阵聚焦“V19 还需要补充、调整、删除或确认”的事项，不替代完整需求规格；整理日期：2026-07-12。</p>
+
+  <div class="stats">
+    <div class="stat"><b>74</b><span>待补充/更新事项</span></div>
+    <div class="stat"><b style="color:var(--add)">17</b><span>新增待建</span></div>
+    <div class="stat"><b style="color:var(--update)">28</b><span>本轮更新</span></div>
+    <div class="stat"><b style="color:var(--sync)">9</b><span>同步映射</span></div>
+    <div class="stat"><b style="color:var(--confirm)">14</b><span>待确认</span></div>
+    <div class="stat"><b style="color:var(--suspend)">6</b><span>暂缓删除</span></div>
+  </div>
+  <div class="legend">
+    <span class="chip c-add">新增待建</span>V19 或二次反馈新提出的功能
+    <span class="chip c-update">本轮更新</span>需同步修订文档、页面、数据或流程
+    <span class="chip c-sync">同步映射</span>已有能力需调整口径或补齐权限
+    <span class="chip c-confirm">待确认</span>需业务侧补表、确认环境或明确边界
+    <span class="chip c-suspend">暂缓删除</span>本轮应移除或标注后续阶段
+  </div>
+  <nav class="toc">
+    <a href="#s0">变更总览</a>
+    <a href="#s1">领导角色</a>
+    <a href="#s2">项目台账</a>
+    <a href="#s3">可视化看板</a>
+    <a href="#s4">立项查重</a>
+    <a href="#s5">成果转化</a>
+    <a href="#s6">后评价</a>
+    <a href="#s7">表单过渡工具</a>
+    <a href="#s8">排期与依赖</a>
+  </nav>
+
+  <section id="s0">
+    <h2><span class="sec">总览</span>V19 待补充/更新变更总览</h2>
+    <div class="h2sub">从 411582 批注与二次反馈中抽取的主线事项，后续章节展开为具体页面、字段、流程和权限落点</div>
+    <div class="scroll"><table>
+      <tr><th>来源 / 触发</th><th>待补充或更新需求</th><th>平台功能更新落点</th><th>状态</th></tr>
+      <tr><td><span class="no">01</span><span class="src">411582批注1</span></td><td>新增“领导”角色，权限范围限定为可视化看板、项目台账、成果转化台账。</td><td>角色定义、导航可见性、角色权限矩阵、接口只读权限、演示账号。</td><td><span class="chip c-add">新增待建</span></td></tr>
+      <tr><td><span class="no">02</span><span class="src">411582批注2</span></td><td>立项阶段增加“项目查重”工具入口，至少先预留入口。</td><td>项目申报、立项备案、项目名称录入区、查重结果弹窗、重复项目处理记录。</td><td><span class="chip c-add">新增待建</span></td></tr>
+      <tr><td><span class="no">03</span><span class="src">411582批注3</span></td><td>成果转化要作为独立业务板块，不仅作为验收后的附属页签。</td><td>一级导航“成果转化”、成果转化台账、成果包详情、看板与项目台账联动。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">04</span><span class="src">411582批注4</span></td><td>暂时删除后评价部分，避免本轮范围继续包含后评价功能。</td><td>整体功能架构、总流程、后评价章节、导航、看板指标、权限矩阵同步删除或标注暂缓。</td><td><span class="chip c-suspend">暂缓删除</span></td></tr>
+      <tr><td><span class="no">05</span><span class="src">411582批注5</span><span class="src">群聊纠偏</span></td><td>第 20 页批注实际含义是“台账部分进行了大修改，需同步更新”，不是单纯“本周”进度备注。</td><td>项目台账 8 大板块、字段说明、列配置、导入导出模板、详情页回写规则。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">06</span><span class="src">411582批注6</span></td><td>可视化看板各图表逻辑需优化：层级/渠道关联、单位承担、计划、经费、执行率、成果转化。</td><td>驾驶舱指标体系、图表交互、筛选联动、口径说明、数据汇总接口。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">07</span><span class="src">二次反馈</span></td><td>正式平台上线前，需先行开发内网或单机运行的“表单过渡工具”。</td><td>表单过渡工具：批量导入、按专项分表、自动汇总总表、一键导出、后续并入正式平台。</td><td><span class="chip c-add">新增待建</span></td></tr>
+      <tr><td><span class="no">08</span><span class="src">二次反馈</span></td><td>平台 Demo 优化与表单过渡工具在 2026-07-13 至 2026-07-17 并行推进，Demo 新版本目标约 2026-07-16。</td><td>排期拆分为平台 V19 更新包和表单工具先行交付包；依赖真实表格、字段口径、内网机环境。</td><td><span class="chip c-confirm">待确认</span></td></tr>
+    </table></div>
+  </section>
+
+  <section id="s1">
+    <h2><span class="sec">角色</span>新增领导角色与只读权限</h2>
+    <div class="h2sub">领导角色为决策查看角色，不参与填报、审批和业务数据修改</div>
+    <div class="scroll"><table>
+      <tr><th>来源 / 触发</th><th>待补充或更新需求</th><th>平台功能更新落点</th><th>状态</th></tr>
+      <tr><td><span class="no">09</span><span class="src">411582批注1</span></td><td>在角色定义中新增“领导”角色，定位为项目宏观查看与决策分析角色。</td><td><span class="src">角色定义</span>新增领导行；角色说明写明“只读查看、辅助决策”。</td><td><span class="chip c-add">新增待建</span></td></tr>
+      <tr><td><span class="no">10</span><span class="src">411582批注1</span></td><td>领导可查看可视化看板，重点查看项目分布、计划、经费、预警、成果转化等综合指标。</td><td><span class="src">可视化看板</span>向领导开放；筛选能力保留，编辑和配置入口隐藏。</td><td><span class="chip c-sync">同步映射</span></td></tr>
+      <tr><td><span class="no">11</span><span class="src">411582批注1</span></td><td>领导可查看项目台账，但原则上不开放新增、编辑、审批、删除和批量导入。</td><td><span class="src">项目台账</span>增加领导只读视图；导出权限需业务侧确认，默认不开放或仅按授权开放。</td><td><span class="chip c-confirm">待确认</span></td></tr>
+      <tr><td><span class="no">12</span><span class="src">411582批注1</span></td><td>领导可查看成果转化台账，关注成果数、转化方向、型号应用、市场转化进展。</td><td><span class="src">成果转化台账</span>开放只读列表、详情和统计；不开放进展更新、审核和佐证上传。</td><td><span class="chip c-sync">同步映射</span></td></tr>
+      <tr><td><span class="no">13</span><span class="src">411582批注1</span></td><td>权限矩阵、菜单权限、接口鉴权需同步增加领导角色，避免“页面可见但接口无权”或“接口越权”。</td><td><span class="src">配置中心·角色权限矩阵</span>新增领导列；后端 API 增加领导 scope 单测或冒烟用例。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+    </table></div>
+  </section>
+
+  <section id="s2">
+    <h2><span class="sec">台账</span>项目台账字段与口径大修改</h2>
+    <div class="h2sub">第 20 页批注按群聊纠偏理解为“台账大修改”，需同步文档、页面、导入模板和源头数据规则</div>
+    <div class="scroll"><table>
+      <tr><th>来源 / 触发</th><th>待补充或更新需求</th><th>平台功能更新落点</th><th>状态</th></tr>
+      <tr><td><span class="no">14</span><span class="src">群聊纠偏</span></td><td>将“本周”批注纠偏为“台账部分进行了大修改，麻烦同步更新”，并写入需求变更记录。</td><td>需求修订说明、版本变更记录、矩阵备注中明确该批注不作为纯进度项处理。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">15</span><span class="src">411582批注5</span></td><td>台账按 8 大板块组织：项目所属信息、主要工作内容、团队、科研年度目标、科研经费情况、交付物、协作单位评价、成果转化。</td><td><span class="src">项目台账</span>列分组、<span class="src">项目详情</span>页签、导出 Excel Sheet 或表头分组同步调整。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">16</span><span class="src">台账大修改</span></td><td>项目所属信息需补齐项目编号、项目级别、立项部门、项目渠道、一级/二级专业、管理单位、需求单位、责任单位、验收状态、立项年月、结束年月、项目周期等口径。</td><td>基础信息表单、项目台账列配置、字段说明、筛选项和枚举字典统一更新。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">17</span><span class="src">台账大修改</span></td><td>主要工作内容从项目所属信息中拆出，独立维护牵头单位、主要工作内容、参研单位及预留参研单位字段。</td><td><span class="src">项目详情·基本信息</span>新增“主要工作内容”区域；台账长文本列支持折叠查看。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">18</span><span class="src">台账大修改</span></td><td>项目团队板块应覆盖负责人、技术负责人、主管、一级/二级总师、总部处长/主管、单位部长/主管、三级财务等岗位。</td><td><span class="src">项目详情·项目团队</span>岗位表与权限角色映射；台账展示关键岗位，详情展示全岗位。</td><td><span class="chip c-sync">同步映射</span></td></tr>
+      <tr><td><span class="no">19</span><span class="src">台账大修改</span></td><td>科研年度目标需支持按年度维护总体目标、分项里程碑、节点计划、完成佐证和状态。</td><td><span class="src">里程碑填报</span>、<span class="src">计划管理</span>与台账年度目标板块同源；避免重复填报。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">20</span><span class="src">台账大修改</span></td><td>科研经费情况需拆分总经费、国拨经费、自筹经费、商飞内部单位经费、累计支出、年度预算、年度支出、结题实际执行经费、执行率等。</td><td><span class="src">经费执行台账</span>补字段；项目端经费与总部拨付管控保持独立存储、台账汇总展示。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">21</span><span class="src">台账大修改</span></td><td>交付物板块需按一项交付物一行记录类型、名称、考核指标、状态、计划/实际交付时间、对应成果编号。</td><td><span class="src">项目详情·交付物</span>作为源头；台账只展示汇总和明细入口，导出可展开明细表。</td><td><span class="chip c-sync">同步映射</span></td></tr>
+      <tr><td><span class="no">22</span><span class="src">台账大修改</span></td><td>协作单位评价板块需区分参研单位和外协单位，保留评价状态、评价时间、五维评分、等级、佐证和黑名单信息。</td><td><span class="src">协作评价</span>与项目台账联动；不合格记录同步黑名单页签和审计日志。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">23</span><span class="src">411582批注3</span></td><td>成果转化板块需从台账中单独突出，台账保留成果数、成果编号、转化方式、转化状态、型号/市场对象等关键摘要。</td><td><span class="src">成果转化台账</span>为主数据源；项目台账展示摘要并可跳转成果包详情。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">24</span><span class="src">二次反馈</span></td><td>台账字段口径要与表单过渡工具完全一致，正式平台与过渡工具后续才能数据迁移和合并。</td><td>统一字段字典、下拉枚举、字段编码、必填规则、导入模板和导出模板。</td><td><span class="chip c-confirm">待确认</span></td></tr>
+      <tr><td><span class="no">25</span><span class="src">二次反馈</span></td><td>真实表格、填写说明、下拉菜单需由业务侧提供，作为台账字段最终口径依据。</td><td>拿到真实表格后进行字段映射表：原表字段、平台字段、类型、枚举、校验、是否必填、来源板块。</td><td><span class="chip c-confirm">待确认</span></td></tr>
+    </table></div>
+  </section>
+
+  <section id="s3">
+    <h2><span class="sec">看板</span>可视化看板指标逻辑优化</h2>
+    <div class="h2sub">看板不只是补图表，而是补数据口径、筛选联动和从台账到指标的计算规则</div>
+    <div class="scroll"><table>
+      <tr><th>来源 / 触发</th><th>待补充或更新需求</th><th>平台功能更新落点</th><th>状态</th></tr>
+      <tr><td><span class="no">26</span><span class="src">411582批注6</span></td><td>各图表逻辑需重新梳理，避免单纯展示孤立数字。</td><td><span class="src">可视化看板</span>增加“指标口径说明”和“数据来源字段”，图表点击可回到台账明细。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">27</span><span class="src">411582批注6</span></td><td>项目层级和各渠道项目分布要体现关联逻辑。</td><td>建议使用“层级 → 渠道”联动分布图或堆叠条形图；点击国家级/地方级/公司级后联动渠道列表。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">28</span><span class="src">411582批注6</span></td><td>各单位承担国家级、地方级、公司级项目情况要体现。</td><td>新增“单位 × 项目层级承担矩阵”，按单位统计项目数量、在研数量、已验收数量。</td><td><span class="chip c-add">新增待建</span></td></tr>
+      <tr><td><span class="no">29</span><span class="src">411582批注6</span></td><td>计划管理要在看板中体现。</td><td>新增计划管理指标：待办计划数、临期计划数、超期计划数、已完成计划数、办结率、CMOS 最近同步时间。</td><td><span class="chip c-add">新增待建</span></td></tr>
+      <tr><td><span class="no">30</span><span class="src">411582批注6</span></td><td>经费方面需体现总经费、国拨数、自筹数。</td><td>新增经费构成 KPI 或堆叠图；统计口径来自项目台账经费板块。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">31</span><span class="src">411582批注6</span></td><td>在研项目经费需单独体现总经费、国拨数、自筹数。</td><td>看板增加“在研项目经费构成”卡片，筛选项目状态为在研并独立汇总。</td><td><span class="chip c-add">新增待建</span></td></tr>
+      <tr><td><span class="no">32</span><span class="src">411582批注6</span></td><td>经费执行率部分要体现总执行率。</td><td>增加总执行率指标：累计支出 / 可执行经费或累计支出 / 总经费，公式需业务侧确认。</td><td><span class="chip c-confirm">待确认</span></td></tr>
+      <tr><td><span class="no">33</span><span class="src">411582批注6</span></td><td>成果转化部分主要体现成果数。</td><td>新增成果总数、已转化成果数、转化中成果数、未启动成果数、逾期成果数。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">34</span><span class="src">411582批注6</span></td><td>成果向各型号的转化情况要体现。</td><td>新增“型号转化分布”图，按型号/应用对象统计成果数量、完成状态和关联项目。</td><td><span class="chip c-add">新增待建</span></td></tr>
+      <tr><td><span class="no">35</span><span class="src">411582批注6</span></td><td>图表形式或数字形式可由设计侧按合理性决定。</td><td>建议原则：总量用 KPI 卡，结构用堆叠/矩阵，链路用漏斗，异常用榜单，明细通过点击穿透。</td><td><span class="chip c-sync">同步映射</span></td></tr>
+      <tr><td><span class="no">36</span><span class="src">领导角色</span></td><td>看板需适配领导只读视图，突出宏观态势而非操作入口。</td><td>领导登录后默认进入看板；隐藏配置、编辑、导出敏感按钮，保留筛选和跳转明细。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">37</span><span class="src">后评价暂缓</span></td><td>若后评价本轮删除，看板中后评价相关指标也应同步移除或标注“后续阶段”。</td><td>检查风险榜、成果评价、项目生命周期统计中是否仍引用后评价节点。</td><td><span class="chip c-suspend">暂缓删除</span></td></tr>
+    </table></div>
+  </section>
+
+  <section id="s4">
+    <h2><span class="sec">立项</span>项目查重工具入口</h2>
+    <div class="h2sub">本轮至少完成入口、字段、结果展示和留痕口径；复杂算法可分阶段实现</div>
+    <div class="scroll"><table>
+      <tr><th>来源 / 触发</th><th>待补充或更新需求</th><th>平台功能更新落点</th><th>状态</th></tr>
+      <tr><td><span class="no">38</span><span class="src">411582批注2</span></td><td>立项阶段增加“项目查重”工具入口。</td><td><span class="src">项目申报</span>和<span class="src">项目立项</span>页面新增查重按钮；建议放在项目名称录入后、提交申报前。</td><td><span class="chip c-add">新增待建</span></td></tr>
+      <tr><td><span class="no">39</span><span class="src">411582批注2</span></td><td>查重入口初期可先预留，不强制一次完成复杂算法。</td><td>V19 文档中写明“入口预留 + 基础字段查重 + 后续可扩展相似度算法”。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">40</span><span class="src">查重工具</span></td><td>基础查重字段建议包括项目名称、项目编号、项目渠道、项目级别、责任单位、牵头单位、负责人、关键词、起止时间。</td><td>查重表单与项目台账字段复用；结果来源优先查项目台账和历史归档项目。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">41</span><span class="src">查重工具</span></td><td>查重结果需展示疑似重复项目、相似度、重复字段、项目状态、责任单位和处理建议。</td><td>新增查重结果弹窗；点击疑似项目可进入只读详情或台账定位。</td><td><span class="chip c-add">新增待建</span></td></tr>
+      <tr><td><span class="no">42</span><span class="src">查重工具</span></td><td>查重结果不应直接阻断所有申报，应支持“继续提交并说明原因”或“退回修改”。</td><td>提交申报时保存查重记录、经办人说明和时间戳，供审批人查看。</td><td><span class="chip c-confirm">待确认</span></td></tr>
+      <tr><td><span class="no">43</span><span class="src">表单工具联动</span></td><td>表单过渡工具批量导入时也需要重复项目校验，避免过渡表和正式平台口径不一致。</td><td>批量导入时按项目名称、编号、渠道、单位做重复提醒；后续可复用正式平台查重接口。</td><td><span class="chip c-sync">同步映射</span></td></tr>
+    </table></div>
+  </section>
+
+  <section id="s5">
+    <h2><span class="sec">成果</span>成果转化独立业务板块</h2>
+    <div class="h2sub">成果转化从验收附属信息升级为独立导航、独立台账、独立统计对象</div>
+    <div class="scroll"><table>
+      <tr><th>来源 / 触发</th><th>待补充或更新需求</th><th>平台功能更新落点</th><th>状态</th></tr>
+      <tr><td><span class="no">44</span><span class="src">411582批注3</span></td><td>成果转化要做单独一块，作为平台一级或独立业务板块呈现。</td><td>一级导航新增或突出<span class="src">成果转化</span>；不再只放在项目详情或验收后页签中。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">45</span><span class="src">411582批注3</span></td><td>成果转化台账应独立维护成果包、转化状态、转化方式、型号/市场对象、佐证材料和审核记录。</td><td><span class="src">成果转化台账</span>列表、筛选、详情、进展更新、附件归档、审批备案。</td><td><span class="chip c-add">新增待建</span></td></tr>
+      <tr><td><span class="no">46</span><span class="src">成果转化</span></td><td>以成果包为最小管理单元，成果编号全局唯一，并与项目、交付物双向绑定。</td><td>成果编号作为台账、交付物和看板之间的联动主键；支持多项交付物打包为一个成果包。</td><td><span class="chip c-sync">同步映射</span></td></tr>
+      <tr><td><span class="no">47</span><span class="src">成果转化</span></td><td>仅已交付交付物可纳入成果转化，未交付成果禁止绑定。</td><td>新建成果包时读取交付物状态；未交付项置灰并由服务端校验。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">48</span><span class="src">成果转化</span></td><td>转化方式分为向型号转化、向市场转化；转化形式与方式联动。</td><td>向型号：装机/未装机；向市场：转让/许可/联合实施/作价投资/其他；字段随方式切换。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">49</span><span class="src">成果转化</span></td><td>转化状态需支持未启动、洽谈中、已签协议、已完成，并按计划转化时间进入四色预警。</td><td>成果转化台账、项目台账摘要、可视化看板和预警中心共用同一状态规则。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">50</span><span class="src">411582批注6</span></td><td>成果转化看板重点体现成果数和向各型号转化情况。</td><td>成果数 KPI、型号转化分布、成果转化状态漏斗、逾期成果预警榜。</td><td><span class="chip c-add">新增待建</span></td></tr>
+      <tr><td><span class="no">51</span><span class="src">领导角色</span></td><td>领导角色需可查看成果转化台账与成果转化看板指标。</td><td>领导权限增加成果转化台账只读、成果包详情只读、看板成果指标可见。</td><td><span class="chip c-sync">同步映射</span></td></tr>
+    </table></div>
+  </section>
+
+  <section id="s6">
+    <h2><span class="sec">范围</span>后评价暂缓/删除</h2>
+    <div class="h2sub">本轮按 411582 批注处理为暂缓建设，需清理文档和演示中的残留引用</div>
+    <div class="scroll"><table>
+      <tr><th>来源 / 触发</th><th>待补充或更新需求</th><th>平台功能更新落点</th><th>状态</th></tr>
+      <tr><td><span class="no">52</span><span class="src">411582批注4</span></td><td>后评价部分暂时删除，不作为 V19 本轮核心建设范围。</td><td>整体功能架构表删除后评价行，或统一标注“暂缓建设/后续阶段”。</td><td><span class="chip c-suspend">暂缓删除</span></td></tr>
+      <tr><td><span class="no">53</span><span class="src">411582批注4</span></td><td>总流程中若仍存在“后评价”节点，需同步删除或移到后续阶段说明。</td><td>全生命周期总流程图、流程描述、节点清单统一调整，避免验收后继续进入后评价。</td><td><span class="chip c-suspend">暂缓删除</span></td></tr>
+      <tr><td><span class="no">54</span><span class="src">411582批注4</span></td><td>角色权限矩阵中后评价相关填报、审批、查看权限需同步移除。</td><td>项目团队、责任总师、管理团队的后评价权限列清理；领导角色不新增后评价权限。</td><td><span class="chip c-suspend">暂缓删除</span></td></tr>
+      <tr><td><span class="no">55</span><span class="src">411582批注4</span></td><td>看板、项目详情、预警中心若有后评价指标或待办，应同步隐藏。</td><td>导航、驾驶舱指标、项目详情页签、审批待办类型和种子数据一起清理。</td><td><span class="chip c-suspend">暂缓删除</span></td></tr>
+      <tr><td><span class="no">56</span><span class="src">范围确认</span></td><td>若业务侧仍希望保留后评价文字，应明确为“后续阶段”，不得与本轮交付范围混写。</td><td>在 V19 文档范围说明中增加“本轮暂缓事项”，便于评审时解释边界。</td><td><span class="chip c-confirm">待确认</span></td></tr>
+    </table></div>
+  </section>
+
+  <section id="s7">
+    <h2><span class="sec">工具</span>二次反馈：表单过渡工具</h2>
+    <div class="h2sub">正式平台上线前的先行工具，核心目标是降低复杂大表拆分、维护、汇总和流转压力</div>
+    <div class="scroll"><table>
+      <tr><th>来源 / 触发</th><th>待补充或更新需求</th><th>平台功能更新落点</th><th>状态</th></tr>
+      <tr><td><span class="no">57</span><span class="src">二次反馈</span></td><td>短期内正式平台无法上线，需要维护涉及多层级、多渠道、大数据量的复杂表单作为科研项目管理过渡。</td><td>新增<span class="src">表单过渡工具</span>，数据结构与正式平台 V19 台账保持一致，后续可迁移入正式库。</td><td><span class="chip c-add">新增待建</span></td></tr>
+      <tr><td><span class="no">58</span><span class="src">二次反馈</span></td><td>工具需支持将整张总表按项目类型拆分成各专项分表。</td><td>分表维护视图：按项目层级、项目渠道、专项类型或主管范围生成分表。</td><td><span class="chip c-add">新增待建</span></td></tr>
+      <tr><td><span class="no">59</span><span class="src">二次反馈</span></td><td>通过维护分表自动汇总更新总表。</td><td>自动汇总引擎：分表保存后校验字段、合并总表、记录来源专项、更新时间和维护人。</td><td><span class="chip c-add">新增待建</span></td></tr>
+      <tr><td><span class="no">60</span><span class="src">二次反馈</span></td><td>需要表单批量上传功能。</td><td>批量导入：支持 Excel 上传、字段映射、必填校验、枚举校验、重复项目提醒和错误行下载。</td><td><span class="chip c-add">新增待建</span></td></tr>
+      <tr><td><span class="no">61</span><span class="src">工作安排</span></td><td>核心功能还需包含一键导出，便于过渡期流转和汇总报送。</td><td>一键导出：导出总表、按专项拆分文件、错误清单和字段口径说明。</td><td><span class="chip c-add">新增待建</span></td></tr>
+      <tr><td><span class="no">62</span><span class="src">二次反馈</span></td><td>使用对象从“各二级单位开放”调整为“总部各项目类型主管上传”。</td><td>权限设计简化为总部主管账号；可根据主管范围限制分表、导入、导出和汇总权限。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">63</span><span class="src">二次反馈</span></td><td>部署形态可优先考虑一台内网机器，多位主管通过浏览器访问；若多人部署困难，可降级为单人电脑使用。</td><td>建议优先内网单机服务：集中数据、便于备份、后续并入正式平台；单人电脑作为兜底方案。</td><td><span class="chip c-confirm">待确认</span></td></tr>
+      <tr><td><span class="no">64</span><span class="src">二次反馈</span></td><td>若采用内网机器，需要确认 IP、端口可访问、运行环境、软件安装权限、安全审查和数据备份方式。</td><td>形成部署检查清单：机器、系统、端口、账号、审批、安全扫描、数据库备份、浏览器兼容。</td><td><span class="chip c-confirm">待确认</span></td></tr>
+      <tr><td><span class="no">65</span><span class="src">二次反馈</span></td><td>真实表格带填写说明和下拉菜单，需尽快提供给开发侧。</td><td>开发前置输入：各专项真实表格、总表模板、填写说明、下拉枚举、样例数据、汇总规则。</td><td><span class="chip c-confirm">待确认</span></td></tr>
+      <tr><td><span class="no">66</span><span class="src">二次反馈</span></td><td>各专项分表字段可能不完全一致，汇总总表前必须由熟悉业务的人统一口径。</td><td>建立字段口径确认表；每个字段需确认字段名、类型、枚举、必填、是否汇总、冲突处理规则。</td><td><span class="chip c-confirm">待确认</span></td></tr>
+      <tr><td><span class="no">67</span><span class="src">二次反馈</span></td><td>工具上线后前两周建议与汇总表维护人员密集迭代。</td><td>安排试运行反馈机制：导入问题、字段冲突、汇总口径、导出格式、权限范围每日收敛。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">68</span><span class="src">正式平台联动</span></td><td>表单过渡工具功能和数据库设计应尽量融入正式平台，避免后续返工。</td><td>工具数据表按正式平台台账字段编码设计；保留项目编号、渠道、单位、成果等核心关联键。</td><td><span class="chip c-sync">同步映射</span></td></tr>
+    </table></div>
+  </section>
+
+  <section id="s8">
+    <h2><span class="sec">排期</span>本轮推进安排与前置依赖</h2>
+    <div class="h2sub">结合群聊中的时间表达，统一改写为明确日期，便于后续跟踪</div>
+    <div class="scroll"><table>
+      <tr><th>来源 / 触发</th><th>待补充或更新需求</th><th>平台功能更新落点</th><th>状态</th></tr>
+      <tr><td><span class="no">69</span><span class="src">工作安排</span></td><td>2026-07-13 至 2026-07-17 并行推进平台 Demo 本轮优化与表单过渡工具。</td><td>排期拆成两个交付包：平台 V19 批注优化包、表单过渡工具先行包。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">70</span><span class="src">工作安排</span></td><td>平台 Demo 本轮优化承接上次评审反馈和 2026-07-10 反馈，目标约 2026-07-16 提交新版本演示。</td><td>Demo 更新范围优先覆盖：领导角色、台账字段、看板逻辑、成果转化独立、后评价暂缓、查重入口。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">71</span><span class="src">工作安排</span></td><td>表单过渡工具在前置条件到位后预计一周内出一版。</td><td>前置条件包括真实表格及字段口径、内网机与运行环境、审批/安全检查要求。</td><td><span class="chip c-confirm">待确认</span></td></tr>
+      <tr><td><span class="no">72</span><span class="src">资源安排</span></td><td>开发资源由宇飞和会冉并行承担，下周 full-time 做平台优化与表单工具。</td><td>建议将任务拆为前端页面、导入导出、字段口径、部署联调、冒烟测试五类任务跟踪。</td><td><span class="chip c-update">本轮更新</span></td></tr>
+      <tr><td><span class="no">73</span><span class="src">风险</span></td><td>最大风险是表格晚到、字段口径不统一、内网机无法安装运行环境或端口不可访问。</td><td>将风险写入待确认清单，避免“功能做完但无法部署/无法导入真实表”的交付落差。</td><td><span class="chip c-confirm">待确认</span></td></tr>
+      <tr><td><span class="no">74</span><span class="src">验收口径</span></td><td>本 HTML 矩阵应作为 V19 更新跟踪表使用，后续每个事项需补充责任人、完成状态和验收证据。</td><td>建议后续扩展列：责任人、计划完成日期、实际完成日期、验证方式、截图/链接。</td><td><span class="chip c-confirm">待确认</span></td></tr>
+    </table></div>
+  </section>
+
+  <div class="foot">
+    统计口径：本矩阵只统计 V19 相比现有矩阵需要补充、更新、暂缓或确认的事项；同一批注会按“文档修订、页面入口、字段口径、权限、数据联动、部署依赖”等可执行颗粒拆分。<br>
+    主要来源：<code>科研项目信息化管理平台需求V19-411582批注整理.md</code> · <code>科研预研平台二次反馈（群聊天记录）.docx</code> · <code>需求V18-平台功能对照矩阵.html</code>；参考：<code>参考需求V19-平台功能对照矩阵.html</code>。
+  </div>
+</div>
+
+</body>
+</html>

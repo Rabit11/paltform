@@ -1,0 +1,27 @@
+# Local agent and generated review artifacts
+.codex_work/
+.worktrees/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Node / frontend
+node_modules/
+dist/
+build/
+.vite/
+
+# Local databases and runtime files
+*.db
+*.sqlite
+*.sqlite3
+
+# Office temporary lock files
+~$*
+
+# Logs
+*.log

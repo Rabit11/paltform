@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>参考需求V19 ↔ 平台功能对照矩阵</title>
+</head>
+<body>
+<style>
+  :root {
+    --bg: #F5F7FB; --panel: #FFFFFF; --panel2: #EDF1F8;
+    --ink: #1B2537; --dim: #5B6B84; --line: #E2E8F2; --line2: #CBD6E6;
+    --accent: #0369A1; --accent-soft: rgba(3, 105, 161, 0.08);
+    --ok: #047857; --ok-soft: rgba(4, 120, 87, 0.09);
+    --part: #0369A1; --part-soft: rgba(3, 105, 161, 0.08);
+    --note: #64748B; --note-soft: rgba(100, 116, 139, 0.1);
+    --off: #DC2626; --off-soft: rgba(220, 38, 38, 0.1);
+    --mono: "JetBrains Mono", "Cascadia Code", Consolas, "Courier New", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0B1120; --panel: #111A2E; --panel2: #16213A;
+      --ink: #E2E8F0; --dim: #94A3B8; --line: rgba(148,163,184,0.14); --line2: rgba(148,163,184,0.3);
+      --accent: #38BDF8; --accent-soft: rgba(56, 189, 248, 0.1);
+      --ok: #34D399; --ok-soft: rgba(52, 211, 153, 0.1);
+      --part: #38BDF8; --part-soft: rgba(56, 189, 248, 0.1);
+      --note: #94A3B8; --note-soft: rgba(148, 163, 184, 0.14);
+      --off: #F87171; --off-soft: rgba(248, 113, 113, 0.14);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0B1120; --panel: #111A2E; --panel2: #16213A;
+    --ink: #E2E8F0; --dim: #94A3B8; --line: rgba(148,163,184,0.14); --line2: rgba(148,163,184,0.3);
+    --accent: #38BDF8; --accent-soft: rgba(56, 189, 248, 0.1);
+    --ok: #34D399; --ok-soft: rgba(52, 211, 153, 0.1);
+    --part: #38BDF8; --part-soft: rgba(56, 189, 248, 0.1);
+    --note: #94A3B8; --note-soft: rgba(148, 163, 184, 0.14);
+    --off: #F87171; --off-soft: rgba(248, 113, 113, 0.14);
+  }
+  :root[data-theme="light"] {
+    --bg: #F5F7FB; --panel: #FFFFFF; --panel2: #EDF1F8;
+    --ink: #1B2537; --dim: #5B6B84; --line: #E2E8F2; --line2: #CBD6E6;
+    --accent: #0369A1; --accent-soft: rgba(3, 105, 161, 0.08);
+    --ok: #047857; --ok-soft: rgba(4, 120, 87, 0.09);
+    --part: #0369A1; --part-soft: rgba(3, 105, 161, 0.08);
+    --note: #64748B; --note-soft: rgba(100, 116, 139, 0.1);
+    --off: #DC2626; --off-soft: rgba(220, 38, 38, 0.1);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.65 "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 28px 72px; }
+  .eyebrow { font: 11px/1 var(--mono); letter-spacing: 0.25em; color: var(--accent); text-transform: uppercase; }
+  h1 { font-size: 25px; margin: 10px 0 6px; text-wrap: balance; }
+  .sub { color: var(--dim); font-size: 13px; max-width: 72ch; }
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 22px 0 8px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .stat b { display: block; font: 600 22px/1.2 var(--mono); font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 11.5px; color: var(--dim); }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 14px 0 4px; font-size: 12px; color: var(--dim); }
+  .toc { display: flex; flex-wrap: wrap; gap: 7px; margin: 18px 0 6px; }
+  .toc a {
+    font-size: 12px; color: var(--dim); text-decoration: none; padding: 4px 11px;
+    border: 1px solid var(--line); border-radius: 999px; background: var(--panel); white-space: nowrap;
+  }
+  .toc a:hover { color: var(--accent); border-color: var(--accent); }
+  section { margin-top: 34px; }
+  h2 { font-size: 16.5px; margin: 0 0 3px; }
+  h2 .sec { font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: 0.12em; margin-right: 8px; }
+  .h2sub { font-size: 12px; color: var(--dim); margin-bottom: 12px; }
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+  table { width: 100%; border-collapse: collapse; min-width: 780px; }
+  th {
+    text-align: left; font-size: 11px; letter-spacing: 0.1em; color: var(--dim); font-weight: 500;
+    padding: 10px 14px; background: var(--panel2); border-bottom: 1px solid var(--line2);
+  }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 13px; }
+  tr:last-child td { border-bottom: none; }
+  td:first-child { width: 38%; }
+  td:nth-child(2) { width: 46%; color: var(--dim); }
+  td:nth-child(2) b { color: var(--ink); font-weight: 600; }
+  .no { font: 11px/1 var(--mono); color: var(--dim); margin-right: 6px; }
+  .pg {
+    display: inline-block; font-size: 11.5px; color: var(--accent); background: var(--accent-soft);
+    border-radius: 5px; padding: 0.5px 6px; margin: 0 1px; white-space: nowrap;
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+    font-size: 11.5px; border-radius: 999px; padding: 2px 9px;
+  }
+  .chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .c-ok { color: var(--ok); background: var(--ok-soft); }
+  .c-part { color: var(--part); background: var(--part-soft); }
+  .c-note { color: var(--note); background: var(--note-soft); }
+  .c-off { color: var(--off); background: var(--off-soft); }
+  .foot { margin-top: 40px; font-size: 12px; color: var(--dim); border-top: 1px solid var(--line); padding-top: 16px; }
+  code { font-family: var(--mono); font-size: 12px; background: var(--panel2); border-radius: 4px; padding: 0 5px; }
+  @media (max-width: 760px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .wrap { padding: 28px 18px 56px; }
+  }
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">Requirement Traceability Matrix</div>
+  <h1>《科研项目信息化管理平台需求 V19》↔ 平台功能对照矩阵</h1>
+  <p class="sub">依据《科研项目信息化管理平台需求V18.docx》《科研项目信息化管理平台需求V19.docx》和《科研预研平台二次反馈（群聊天记录）.docx》，参考 V18 HTML 矩阵样式整理。矩阵以 V18 为基线梳理 V19 变化，重点补充数智大屏源头数据定位、台账字段大改、渠道口径、经费双体系、验收/成果转化联动，以及二次反馈中的表单过渡工具。整理日期：2026-07-11。</p>
+
+  <div class="stats">
+    <div class="stat"><b>111</b><span>梳理条款 / 反馈项</span></div>
+    <div class="stat"><b style="color:var(--ok)">98</b><span>完整实现 · 沿用/补齐演示落点</span></div>
+    <div class="stat"><b style="color:var(--part)">5</b><span>交互简化 · 依赖外部接口</span></div>
+    <div class="stat"><b style="color:var(--note)">3</b><span>待补充 · 灰色标注</span></div>
+    <div class="stat"><b style="color:var(--off)">5</b><span>二次反馈新增 · 红色标注</span></div>
+  </div>
+  <div class="legend">
+    <span class="chip c-ok">完整实现</span>演示平台已有可交互落点或可按 V18 能力直接补齐
+    <span class="chip c-part">交互简化</span>规则与页面具备，真实网关/外部系统需联调
+    <span class="chip c-note">待补充</span>字段、等级、部署或流程需补充确认
+    <span class="chip c-off">二次反馈新增</span>二次反馈提出且需新增交付
+  </div>
+  <nav class="toc">
+    <a href="#s0">V18→V19变化</a>
+    <a href="#s1">总体定位与建设原则</a>
+    <a href="#s2">项目分类体系</a>
+    <a href="#s3">角色定义与权限</a>
+    <a href="#s4">渠道全周期流程</a>
+    <a href="#s5">四色状态与预警</a>
+    <a href="#s6">总流程与功能架构</a>
+    <a href="#s7">项目总览与台账</a>
+    <a href="#s8">可视化看板</a>
+    <a href="#s9">立项阶段</a>
+    <a href="#s10">实施阶段</a>
+    <a href="#s11">验收、交付物与协作评价</a>
+    <a href="#s12">成果转化</a>
+    <a href="#s13">后评价与通用机制</a>
+    <a href="#s14">二次反馈：表单过渡工具</a>
+  </nav>
+
+  <section id="s0">
+    <h2><span class="sec">对比</span>V18→V19 主要变化</h2>
+    <div class="h2sub">以 V18 文档为基线 · 提炼 V19 新增/调整口径 · 作为后续矩阵展开依据</div>
+    <div class="scroll"><table>
+      <tr><th>V19 变化点</th><th>平台落点 / 处理方式</th><th>状态</th></tr>
+      <tr><td><span class="no">01</span>V19 新增“科技管理数智大屏项目深化与延续、为数智大屏科研项目板块提供源头数据支撑”的建设定位。</td><td><span class="pg">项目台账</span>与<span class="pg">可视化看板</span>作为数智大屏科研项目数据源，统一从立项、实施、验收、成果转化等业务节点归集。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">02</span>V19 将 V18 台账字段口径重构为项目所属信息、主要工作内容、团队、科研年度目标、科研经费、交付物、协作评价、成果转化 8 大板块。</td><td><span class="pg">项目台账</span>按 8 大板块组织列配置，<span class="pg">项目详情</span>按同源业务视图追溯原始记录。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">03</span>项目所属信息从 V18 的名称/目标/开始结束时间等旧口径，调整为项目编号、级别、立项部门、项目渠道、一级/二级专业、管理/需求单位、责任单位、验收状态、立项年月、结束年月、周期等新口径。</td><td><span class="pg">项目基本信息</span>和<span class="pg">配置中心·字典</span>补齐专业、单位、渠道、状态等下拉口径，并自动回写台账。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">04</span>V19 将主要工作内容从项目所属信息中拆出，单独形成牵头单位、主要工作内容、参研单位及预留参研单位字段。</td><td><span class="pg">项目详情·基本信息</span>独立维护牵头/参研分工；台账按板块汇总展示，避免长字段挤压项目所属信息。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">05</span>科研经费情况由 V18 的总经费、历年支出、年度预算、年度支出 4 项，扩展为国拨经费、自筹经费、商飞内部单位经费、累计支出、结题实际执行经费和执行率等 10 项。</td><td><span class="pg">经费执行台账</span>承接项目端经费字段，<span class="pg">总部拨付管控</span>承接总部预算拨付字段，二者独立存储、台账统一展示。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">06</span>字段说明表由 V18 的 62 项扩展到 V19 的 74 项，重点增加专业、单位、验收、周期、经费拆分和结题执行率等说明。</td><td>矩阵中的台账分组已按 V19 74 项字段说明重新展开；二次反馈表单过渡工具也要求沿用同一字段口径。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+    </table></div>
+  </section>
+
+  <section id="s1">
+    <h2><span class="sec">总览</span>总体定位与建设原则</h2>
+    <div class="h2sub">数智大屏源头数据 · 科研项目一本账 · 宏观统筹 · 全链闭环</div>
+    <div class="scroll"><table>
+      <tr><th>需求条款 / 反馈要求</th><th>平台落点 / 建议落点</th><th>状态</th></tr>
+      <tr><td><span class="no">07</span>科研项目信息化管理平台作为科技管理数智大屏“科研项目”板块的源头数据支撑。</td><td><span class="pg">项目台账</span>、<span class="pg">可视化看板</span>与全生命周期详情共同承接源头数据归集，形成项目级数据底座并向大屏指标供数。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">08</span>平台立足统筹归集、宏观管控、不干预具体执行计划，实现科研项目“一本账”管理。</td><td><span class="pg">项目总览</span>负责公司级宏观统计，<span class="pg">计划管理</span>仅同步 CMOS 计划与办结状态，避免替代二级单位具体执行系统。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">09</span>覆盖科技部管理的所有科研项目，按国家级、地方级、公司级三大层级适配差异化流程。</td><td><span class="pg">配置中心·渠道字典</span>维护三层级 15 条渠道；<span class="pg">配置中心·流程模板</span>按渠道绑定申报、实施、验收、评估与变更节点。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">10</span>建设原则包含统一框架、差异化适配、全链闭环、全程可溯、信息整合与多维可视。</td><td>流程实例、附件归档、审计日志、看板筛选和项目详情 8 个视图共同覆盖“统一框架 + 差异化配置 + 可视化分析”。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+    </table></div>
+  </section>
+  <section id="s2">
+    <h2><span class="sec">§二(一)</span>项目分类体系</h2>
+    <div class="h2sub">国家级 6 条 · 地方级 2 条 · 公司级 7 条 · 渠道编码唯一</div>
+    <div class="scroll"><table>
+      <tr><th>需求条款 / 反馈要求</th><th>平台落点 / 建议落点</th><th>状态</th></tr>
+      <tr><td><span class="no">11</span>按照国家、地方、公司级项目所属渠道，实现分类管控、分类统计、分类展示。</td><td><span class="pg">项目台账</span>层级/渠道筛选，<span class="pg">可视化看板</span>层级与渠道分布，<span class="pg">项目申报</span>按项目来源自适应材料和流程。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">12</span>国家级渠道包含 MJKY、04专项接续、重点研发计划、XX25专项、国家自然科学基金、FGW GXJC项目。</td><td><span class="pg">配置中心·渠道字典</span>补齐 V19 渠道口径，字段覆盖部委/司局、内部管理部门/处室、渠道名称与编码。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">13</span>地方级渠道包含上海市科技攻关揭榜挂帅、上海市科技创新行动计划。</td><td>地方级渠道在<span class="pg">项目申报</span>、<span class="pg">评估检查</span>、<span class="pg">项目验收</span>中使用独立流程与属地验收栏目。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">14</span>公司级渠道包含预研三年滚动计划、重大科技创新专项、新疆大飞机气象创新中心、科技周、大飞机研究院、大飞机先进材料创新联盟、“中国商飞-波音”可持续航空技术研究中心项目。</td><td>公司级渠道支持常规预研、报备类项目和联盟/研究院/科技周等特殊流程；<span class="pg">流程模板</span>按渠道配置节点链。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">15</span>项目层级立项后原则上不可变更，特殊情况需走“数据变更”审批流程。</td><td><span class="pg">项目详情</span>基本信息弹窗中层级字段锁定；<span class="pg">项目变更</span>提供数据变更入口，审批通过后回写台账并留痕。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">16</span>新增/终止项目渠道需责任单位科技部申请、总部科技部审批、超级管理员维护；所有渠道编码全局唯一。</td><td><span class="pg">配置中心</span>支持渠道新增、停用/启用和唯一编码校验；后端 <code>channels</code> 字典表保留唯一约束和审计记录。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+    </table></div>
+  </section>
+  <section id="s3">
+    <h2><span class="sec">§二(二)</span>角色定义与权限</h2>
+    <div class="h2sub">项目团队 · 责任总师 · 管理团队 · 财务团队 · 超级管理员</div>
+    <div class="scroll"><table>
+      <tr><th>需求条款 / 反馈要求</th><th>平台落点 / 建议落点</th><th>状态</th></tr>
+      <tr><td><span class="no">17</span>项目团队负责全周期资料填报、节点推进、协作单位基础信息、成果转化基础信息与佐证上传；仅操作本人关联项目。</td><td>演示账号林晚晴对应<span class="pg">工作台</span>、<span class="pg">项目申报</span>、<span class="pg">里程碑填报</span>、<span class="pg">计划管理</span>、<span class="pg">项目变更</span>；API 按成员关系限定项目范围。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">18</span>责任总师负责技术指导、建议书/任务书/验收申请审核、线上材料评审；一级/二级总师查看本人经手项目，无修改权限。</td><td>演示账号陈铁军对应<span class="pg">评审工作台</span>；待办队列覆盖申报审签、验收复核、后评价把关，只读签署意见并留痕。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">19</span>管理团队负责总部统筹与单位范围管理，组织协作单位评价、后评价，审核成果转化并督办进度。</td><td>演示账号王建国可访问全量<span class="pg">项目台账</span>、<span class="pg">审批中心</span>、<span class="pg">可视化看板</span>；单位管理角色按组织范围限权。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">20</span>财务团队负责经费核对、预算核销、异常监管和经费系统数据对接；二级公司财务仅查看本单位经费台账。</td><td>演示账号赵美玲对应<span class="pg">经费执行台账</span>、核销凭证、总部额度/到账视图；财务权限不开放业务字段修改。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">21</span>超级管理员负责权限配置、流程模板维护和全平台运维；岗位变动/离职后 7 个工作日内完成账号回收或移交，禁止直接修改业务数据。</td><td><span class="pg">配置中心</span>提供账号离岗、恢复、角色权限矩阵、流程模板和审计日志；业务数据修改必须走审批流程。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">22</span>各一级/二级导航需明确填报角色与查看角色矩阵。</td><td><span class="pg">配置中心·角色权限矩阵</span>按模块列出项目团队、责任总师、管理团队、财务团队、超级管理员的查看、编辑、导出和审批边界。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+    </table></div>
+  </section>
+  <section id="s4">
+    <h2><span class="sec">§二(三)</span>渠道全周期流程</h2>
+    <div class="h2sub">15 条渠道 · 差异化节点 · 线上线下衔接</div>
+    <div class="scroll"><table>
+      <tr><th>需求条款 / 反馈要求</th><th>平台落点 / 建议落点</th><th>状态</th></tr>
+      <tr><td><span class="no">23</span>国家级项目按 MJKY、04专项接续、重点研发计划、XX25专项、国家自然科学基金等渠道配置差异化节点。</td><td><span class="pg">流程模板</span>维护建议书/申请书/任务清单、立项批复、任务书/合同、中期评估、单位/公司/国家验收等节点组合。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">24</span>地方级项目按揭榜挂帅、科技创新行动计划配置榜单、合同、中期或阶段性检查、单位验收和综合绩效评价。</td><td><span class="pg">项目申报</span>与<span class="pg">评估检查</span>按地方渠道生成对应材料清单和审批链，验收表单开放属地主管部门栏目。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">25</span>公司级常规预研、新疆气象创新中心、重大科技创新专项等按建议书/申请书、任务书、阶段检查、单位/公司验收配置。</td><td>公司级流程在<span class="pg">流程模板</span>中可复制、停用和版本化；项目详情展示当前渠道节点链和已完成状态。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">26</span>科技周、大飞机研究院、大飞机先进材料创新联盟具备特殊业务流程，包含需求发布、学术委员会/理事会审议、联盟评审等节点。</td><td><span class="pg">配置中心·流程模板</span>支持非标准节点名称和节点角色配置；<span class="pg">审批中心</span>以流程实例方式展示特殊节点流转。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">27</span>“中国商飞-波音”可持续航空技术研究中心项目以报备申签、三方合同、实施、验收、拨款合同和拨款为主线。</td><td><span class="pg">项目申报</span>渠道卡标注报备类；<span class="pg">项目立项</span>归档波音指导委员会会议纪要和三方合同，后续流转至实施与拨付。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+    </table></div>
+  </section>
+  <section id="s5">
+    <h2><span class="sec">§二(四)</span>四色状态与预警</h2>
+    <div class="h2sub">绿完成 · 蓝正常 · 黄临期 · 红逾期</div>
+    <div class="scroll"><table>
+      <tr><th>需求条款 / 反馈要求</th><th>平台落点 / 建议落点</th><th>状态</th></tr>
+      <tr><td><span class="no">28</span>全局四色状态优先级为红＞黄＞蓝＞绿：绿为完成，蓝为距到期大于 30 天，黄为距到期小于等于 30 天，红为超期未完成。</td><td>后端规则引擎统一计算项目、里程碑、计划、交付物和成果包颜色；前端状态点、徽章、表格和图表使用同一语义。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">29</span>四色状态适用于项目整体状态、单里程碑、单计划节点全场景。</td><td>项目色取未完成节点最差色；<span class="pg">项目台账</span>、<span class="pg">项目详情</span>、<span class="pg">计划管理</span>、<span class="pg">里程碑填报</span>和<span class="pg">可视化看板</span>联动展示。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">30</span>预警推送方式为平台站内消息、企业邮箱、蓝信；对象为项目团队与对应管理团队。</td><td><span class="pg">预警中心</span>和顶栏铃铛为站内真实通知；企业邮箱/蓝信需部署环境提供网关后接入。</td><td><span class="chip c-part">交互简化</span></td></tr>
+      <tr><td><span class="no">31</span>风险预警黄色：节点到期前 30 天自动触发。</td><td>到期日与当前日期实时计算，黄色预警进入<span class="pg">预警中心</span>并在台账/详情页提示责任人处理。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">32</span>逾期告警红色：节点到期当日自动触发，台账和可视化看板高亮展示。</td><td><span class="pg">项目台账</span>预警列、<span class="pg">可视化看板</span>风险榜和<span class="pg">项目详情</span>时间线同步高亮，红色记录置顶展示。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+    </table></div>
+  </section>
+  <section id="s6">
+    <h2><span class="sec">§三</span>总流程与功能架构</h2>
+    <div class="h2sub">项目总览 · 立项 · 实施 · 验收 · 后评价 · 成果转化</div>
+    <div class="scroll"><table>
+      <tr><th>需求条款 / 反馈要求</th><th>平台落点 / 建议落点</th><th>状态</th></tr>
+      <tr><td><span class="no">33</span>平台功能架构包含项目总览、立项阶段、实施阶段、验收阶段、后评价、成果转化六大层级。</td><td>侧边导航与模块权限按六大层级组织；各模块数据最终汇入<span class="pg">项目台账</span>、<span class="pg">可视化看板</span>和项目详情归档。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">34</span>全生命周期总流程从项目申报、立项备案进入差异化实施路径，再流转至验收、协作单位评价、后评价和成果转化。</td><td><span class="pg">项目详情</span>以概览、里程碑、计划、经费、交付物、协作评价、成果转化、审批归档 8 个视图串联全流程。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">35</span>全流程业务数据同步汇总至可视化看板，资料统一线上归档留存，形成闭环。</td><td>附件、审批意见、评分报告、付款凭证、成果转化佐证材料均进入<span class="pg">项目详情·归档</span>，并由审计日志记录关键动作。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">36</span>V19 明确一级导航/二级导航的填报角色与查看角色。</td><td><span class="pg">配置中心·角色权限矩阵</span>可作为 V19 表 8 的系统落点，按导航项配置填报、查看、导出和审批权限。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+    </table></div>
+  </section>
+  <section id="s7">
+    <h2><span class="sec">§四(一)</span>项目总览与台账</h2>
+    <div class="h2sub">V19 台账大修改 · 8 大板块 · 73 项字段说明</div>
+    <div class="scroll"><table>
+      <tr><th>需求条款 / 反馈要求</th><th>平台落点 / 建议落点</th><th>状态</th></tr>
+      <tr><td><span class="no">37</span>项目台账由平台自动归集立项、实施、验收全流程填报信息生成，无需二级单位手工录入。</td><td><span class="pg">项目台账</span>由服务端聚合项目基本信息、里程碑、计划、经费、交付物、协作评价和成果转化数据实时生成。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">38</span>V19 将台账拆为项目所属信息、主要工作内容、团队、科研年度目标、科研经费情况、交付物、协作单位评价、成果转化 8 大板块。</td><td><span class="pg">项目台账</span>列配置按 8 大板块分组；<span class="pg">项目详情</span>同源展示并支持按板块追溯原始业务记录。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">39</span>项目所属信息表头包含项目编号、级别、立项部门、项目渠道、一级/二级专业、项目名称、责任单位、项目状态、验收状态、成果转化情况、预警等。</td><td><span class="pg">项目台账</span>字段模型补齐 V19 表头；项目编号自动生成，层级/渠道/专业/状态均使用统一字典。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">40</span>一级专业、二级专业需使用公司统一专业字典，并支撑后续统计。</td><td><span class="pg">配置中心</span>可维护专业字典；<span class="pg">项目申报</span>和<span class="pg">项目基本信息</span>填报时使用下拉选择，<span class="pg">可视化看板</span>按专业统计。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">41</span>团队板块需覆盖技术团队、责任专家、管理团队、财务团队共 12 个岗位。</td><td><span class="pg">项目详情·项目团队</span>展示项目负责人、技术负责人、项目主管、一级/二级总师、总部/单位管理、总部/单位财务等岗位。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">42</span>科研年度目标及计划需记录年度目标、计划内容、完成时间、完成情况、计划完成状态。</td><td><span class="pg">计划管理</span>与<span class="pg">里程碑填报</span>为年度目标和计划状态供数，四色状态自动回写台账。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">43</span>科研经费情况需区分总经费、国拨经费、自筹经费、内部单位经费、累计支出、年度预算、年度支出、已结题执行经费和执行率。</td><td><span class="pg">经费执行台账</span>按项目端经费口径维护，<span class="pg">总部拨付管控</span>按总部经费盘子维护；台账只汇总展示关键指标。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">44</span>交付物、协作单位评价、成果转化字段需与验收和成果转化模块联动，不重复填报。</td><td><span class="pg">项目详情·交付物</span>、<span class="pg">协作评价</span>、<span class="pg">成果转化台账</span>通过成果编号和项目编号回写台账对应列。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">45</span>支持按项目渠道类别、项目状态、项目开始时间等多维组合筛选。</td><td><span class="pg">项目台账</span>提供关键词、年度、层级、渠道、单位、状态、四色预警等组合筛选并实时刷新汇总。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">46</span>提供自定义列配置与批量导出 Excel 功能。</td><td><span class="pg">项目台账</span>列配置弹层按字段显隐；管理团队/超级管理员可导出真实 .xlsx，项目团队无全量导出入口。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">47</span>点击项目名称跳转至项目全生命周期详情页，溯源立项资料、里程碑、经费、验收归档、科研成果等信息。</td><td><span class="pg">项目台账</span>行点击进入<span class="pg">项目详情</span>，按 8 个视图定位数据来源、审批记录和归档附件。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">48</span>二次反馈指出“第20页批注实际应为对台账部分进行了大修改，麻烦同步更新”。</td><td>本版矩阵已将台账作为 V19 重点变更单独展开，覆盖 8 大板块、字段口径、统计口径和后续过渡工具字段一致性。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+    </table></div>
+  </section>
+  <section id="s8">
+    <h2><span class="sec">§四(一)</span>可视化看板</h2>
+    <div class="h2sub">底层台账自动渲染 · 六大维度 · 指标穿透</div>
+    <div class="scroll"><table>
+      <tr><th>需求条款 / 反馈要求</th><th>平台落点 / 建议落点</th><th>状态</th></tr>
+      <tr><td><span class="no">49</span>看板基于台账底层数据自动运算渲染，采用柱状图、饼图、折线图、指标卡片、预警榜单等形式。</td><td><span class="pg">可视化看板</span>由台账 API 聚合生成 KPI、趋势图、结构图、风险榜和转化漏斗，无需下级单位二次填报。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">50</span>看板从项目数量分布、各类经费收支执行、项目实施进度、交付物产出、项目风险预警、成果转化六大维度展示。</td><td>看板包含项目数量、经费预算执行、单位×里程碑四色矩阵、交付物结构、风险预警榜、成果转化漏斗等组件。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">51</span>本功能为总部专属分析模块，同时面向管理团队、财务团队、一级责任总师开放查看权限。</td><td>导航权限从 V18 的总部管理视角扩展为管理团队、财务团队和一级总师可见；项目团队仅单点查看本人项目。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">52</span>支持按年度、承担单位、项目来源、项目层级及细分渠道进行数据筛选。</td><td><span class="pg">可视化看板</span>筛选条覆盖年度、单位、来源/层级、渠道，筛选结果联动所有图表和风险榜。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">53</span>点击图表指标可联动跳转至对应项目台账明细，溯源全生命周期资料。</td><td>层级环图、单位矩阵、风险榜等图表点击后带筛选条件进入<span class="pg">项目台账</span>或<span class="pg">项目详情</span>。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+    </table></div>
+  </section>
+  <section id="s9">
+    <h2><span class="sec">§四(二)</span>立项阶段</h2>
+    <div class="h2sub">申报审批 · 立项备案 · 材料自适应 · 报备类项目</div>
+    <div class="scroll"><table>
+      <tr><th>需求条款 / 反馈要求</th><th>平台落点 / 建议落点</th><th>状态</th></tr>
+      <tr><td><span class="no">54</span>用户选择项目来源后，系统根据项目来源自适应展示附件填报栏目，非本项目类别材料字段锁定不可编辑。</td><td><span class="pg">项目申报</span>向导按渠道加载 V19 表 18 材料清单，并锁定非本渠道字段。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">55</span>项目申报需提交材料和项目立项需提交材料按渠道差异化配置。</td><td><span class="pg">配置中心·渠道字典</span>维护申报材料、立项材料；<span class="pg">项目申报</span>和<span class="pg">项目立项</span>根据渠道自动生成材料上传区。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">56</span>通用审批规则：驳回退回初始填报节点、附件可更换、流程可撤销、撤销后回到草稿状态。</td><td><span class="pg">审批中心</span>支持驳回、重新提交、附件替换/补充、撤销流程与永久留痕。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">57</span>MJKY、04专项接续、重点研发计划、国家自然科学基金等常规国家级项目走项目联系人至总部科技部科研项目处的线上审签，余下线下报批。</td><td><span class="pg">审批中心</span>实例化九级审签链；线下报批结果通过<span class="pg">项目立项</span>上传扫描件归档。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">58</span>XX25专项审签链相比常规国家级项目不含单位财务部门负责人节点。</td><td><span class="pg">流程模板</span>支持按渠道调整审签节点，XX25 可配置为无财务节点的专项审签链。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">59</span>科技周、大飞机研究院、大飞机先进材料创新联盟分别包含需求发布、学术委员会/理事会、联盟专委会等特殊流程。</td><td><span class="pg">流程模板</span>支持特殊节点名称、非标准审批角色和线下纪要归档，便于公司级特殊渠道复用。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">60</span>“中国商飞-波音”可持续航空技术研究中心项目为报备申签流程。</td><td><span class="pg">项目申报</span>报备类项目可由单位科技部审批后归档，总部保留查询追溯能力。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">61</span>材料审批完成后，由超级管理员将项目立项状态确定为已立项或不立项；已立项项目进入“项目立项”上传立项文件。</td><td><span class="pg">配置中心</span>和<span class="pg">审批中心</span>保留状态确认动作；<span class="pg">项目立项</span>上传盖章版任务书、立项批复、任务书签署文件或批准通知。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">62</span>申报模块可由二级单位管理部门转办给项目负责人填写。</td><td><span class="pg">审批中心</span>转办动作支持指定经办人，转办前后记录在审批时间线中。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+    </table></div>
+  </section>
+  <section id="s10">
+    <h2><span class="sec">§四(三)</span>实施阶段</h2>
+    <div class="h2sub">基本信息 · 里程碑 · 计划 · 经费 · 评估检查 · 项目变更</div>
+    <div class="scroll"><table>
+      <tr><th>需求条款 / 反馈要求</th><th>平台落点 / 建议落点</th><th>状态</th></tr>
+      <tr><td><span class="no">63</span>项目基本信息自动回显项目来源、周期、牵头/参研单位、总经费等立项已有数据，缺失字段由二级单位补充。</td><td><span class="pg">项目详情</span>“完善基本信息”表单回显立项数据，补充目标、参研分工、年度目标、总经费等字段。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">64</span>项目基本信息审批通过后同步更新至项目台账，审批流为项目团队填写→项目负责人→单位科技管理部→单位分管领导→总部科研项目处。</td><td><span class="pg">审批中心</span>执行五级审批链，终审通过后回写<span class="pg">项目台账</span>全部相关字段。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">65</span>里程碑按自然年度分两次线上管理：年初四月前填报总体目标、分项里程碑清单并存档；节点到期后上传/抓取完成佐证材料闭环销项。</td><td><span class="pg">里程碑填报</span>支持年度清单、节点预算、到期佐证上传和销项；完成后同步台账、看板和预警中心。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">66</span>里程碑年初清单和节点预算可通过线下编制后统一上传/批量导入。</td><td><span class="pg">里程碑填报</span>可提供批量导入入口；与二次反馈中的表单过渡工具字段口径保持一致。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">67</span>超期里程碑禁止直接修改，如需延后节点必须通过项目变更模块执行延期审批。</td><td>红色超期节点隐藏直接销项/改期入口，操作位引导至<span class="pg">项目变更</span>；审批通过后更新到期日并留痕。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">68</span>计划管理自动同步 CMOS 中已发布的预研项目计划、专项计划及完成情况，按四色状态提醒。</td><td><span class="pg">计划管理</span>保留同步日志、时间戳和四色状态；真实 CMOS 接口联调前使用模拟数据源。</td><td><span class="chip c-part">交互简化</span></td></tr>
+      <tr><td><span class="no">69</span>待办计划完成后，由项目团队提交办结申请，二级单位管理团队终审，通过后自动进入已完成计划，全程无总部审批。</td><td><span class="pg">计划管理</span>待办/已完成页签与办结审批联动，终审通过后自动迁移记录。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">70</span>经费管理分为项目端经费执行管理和总部经费预算管控两套完全独立体系。</td><td><span class="pg">经费执行台账</span>管理项目端预算/核销；<span class="pg">总部拨付管控</span>管理总部总盘、额度、拨付和清算，二者独立存储。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">71</span>经费预算填报拟实时抓取二级单位经费数据；无法抓取时由项目团队填写并经单位科技部、财务部审批确认。</td><td>真实经费系统接口待联调；演示系统支持手工录入、二级审核、总部财务备案和异常核查。</td><td><span class="chip c-part">交互简化</span></td></tr>
+      <tr><td><span class="no">72</span>年度预算核销在工作闭环后由二级单位财务上传付款凭证，并同步至总部及单位经费看板。</td><td><span class="pg">经费执行台账</span>支持核销凭证上传、凭证号生成、支出/结余实时更新；真实支付系统抓取需外部接口。</td><td><span class="chip c-part">交互简化</span></td></tr>
+      <tr><td><span class="no">73</span>总部经费预算管控包含年度总盘子、各二级单位拨付额度上限、拨付执行和年末清算。</td><td><span class="pg">总部拨付管控</span>展示年度总盘 KPI、单位额度、拨付队列、累计拨付、剩余额度和清算记录。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">74</span>二级单位在核定额度内提交经费拨付申请，总部科技部和财务部双审后拨付，系统自动更新拨付台账。</td><td><span class="pg">总部拨付管控</span>支持拨付申请、科技/财务双审、拨付确认和审计留痕。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">75</span>评估检查按渠道上传或抓取中期评估、季度报告、年度评估、督导材料；不合格需启动整改。</td><td><span class="pg">评估检查</span>按 V19 表 20 配置渠道材料类型和审批流程，整改记录随项目归档。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">76</span>项目变更为实施阶段唯一调整渠道，覆盖延期、经费、外协方、付款节点、核心指标等；数据变更仅用于小幅基础数据纠错。</td><td><span class="pg">项目变更</span>双入口区分项目变更/数据变更；重大变更插入法务审核，MJKY 终审后线下上报 GXB 并线上归档。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+    </table></div>
+  </section>
+  <section id="s11">
+    <h2><span class="sec">§四(三)</span>验收、交付物与协作评价</h2>
+    <div class="h2sub">前置校验 · 分级表单 · 交付物联动 · 评价闭环</div>
+    <div class="scroll"><table>
+      <tr><th>需求条款 / 反馈要求</th><th>平台落点 / 建议落点</th><th>状态</th></tr>
+      <tr><td><span class="no">77</span>项目验收发起前系统强制校验全部里程碑闭环、外协交付物验收合格、节点经费匹配核销完毕。</td><td><span class="pg">项目验收</span>服务端硬拦截未满足项，并在弹窗中展示红绿检查清单。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">78</span>验收表单根据项目来源自动匹配层级：国家级开放单位/公司/国家三级，地方级开放单位/属地主管部门，公司级开放单位/公司两级。</td><td><span class="pg">项目验收</span>弹窗按层级锁定非对应栏目；国家级/MJKY 重大项目自动增加责任总师技术复核环节。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">79</span>验收办结后系统开启 30 天倒计时提醒参研单位评价；外协单位以外协合同验收完成时间为评价起点。</td><td><span class="pg">协作评价</span>根据验收办结或合同验收日期生成倒计时徽章，逾期进入<span class="pg">预警中心</span>。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">80</span>交付物为任务书约定的全部考核成果项，一行对应一项，确保与立项考核指标一一对应。</td><td><span class="pg">项目详情·交付物</span>逐项记录交付物名称、类型、状态、权属和对应成果编号。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">81</span>项目验收办结后，交付物数据自动同步至项目台账与可视化看板，无需重复填报。</td><td>交付物表与<span class="pg">项目台账</span>交付物板块、<span class="pg">可视化看板</span>产出结构图同源。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">82</span>交付物类型执行全局统一字典：专利、论文、软著、技术标准、原理样机、设备、成套技术成果等。</td><td><span class="pg">配置中心</span>维护交付物类型字典，申报识读、交付物台账和看板统计共用同一枚举。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">83</span>全部核心交付物需为“已交付”状态，方可提交项目验收申请。</td><td><span class="pg">项目验收</span>前置校验读取交付物状态，未交付项阻断验收提交。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">84</span>交付物可通过“对应成果编号”绑定成果转化，支持多项交付物打包对应一项成果转化动作。</td><td><span class="pg">成果转化台账</span>与<span class="pg">项目详情·交付物</span>通过成果编号双向追溯。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">85</span>交付物状态同步匹配四色预警规则，逾期未交付自动推送项目团队与管理团队。</td><td>交付物逾期进入<span class="pg">预警中心</span>和看板风险榜，项目详情中显示对应状态徽章。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">86</span>协作单位分参研单位和外协单位，合同签订后即可入库，已入库不重复办理。</td><td><span class="pg">协作评价</span>维护协作单位台账，按牵头/参研/科研外协标签区分并关联合同或项目。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">87</span>协作单位评价从技术能力、交付质量、进度履约、服务配合、合规性 5 个维度量化评分，并上传评价报告及佐证材料。</td><td><span class="pg">协作评价</span>五维评分、总分自动计算、报告上传和佐证归档均已纳入流程。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">88</span>V19 中评价等级存在三档/四档两种写法：表 8 为优秀/良好/合格/不合格，表 17 和表 21 为优秀/合格/不合格。</td><td>建议在<span class="pg">配置中心·评价规则</span>统一等级口径；演示侧可参数化配置阈值与等级标签。</td><td><span class="chip c-note">待补充</span></td></tr>
+      <tr><td><span class="no">89</span>不合格单位纳入黑名单，需明确佐证材料并按程序协调本单位法律部门。</td><td><span class="pg">黑名单</span>页签保存五维明细、佐证说明、法律程序状态和审计日志。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+    </table></div>
+  </section>
+  <section id="s12">
+    <h2><span class="sec">§四(四)</span>成果转化</h2>
+    <div class="h2sub">成果包 · 双向绑定 · 两大转化路径 · 进度预警</div>
+    <div class="scroll"><table>
+      <tr><th>需求条款 / 反馈要求</th><th>平台落点 / 建议落点</th><th>状态</th></tr>
+      <tr><td><span class="no">90</span>成果转化模块为科研成果落地的独立统筹管控载体，承接验收阶段交付物数据。</td><td><span class="pg">成果转化台账</span>作为独立模块，同时回写<span class="pg">项目台账</span>、<span class="pg">可视化看板</span>和<span class="pg">项目详情·交付物</span>。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">91</span>以成果包为最小管理单元，1 个成果包可关联多项交付物，成果编号全局唯一并自动关联所属项目。</td><td>成果编号自动生成，作为交付物与成果包的联动主键，支持多交付物打包转化。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">92</span>仅状态为“已交付”的交付物可纳入成果转化包，未交付成果禁止绑定转化台账。</td><td><span class="pg">成果转化台账</span>新建成果包时置灰未交付项，服务端强校验拒绝非法绑定。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">93</span>转化方式包含向型号转化、向市场转化；转化形式与方式联动。</td><td><span class="pg">成果转化台账</span>按“向型号：装机/未装机；向市场：转让/许可/联合实施/作价投资/其他”配置联动字典。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">94</span>转化状态包含未启动、洽谈中、已签协议、已完成，并按计划转化时间匹配四色预警。</td><td>成果包状态徽章和计划转化时间进入统一四色规则，临期/逾期推送责任部门与管理团队。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">95</span>转化核心信息自动同步至项目台账与可视化看板，转化信息更新后自动回写对应交付物记录。</td><td>台账“成果转化情况/状态”列、看板转化漏斗和交付物对应成果编号实时联动。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">96</span>转化成效佐证材料可上传归档留存，更新转化信息需二级单位管理团队审核确认、总部管理团队备案。</td><td><span class="pg">成果转化台账</span>支持进展更新、佐证上传、二级审核、总部备案和归档下载。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">97</span>转化简介按方式差异化：向型号需含任务、时间、应用对象/单位；向市场需含交易对象、合同金额、净收益、奖励分配等。</td><td><span class="pg">成果转化台账</span>按转化方式切换填写模板和必填校验，保证成果应用成效可纳入后评价。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+    </table></div>
+  </section>
+  <section id="s13">
+    <h2><span class="sec">§三/§四</span>后评价与通用机制</h2>
+    <div class="h2sub">三年内后评价 · 审批通用规则 · 审计归档</div>
+    <div class="scroll"><table>
+      <tr><th>需求条款 / 反馈要求</th><th>平台落点 / 建议落点</th><th>状态</th></tr>
+      <tr><td><span class="no">98</span>后评价须在项目终审完成后三年内开展，成果应用成效纳入后评价核心评价维度。</td><td><span class="pg">后评价管理</span>按验收完成日期计算三年期限，评价卡覆盖目标达成、进度、经费、成果、协作、风险和转化成效。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">99</span>后评价审批链由项目团队填报、二级总师技术把关、二级单位管理部门初审、单位分管领导审批。</td><td><span class="pg">后评价管理</span>和<span class="pg">评审工作台</span>支持后评价四级链，责任总师只读签署意见。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">100</span>审批驳回自动退回初始填报节点，标注驳回意见，支持修改后二次提交，驳回记录留痕归档。</td><td><span class="pg">审批中心</span>已驳回流程显示修改完善入口，重新提交后自初始节点再次流转。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">101</span>流程中经办人/审核人可替换附件；流程撤销仅填报人可发起，撤销后回到草稿状态并永久留存记录。</td><td><span class="pg">审批中心</span>抽屉支持替换/补充附件、撤销流程和附件版本留痕。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">102</span>全流程所有业务数据和资料统一线上归档留存，可查询、可溯源。</td><td><span class="pg">项目详情·归档</span>集中保存申报、立项、实施、验收、评价、成果转化文件；<span class="pg">配置中心·审计日志</span>记录关键动作。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+      <tr><td><span class="no">103</span>对接 CMOS 计划系统、各单位经费系统实时抓取数据。</td><td>同步机制、接口占位、时间戳和审计链路已具备；真实系统联调仍依赖外部接口、网络和授权。</td><td><span class="chip c-part">交互简化</span></td></tr>
+      <tr><td><span class="no">104</span>项目编号系统自动生成、全局唯一。</td><td>项目申报时生成 KY-年份-序号；成果编号生成 CG-序号，与交付物/成果转化双向绑定。</td><td><span class="chip c-ok">完整实现</span></td></tr>
+    </table></div>
+  </section>
+  <section id="s14">
+    <h2><span class="sec">反馈</span>二次反馈：表单过渡工具</h2>
+    <div class="h2sub">先行交付 · 按专项分表 · 自动汇总总表 · 可并入正式平台</div>
+    <div class="scroll"><table>
+      <tr><th>需求条款 / 反馈要求</th><th>平台落点 / 建议落点</th><th>状态</th></tr>
+      <tr><td><span class="no">105</span>上线前需维护多层级、多渠道、大数据量复杂表单，短期同步开发内网运行小程序。</td><td>建议作为<span class="pg">表单过渡工具</span>独立入口，数据结构与正式平台台账字段保持一致，后续可迁移入正式库。</td><td><span class="chip c-off">二次反馈新增</span></td></tr>
+      <tr><td><span class="no">106</span>可将整张表按项目类型拆分成各专项分表。</td><td>新增<span class="pg">表单过渡工具·分表维护</span>：按项目层级/渠道/专项拆分视图，继承 V19 台账字段口径。</td><td><span class="chip c-off">二次反馈新增</span></td></tr>
+      <tr><td><span class="no">107</span>通过维护分表自动汇总更新总表。</td><td>新增<span class="pg">表单过渡工具·总表汇总</span>：分表保存后自动校验字段、合并总表、标注来源专项和更新时间。</td><td><span class="chip c-off">二次反馈新增</span></td></tr>
+      <tr><td><span class="no">108</span>需要表单批量上传功能。</td><td>新增<span class="pg">表单过渡工具·批量导入</span>：支持 Excel 批量上传、字段映射、错误行提示和重复项目校验。</td><td><span class="chip c-off">二次反馈新增</span></td></tr>
+      <tr><td><span class="no">109</span>需支持一键导出，便于过渡期流转。</td><td>新增<span class="pg">表单过渡工具·一键导出</span>：导出总表及按专项拆分文件，导出字段与 V19 台账保持一致。</td><td><span class="chip c-off">二次反馈新增</span></td></tr>
+      <tr><td><span class="no">110</span>使用场景从“各二级单位开放”调整为“总部各项目类型主管上传”，可优先部署在一台可访问的内网机器或单机。</td><td>部署形态需业务侧确认 IP、端口、内网机环境、安全审查和可安装运行环境；单人使用可先降级为本机模式。</td><td><span class="chip c-note">待补充</span></td></tr>
+      <tr><td><span class="no">111</span>表格字段口径依赖真实表格、填写说明和下拉菜单；前置条件到位后预计一周内出一版。</td><td>需先取得各专项真实表格并统一字段口径；建议上线前两周与汇总表维护人员密集迭代。</td><td><span class="chip c-note">待补充</span></td></tr>
+    </table></div>
+  </section>
+
+  <div class="foot">
+    统计口径：条款按“可验证功能颗粒”拆分；同一文档段落或表格可能拆为多条。状态参照 V18 矩阵的演示平台覆盖方式，并额外标注二次反馈中新增的表单过渡工具。本文不是验收结论，而是面向 V19 需求更新和后续开发排期的参考对照矩阵。<br>
+    主要来源：<code>科研项目信息化管理平台需求V18.docx</code> · <code>科研项目信息化管理平台需求V19.docx</code> · <code>科研预研平台二次反馈（群聊天记录）.docx</code> · <code>需求V18-平台功能对照矩阵.html</code>
+  </div>
+</div>
+
+</body>
+</html>
