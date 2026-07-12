@@ -1,34 +1,32 @@
-# Local agent and generated review artifacts
+# Local agent state
 .agents/
+.codex/
 .codex_work/
 .worktrees/
 
-# Python
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.venv/
-venv/
-
-# Node / frontend
+# Dependencies and build outputs
 node_modules/
 dist/
 build/
 .vite/
-tsconfig.tsbuildinfo
+*.tsbuildinfo
 
-# Local databases and runtime files
+# Runtime data, logs and local environment
+*.log
 *.db
 *.sqlite
 *.sqlite3
-server/data/uploads/
-
-# Config and secrets
+*.db-journal
+*.db-wal
+*.db-shm
 .env
-server/ai.config.json
+server/data/
+platform/server/data/
+research_proj_mgmt/platform/server/data/
 
 # Office temporary lock files
 ~$*
 
-# Logs
-*.log
+# OS/editor noise
+.DS_Store
+Thumbs.db
