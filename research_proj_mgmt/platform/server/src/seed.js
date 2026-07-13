@@ -72,10 +72,18 @@ const chByKey = Object.fromEntries(CHANNELS.map((c) => [c.key, c]));
 
 const USERS = [
   { id: 'u_leader', name: '周明远', role: 'leader', scope: 'hq', unit_id: 7, title: '公司领导 / 科技管理数智大屏决策查看' },
-  { id: 'u_hq', name: '王建国', role: 'mgmt', scope: 'hq', unit_id: 7, title: '总部科技部 科研项目处处长' },
-  { id: 'u_team', name: '林晚晴', role: 'team', scope: 'self', unit_id: 1, title: '上飞院 项目负责人 / 高级工程师' },
-  { id: 'u_chief', name: '陈铁军', role: 'chief', scope: 'chief', unit_id: 7, title: '一级责任总师（结构与材料）' },
-  { id: 'u_fin', name: '赵美玲', role: 'finance', scope: 'unit', unit_id: 2, title: '上飞公司 财务部 主管' },
+  { id: 'u_team_owner', name: '林晚晴', role: 'team', scope: 'self', unit_id: 1, title: '项目团队 / 项目责任人' },
+  { id: 'u_team_tech', name: '马浩南', role: 'team', scope: 'self', unit_id: 1, title: '项目团队 / 技术责任人' },
+  { id: 'u_team_pm', name: '吴思远', role: 'team', scope: 'self', unit_id: 1, title: '项目团队 / 项目主管' },
+  { id: 'u_chief', name: '陈铁军', role: 'chief', scope: 'chief', unit_id: 7, title: '责任总师 / 一级总师（公司级）' },
+  { id: 'u_chief2', name: '蔡文渊', role: 'chief', scope: 'chief', unit_id: 1, title: '责任总师 / 二级总师（单位级）' },
+  { id: 'u_hq', name: '王建国', role: 'mgmt', scope: 'hq', unit_id: 7, title: '管理团队 / 总部责任处室处长' },
+  { id: 'u_hq_staff', name: '何雨桐', role: 'mgmt', scope: 'hq', unit_id: 7, title: '管理团队 / 总部科研项目主管' },
+  { id: 'u_unit_mgr', name: '方致远', role: 'mgmt', scope: 'unit', unit_id: 1, title: '管理团队 / 单位科研管理部门负责人' },
+  { id: 'u_unit_pm', name: '田念慈', role: 'mgmt', scope: 'unit', unit_id: 1, title: '管理团队 / 单位项目主管' },
+  { id: 'u_fin_head', name: '毕仲文', role: 'finance', scope: 'unit', unit_id: 1, title: '财务团队 / 二级单位财务负责人' },
+  { id: 'u_fin_staff', name: '龚雪君', role: 'finance', scope: 'unit', unit_id: 1, title: '财务团队 / 经费核销经办' },
+  { id: 'u_fin', name: '赵美玲', role: 'finance', scope: 'unit', unit_id: 2, title: '财务团队 / 上飞公司财务主管' },
   { id: 'u_admin', name: '系统管理员', role: 'admin', scope: 'hq', unit_id: 7, title: '科研项目处 平台运维' },
 ];
 
@@ -95,10 +103,17 @@ function team(unitId, ownerName) {
   const pool = [...P];
   const draw = () => pool.splice(Math.floor(rnd() * pool.length), 1)[0];
   const owner = ownerName || draw();
+  const reserve = (name) => {
+    const idx = pool.indexOf(name);
+    if (idx >= 0) pool.splice(idx, 1);
+    return name;
+  };
+  const tech = owner === '林晚晴' ? reserve('马浩南') : draw();
+  const pm = owner === '林晚晴' ? reserve('吴思远') : draw();
   return {
     owner,
-    tech: draw(),
-    pm: draw(),
+    tech,
+    pm,
     chief1: pick(CHIEF1),
     chief2: pick(CHIEF2),
     hqHead: '王建国',
@@ -206,7 +221,7 @@ for (const f of [DB_PATH, DB_PATH + '-journal', DB_PATH.replace('.db', '.db-wal'
   try { if (existsSync(f)) unlinkSync(f); } catch { /* 服务占用时忽略 */ }
 }
 const db = openDb();
-const TABLES = ['units', 'channels', 'users', 'projects', 'milestones', 'plans', 'funds', 'funding_pool', 'funding_quota', 'funding_requests', 'deliverables', 'packages', 'collaborators', 'post_evals', 'approvals', 'changes', 'documents', 'alerts', 'audit', 'uploads'];
+const TABLES = ['transition_records', 'transition_import_rows', 'transition_import_batches', 'transition_type_owners', 'units', 'channels', 'users', 'projects', 'milestones', 'plans', 'funds', 'funding_pool', 'funding_quota', 'funding_requests', 'deliverables', 'packages', 'collaborators', 'post_evals', 'approvals', 'changes', 'documents', 'alerts', 'audit', 'uploads', 'kv'];
 for (const t of TABLES) db.exec(`DROP TABLE IF EXISTS ${t}`);
 createSchema(db);
 

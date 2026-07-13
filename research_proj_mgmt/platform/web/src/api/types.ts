@@ -131,17 +131,65 @@ export interface DuplicateMatch {
   status: string; owner: string; similarity: number; hitFields: string[]; suggestion: string
 }
 
-export interface TransitionField { group: string; code: string; label: string; required: boolean }
+export interface TransitionField { group: string; code: string; label: string; required: boolean; index?: number; width?: number; number?: boolean }
 export interface TransitionRow {
-  id: string; sourceType: string; sourceSheet: string; code: string; name: string; level: string; channel: string
-  major1: string; major2: string; managerUnit: string; demandUnit: string; leadWork: string
-  totalBudget: number; centralGrant: number; selfFund: number; transformSummary: string; updatedBy: string; updatedAt: string
+  id: string; sourceType: string; sourceSheet: string; sourceFile?: string; sourceRow?: number
+  code: string; serial?: string; name: string; level: string; channel: string; sourceChannel?: string; projectType?: string
+  major1: string; major2: string; center?: string; managerUnit?: string; demandUnit: string; responsibleUnit?: string; leadWork: string
+  projectStatus?: string; acceptanceStatus?: string; owner?: string; approvalMonth?: string; startMonth?: string; endMonth?: string; duration?: string | number
+  totalBudget: number | null; centralGrant: number | null; internalGrant?: number | null; selfFund: number | null; internalSelfFund?: number | null
+  spent?: number | null; budget2026?: number | null; budget2026Actual?: number | null; budget2026Rate?: string
+  closedActualBudget?: number | null; closedGrantSpent?: number | null; closedSelfSpent?: number | null; closedExecutionRate?: string; executionRate?: string
+  resultCount?: number | null; resultNames?: string; convertedCount?: number | null; convertedNames?: string; convertedMonth?: string; convertedModel?: string
+  reserveCount?: number | null; reserveNames?: string; reserveYear?: string; remarks?: string
+  color?: 'red' | 'yellow' | 'blue' | 'green'
+  transformSummary: string; updatedBy: string; updatedAt: string
   validation: { ok: boolean; missing: string[]; warnings: string[] }
+}
+export interface TransitionImportRow {
+  id: number
+  rowNo: number | null
+  identityKey: string
+  projectType: string
+  projectName: string
+  action: 'add' | 'update' | 'skip'
+  row: TransitionRow
+  validation: { ok: boolean; missing: string[]; warnings: string[] }
+  issue: string
+}
+export interface TransitionImportBatch {
+  id: number
+  upload_id: number
+  file_name: string
+  mode: 'merge' | 'replace'
+  status: '待确认' | '待修正' | '已入库' | '已取消'
+  uploaded_by: string
+  uploaded_at: string
+  confirmed_by: string | null
+  confirmed_at: string | null
+  parsed_count: number
+  added_count: number
+  updated_count: number
+  skipped_count: number
+  invalid_count: number
+  report: {
+    imported: number
+    added: number
+    updated: number
+    skipped: number
+    invalid: number
+    errors?: { row?: number | string; name?: string; issue: string }[]
+  }
+  issues: { sheet?: string; row?: number; issue: string }[]
+  rows?: TransitionImportRow[]
 }
 export interface TransitionToolData {
   fields: TransitionField[]
+  dictionaries: { major1: string[]; major2: string[]; projectTypes: string[]; sourceChannels: string[] }
+  filterOptions: { levels: string[]; channels: string[]; units: string[]; statuses: string[]; colors: string[] }
   rows: TransitionRow[]
-  subtables: { name: string; count: number }[]
-  summary: { total: number; valid: number; invalid: number; duplicates: string[]; lastUpdated: string | null }
+  subtables: { name: string; count: number; totalBudget?: number; invalid?: number }[]
+  summary: { total: number; valid: number; invalid: number; duplicates: string[]; lastUpdated: string | null; totalBudget?: number; centralGrant?: number; selfFund?: number }
+  batches: TransitionImportBatch[]
   pending: string[]
 }

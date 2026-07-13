@@ -41,7 +41,7 @@ export const ROLE_HOME: Record<User['role'], string> = {
 
 export const ROLE_LABEL: Record<User['role'], string> = {
   leader: '领导 / 决策查看',
-  mgmt: '管理团队 / 总部',
+  mgmt: '管理团队',
   team: '项目团队',
   chief: '责任总师',
   finance: '财务团队',
@@ -61,6 +61,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (u) {
           setApiUser(u.id)
           setUser(u)
+        } else {
+          localStorage.removeItem('srpm.user')
+          setApiUser('')
         }
       }
     })

@@ -4,7 +4,8 @@
 
 ## 目录结构
 
-- `research_proj_mgmt/platform/`：平台源码与部署文件，包含前端、后端、Dockerfile、docker-compose 和启动脚本。
+- `research_proj_mgmt/platform/`：平台源码与开发目录，包含前端、后端、Dockerfile、docker-compose 和启动脚本。
+- `本地部署/`：本机部署包目录，含同步脚本与一键启动命令（与源码分离，便于演示交付）。
 - `research_proj_mgmt/docs/`：开发说明、功能完善情况说明、平台功能对照矩阵和截图附件。
 - `需求跟进材料/`：需求 V18/V19 原始文档、批注整理、二次反馈记录和 V19 功能更新对照矩阵。
 

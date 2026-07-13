@@ -2,20 +2,22 @@ import { Router } from 'express';
 import multer from 'multer';
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
-import { PDFParse } from 'pdf-parse';
+import JSZip from 'jszip';
 import { readFileSync, mkdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, extname } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { openDb } from './db.js';
+import { openDb, createSchema } from './db.js';
 import { todayISO, statusColor, worstColor, evalGrade, daysLeft, addDays } from './domain.js';
 import { aiStatus, extractProjectInfo } from './ai.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = join(__dirname, '..', 'data', 'uploads');
+const TRANSITION_TEMPLATE_FILE = '预先研究项目信息-表头 (1).xlsx';
 mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const db = openDb();
+createSchema(db);
 const r = Router();
 
 const J = (s, d = null) => { try { return s ? JSON.parse(s) : d; } catch { return d; } };
@@ -23,37 +25,64 @@ const TODAY = () => todayISO();
 const LEVELS = ['国家级', '地方级', '公司级'];
 
 const V19_MAJOR_BY_CHANNEL = {
-  MJKY: ['总体与适航', '低碳动力'],
-  ZX04: ['机载系统', '国产化验证'],
-  ZDYF: ['气动结构', '关键技术'],
-  XX25: ['智能制造', '重大专项'],
-  NSFC: ['基础研究', '机理模型'],
-  FGW: ['数字能力', '基础设施'],
-  JBGS: ['地方攻关', '揭榜挂帅'],
-  SHKC: ['地方攻关', '创新行动'],
-  YYGD: ['预先研究', '滚动计划'],
-  ZDKC: ['重大创新', '专项突破'],
-  XJQX: ['气象创新', '平台能力'],
-  KJZ: ['科技传播', '成果展示'],
-  DFY: ['研究院专项', '标准预研'],
-  CLLM: ['材料联盟', '先进材料'],
-  BOEING: ['国际合作', '可持续航空'],
+  MJKY: ['10-总体气动', '1001-总体与气动'],
+  ZX04: ['30-系统', '3002-飞控'],
+  ZDYF: ['20-机体', '2002-强度'],
+  XX25: ['40-制造', '4001-系统工艺'],
+  NSFC: ['80-通用基础', '8003-情报档案'],
+  FGW: ['80-通用基础', '8005-信息化'],
+  JBGS: ['70-运行支持', '7001-运行支援'],
+  SHKC: ['70-运行支持', '7001-运行支援'],
+  YYGD: ['10-总体气动', '1001-总体与气动'],
+  ZDKC: ['80-通用基础', '8004-标准化技术'],
+  XJQX: ['60-飞行', '6001-试飞工程'],
+  KJZ: ['80-通用基础', '8004-标准化技术'],
+  DFY: ['80-通用基础', '8003-情报档案'],
+  CLLM: ['50-复合材料', '5001-复合材料设计'],
+  BOEING: ['70-运行支持', '7001-运行支援'],
 };
 
 const TRANSITION_FIELDS = [
-  { group: '项目所属信息', code: 'code', label: '项目编号', required: true },
-  { group: '项目所属信息', code: 'name', label: '项目名称', required: true },
-  { group: '项目所属信息', code: 'level', label: '项目级别', required: true },
-  { group: '项目所属信息', code: 'channel', label: '项目渠道', required: true },
-  { group: '项目所属信息', code: 'major1', label: '一级专业', required: false },
-  { group: '项目所属信息', code: 'major2', label: '二级专业', required: false },
-  { group: '项目所属信息', code: 'managerUnit', label: '管理单位', required: false },
-  { group: '项目所属信息', code: 'demandUnit', label: '需求单位', required: false },
-  { group: '主要工作内容', code: 'leadWork', label: '牵头单位/主要工作内容', required: true },
-  { group: '科研经费情况', code: 'totalBudget', label: '总经费(万元)', required: true },
-  { group: '科研经费情况', code: 'centralGrant', label: '国拨经费(万元)', required: false },
-  { group: '科研经费情况', code: 'selfFund', label: '自筹经费(万元)', required: false },
-  { group: '成果转化', code: 'transformSummary', label: '成果转化情况', required: false },
+  { group: '项目基本信息', code: 'serial', label: '序号', required: false, index: 0, width: 8 },
+  { group: '项目基本信息', code: 'level', label: '级别', required: true, index: 1, width: 10 },
+  { group: '项目基本信息', code: 'sourceChannel', label: '项目来源/渠道', required: true, index: 2, width: 16 },
+  { group: '项目基本信息', code: 'projectType', label: '项目类型', required: true, index: 3, width: 16 },
+  { group: '项目基本信息', code: 'major1', label: '一级专业', required: false, index: 4, width: 16 },
+  { group: '项目基本信息', code: 'major2', label: '二级专业', required: false, index: 5, width: 18 },
+  { group: '项目基本信息', code: 'name', label: '项目名称', required: true, index: 6, width: 34 },
+  { group: '项目基本信息', code: 'center', label: '所中心', required: false, index: 7, width: 14 },
+  { group: '项目基本信息', code: 'demandUnit', label: '管理/需求单位', required: false, index: 8, width: 18 },
+  { group: '项目基本信息', code: 'responsibleUnit', label: '责任单位', required: true, index: 9, width: 16 },
+  { group: '项目基本信息', code: 'projectStatus', label: '项目状态', required: true, index: 10, width: 12 },
+  { group: '项目基本信息', code: 'acceptanceStatus', label: '验收状态', required: false, index: 11, width: 12 },
+  { group: '项目基本信息', code: 'owner', label: '负责人', required: false, index: 12, width: 18, aliases: ['中国商飞内部负责人'] },
+  { group: '项目基本信息', code: 'approvalMonth', label: '项目立项年月', required: false, index: 13, width: 14 },
+  { group: '项目基本信息', code: 'startMonth', label: '项目开始年月', required: false, index: 14, width: 14 },
+  { group: '项目基本信息', code: 'endMonth', label: '项目结束年月', required: false, index: 15, width: 14 },
+  { group: '项目基本信息', code: 'duration', label: '项目周期', required: false, index: 16, width: 12 },
+  { group: '经费情况', code: 'totalBudget', label: '总经费（万元）', required: true, index: 17, width: 14, number: true },
+  { group: '经费情况', code: 'centralGrant', label: '国拨经费（万元）', required: false, index: 18, width: 14, number: true },
+  { group: '经费情况', code: 'internalGrant', label: '其中商飞内部单位国拨经费（万元）', required: false, index: 19, width: 22, number: true },
+  { group: '经费情况', code: 'selfFund', label: '自筹经费（万元）', required: false, index: 20, width: 14, number: true },
+  { group: '经费情况', code: 'internalSelfFund', label: '其中商飞内部单位自筹经费（万元）', required: false, index: 21, width: 22, number: true },
+  { group: '经费情况', code: 'spent', label: '累计支出（万元）', required: false, index: 22, width: 14, number: true },
+  { group: '经费情况', code: 'budget2026', label: '2026年预算（万元）', required: false, index: 23, width: 16, number: true },
+  { group: '经费情况', code: 'budget2026Actual', label: '2026年实际执行经费（万元）', required: false, index: 24, width: 18, number: true },
+  { group: '经费情况', code: 'budget2026Rate', label: '2026年预算执行率', required: false, index: 25, width: 16 },
+  { group: '经费情况', code: 'closedActualBudget', label: '已结题项目实际执行经费（万元）', required: false, index: 26, width: 22, number: true },
+  { group: '经费情况', code: 'closedGrantSpent', label: '已结题项目国拨经费执行（万元）', required: false, index: 27, width: 22, number: true },
+  { group: '经费情况', code: 'closedSelfSpent', label: '已结题项目自筹经费执行（万元）', required: false, index: 28, width: 24, number: true, aliases: ['已结题项目国自筹经费执行（万元）'] },
+  { group: '经费情况', code: 'closedExecutionRate', label: '已结题项目经费执行率', required: false, index: 29, width: 16, aliases: ['执行率'] },
+  { group: '成果转化情况', code: 'resultCount', label: '产生成果数量', required: false, index: 30, width: 14, number: true },
+  { group: '成果转化情况', code: 'resultNames', label: '产生成果名称', required: false, index: 31, width: 28 },
+  { group: '成果转化情况', code: 'convertedCount', label: '已转化数量', required: false, index: 32, width: 14, number: true },
+  { group: '成果转化情况', code: 'convertedNames', label: '转化成果名称', required: false, index: 33, width: 28 },
+  { group: '成果转化情况', code: 'convertedMonth', label: '转化年月', required: false, index: 34, width: 14 },
+  { group: '成果转化情况', code: 'convertedModel', label: '转化型号', required: false, index: 35, width: 18 },
+  { group: '成果转化情况', code: 'reserveCount', label: '技术储备数量', required: false, index: 36, width: 14, number: true },
+  { group: '成果转化情况', code: 'reserveNames', label: '储备成果名称', required: false, index: 37, width: 28 },
+  { group: '成果转化情况', code: 'reserveYear', label: '预计转化年度', required: false, index: 38, width: 14 },
+  { group: '备注', code: 'remarks', label: '备注', required: false, index: 39, width: 18 },
 ];
 
 function audit(userName, action, target, detail) {
@@ -780,106 +809,914 @@ r.get('/transformations', (req, res) => {
   res.json({ rows, stats, readonly: user.role === 'leader' });
 });
 
+function cellText(value) {
+  if (value == null) return '';
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).replace(/\s+/g, ' ').trim();
+}
+
+function cellRawText(value) {
+  if (value == null) return '';
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).replace(/\r\n/g, '\n').trim();
+}
+
+function cellNumber(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  const text = cellText(value).replace(/,/g, '').replace(/万元/g, '').replace(/%$/, '');
+  if (!text) return null;
+  const n = Number(text);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizeKey(value) {
+  return cellText(value).replace(/\s+/g, '').toLowerCase();
+}
+
+function normalizeHeaderLabel(value) {
+  return cellText(value).replace(/\s+/g, '').replace(/[()]/g, (m) => (m === '(' ? '（' : '）'));
+}
+
+function transitionFieldLabels(field) {
+  return [field.label, ...(field.aliases || [])].map((x) => normalizeHeaderLabel(x));
+}
+
+function buildTransitionHeaderMap(headerLine, subHeaderLine = []) {
+  const colByLabel = new Map();
+  const maxCols = Math.max(headerLine.length, subHeaderLine.length, TRANSITION_FIELDS.length);
+  for (let c = 0; c < maxCols; c += 1) {
+    const labels = [headerLine[c], subHeaderLine[c]].map((x) => normalizeHeaderLabel(x)).filter(Boolean);
+    for (const label of labels) if (!colByLabel.has(label)) colByLabel.set(label, c);
+  }
+  const map = new Map();
+  const missing = [];
+  for (const field of TRANSITION_FIELDS) {
+    const col = transitionFieldLabels(field).map((label) => colByLabel.get(label)).find((x) => x != null);
+    if (col == null) {
+      if (field.required) missing.push(field.label);
+      continue;
+    }
+    map.set(field.code, col);
+  }
+  return { map, missing };
+}
+
+function transitionProjectType(row) {
+  return cellText(row.projectType || row.sourceSheet || row.sourceType) || '未分类';
+}
+
+function transitionTransformSummary(row) {
+  if (row.transformSummary) return row.transformSummary;
+  const parts = [];
+  if (row.resultCount != null && row.resultCount !== '') parts.push(`成果 ${row.resultCount} 项`);
+  if (row.convertedCount != null && row.convertedCount !== '') parts.push(`已转化 ${row.convertedCount} 项`);
+  if (row.reserveCount != null && row.reserveCount !== '') parts.push(`储备 ${row.reserveCount} 项`);
+  return parts.join('；') || row.resultNames || row.convertedNames || row.reserveNames || '暂无';
+}
+
+function transitionAlertColor(row) {
+  const status = cellText(row.projectStatus || row.acceptanceStatus);
+  if (status.includes('延期') || status.includes('逾期') || status.includes('问题')) return 'red';
+  if (status.includes('验收中') || status.includes('立项中') || status.includes('临期')) return 'yellow';
+  if (status.includes('已完成') || status.includes('已验收') || status.includes('已结题')) return 'green';
+  return 'blue';
+}
+
+function normalizeTransitionRow(row) {
+  const projectType = transitionProjectType(row);
+  const sourceChannel = cellText(row.sourceChannel || row.channel);
+  return {
+    ...row,
+    id: row.id || `TR-${Date.now().toString(36)}-${randomBytes(2).toString('hex')}`,
+    sourceType: projectType,
+    sourceSheet: projectType,
+    projectType,
+    code: row.code || row.serial || '',
+    channel: sourceChannel,
+    sourceChannel,
+    leadWork: row.leadWork || [row.responsibleUnit, row.demandUnit].filter(Boolean).join(' / '),
+    transformSummary: transitionTransformSummary(row),
+    closedExecutionRate: row.closedExecutionRate || row.executionRate || '',
+    budget2026Actual: row.budget2026Actual ?? '',
+    budget2026Rate: row.budget2026Rate || '',
+    color: row.color || transitionAlertColor(row),
+    updatedBy: row.updatedBy || '汇总表维护人',
+    updatedAt: row.updatedAt || TODAY(),
+  };
+}
+
 function defaultTransitionRows() {
   const projects = db.prepare('SELECT p.*, c.name cname FROM projects p JOIN channels c ON c.id=p.channel_id ORDER BY p.id LIMIT 10').all().map((p) => enrichProject(p, TODAY()));
-  return projects.map((p, i) => ({
+  return projects.map((p, i) => normalizeTransitionRow({
     id: `TR-${String(i + 1).padStart(3, '0')}`,
-    sourceType: p.level,
-    sourceSheet: `${p.level}-${p.v19.major1}`,
+    serial: String(i + 1),
     code: p.code,
-    name: p.name,
     level: p.level,
-    channel: db.prepare('SELECT name FROM channels WHERE id=?').get(p.channel_id)?.name || '',
+    sourceChannel: db.prepare('SELECT name FROM channels WHERE id=?').get(p.channel_id)?.name || '',
+    projectType: `${p.v19.major1 || '科技创新'}专项`,
     major1: p.v19.major1,
     major2: p.v19.major2,
-    managerUnit: p.v19.managerUnit,
+    name: p.name,
+    center: '上飞院',
     demandUnit: p.v19.demandUnit,
-    leadWork: p.v19.leadWork,
+    responsibleUnit: p.v19.responsibleUnit,
+    projectStatus: p.status,
+    acceptanceStatus: p.status === '已验收' ? '已验收' : '未验收',
+    owner: p.team?.owner || '',
+    approvalMonth: p.v19.launchMonth,
+    startMonth: p.v19.launchMonth,
+    endMonth: p.v19.endMonth,
+    duration: p.v19.projectMonths,
     totalBudget: p.total_budget,
     centralGrant: p.v19.centralGrant,
     selfFund: p.v19.selfFund,
-    transformSummary: p.v19.transformSummary,
+    spent: p.v19.cumulativeSpent,
+    budget2026: p.yearBudget,
+    budget2026Actual: p.yearSpent,
+    budget2026Rate: p.yearBudget ? `${Math.round((p.yearSpent / p.yearBudget) * 100)}%` : '',
+    closedActualBudget: p.v19.closingActual,
+    closedExecutionRate: `${p.v19.executionRate}%`,
+    resultCount: p.v19.transformCount,
+    resultNames: p.v19.transformSummary,
     updatedBy: i % 2 ? '总部项目类型主管' : '汇总表维护人',
     updatedAt: TODAY(),
   }));
 }
 
 const transitionKey = 'transition.records.v19';
-function getTransitionRows() {
-  const raw = db.prepare('SELECT value FROM kv WHERE key=?').get(transitionKey)?.value;
-  if (raw) return J(raw, []);
-  const rows = defaultTransitionRows();
-  db.prepare('INSERT INTO kv (key,value) VALUES (?,?)').run(transitionKey, JSON.stringify(rows));
-  return rows;
+function canWriteTransition(user) {
+  return user?.role === 'admin' || (user?.role === 'mgmt' && user?.scope === 'hq');
 }
-function setTransitionRows(rows) {
-  db.prepare('INSERT INTO kv (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(transitionKey, JSON.stringify(rows));
+
+function ensureTransitionWriter(req, res) {
+  const user = currentUser(req);
+  if (!canWriteTransition(user)) {
+    res.status(403).json({ error: '仅总部管理团队或授权管理员可维护表单过渡工具数据' });
+    return null;
+  }
+  return user;
 }
-function validateTransitionRow(row) {
-  const missing = TRANSITION_FIELDS.filter((f) => f.required && !row[f.code]).map((f) => f.label);
+
+function validateTransitionRow(input) {
+  const row = normalizeTransitionRow(input);
+  const missing = TRANSITION_FIELDS.filter((f) => f.required && !cellText(row[f.code])).map((f) => f.label);
   const warnings = [];
-  if (row.totalBudget != null && Number(row.totalBudget) <= 0) warnings.push('总经费需大于 0');
-  if (row.level && !LEVELS.includes(row.level)) warnings.push('项目级别不在国家级/地方级/公司级内');
+  const total = cellNumber(row.totalBudget);
+  const grant = cellNumber(row.centralGrant) || 0;
+  const self = cellNumber(row.selfFund) || 0;
+  if (row.totalBudget !== '' && row.totalBudget != null && total == null) warnings.push('总经费需填写为数字');
+  if (total != null && total <= 0) warnings.push('总经费需大于 0');
+  if (total != null && grant + self > total + 0.01) warnings.push('国拨经费与自筹经费合计大于总经费');
+  if (row.level && !LEVELS.includes(row.level)) warnings.push('级别不在国家级/地方级/公司级内');
+  if (row.startMonth && row.endMonth && String(row.startMonth).slice(0, 7) > String(row.endMonth).slice(0, 7)) warnings.push('项目开始年月晚于结束年月');
+  if (row.budget2026 && row.budget2026Actual && Number(row.budget2026) > 0 && !row.budget2026Rate) warnings.push('建议补充 2026年预算执行率');
   return { ok: missing.length === 0 && warnings.length === 0, missing, warnings };
+}
+
+function transitionIdentity(input) {
+  const row = normalizeTransitionRow(input);
+  const name = normalizeKey(row.name);
+  if (!name && cellText(row.serial)) return `serial:${normalizeKey(row.serial)}`;
+  if (!name) return '';
+  return `project:${[name, normalizeKey(row.sourceChannel), normalizeKey(row.responsibleUnit)].join('|')}`;
+}
+
+function upsertTransitionRecord(input, batchId = null) {
+  const row0 = normalizeTransitionRow(input);
+  const identity = transitionIdentity(row0) || `id:${normalizeKey(row0.id)}`;
+  const existing = db.prepare('SELECT id FROM transition_records WHERE identity_key=?').get(identity);
+  const row = normalizeTransitionRow({ ...row0, id: existing?.id || row0.id });
+  db.prepare(`INSERT INTO transition_records
+    (id,identity_key,project_type,project_name,source_file,source_excel_sheet,source_row,updated_by,updated_at,batch_id,row_json)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(identity_key) DO UPDATE SET
+      project_type=excluded.project_type,
+      project_name=excluded.project_name,
+      source_file=excluded.source_file,
+      source_excel_sheet=excluded.source_excel_sheet,
+      source_row=excluded.source_row,
+      updated_by=excluded.updated_by,
+      updated_at=excluded.updated_at,
+      batch_id=excluded.batch_id,
+      row_json=excluded.row_json`)
+    .run(row.id, identity, transitionProjectType(row), row.name || '', row.sourceFile || '', row.sourceExcelSheet || '', row.sourceRow || null,
+      row.updatedBy || '汇总表维护人', row.updatedAt || TODAY(), batchId, JSON.stringify(row));
+  db.prepare(`INSERT INTO transition_type_owners (project_type,owner_name)
+    VALUES (?,?) ON CONFLICT(project_type) DO NOTHING`)
+    .run(transitionProjectType(row), row.updatedBy || '总部项目类型主管');
+}
+
+function getTransitionRows() {
+  const stored = db.prepare('SELECT row_json FROM transition_records ORDER BY rowid').all();
+  if (stored.length) return stored.map((x) => normalizeTransitionRow(J(x.row_json, {})));
+  const raw = db.prepare('SELECT value FROM kv WHERE key=?').get(transitionKey)?.value;
+  const legacy = raw ? J(raw, []).map((x) => normalizeTransitionRow(x)) : [];
+  if (legacy.length) setTransitionRows(legacy);
+  return legacy;
+}
+
+function setTransitionRows(rows) {
+  const normalized = rows.map((x) => normalizeTransitionRow(x));
+  db.transaction(() => {
+    db.prepare('DELETE FROM transition_records').run();
+    for (const row of normalized) upsertTransitionRecord(row, null);
+    db.prepare('INSERT INTO kv (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
+      .run(transitionKey, JSON.stringify(normalized));
+  })();
+}
+
+function transitionSubtables(rows) {
+  const map = new Map();
+  for (const row of rows) {
+    const name = transitionProjectType(row);
+    const info = map.get(name) || { name, count: 0, totalBudget: 0, invalid: 0 };
+    info.count += 1;
+    info.totalBudget += cellNumber(row.totalBudget) || 0;
+    if (!validateTransitionRow(row).ok) info.invalid += 1;
+    map.set(name, info);
+  }
+  return [...map.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'zh-CN'));
+}
+
+function transitionDuplicates(rows) {
+  const seen = new Map();
+  const dup = [];
+  for (const row of rows) {
+    const key = transitionIdentity(row);
+    if (!key) continue;
+    if (seen.has(key)) dup.push(row.name || row.serial || row.id);
+    else seen.set(key, row.id);
+  }
+  return [...new Set(dup)];
+}
+
+function filterTransitionRows(rows, query = {}) {
+  const text = (v) => normalizeKey(v);
+  const kw = text(query.kw);
+  const level = cellText(query.level);
+  const channel = cellText(query.channel);
+  const unit = cellText(query.unit);
+  const status = cellText(query.status);
+  const color = cellText(query.color);
+  const projectType = cellText(query.projectType);
+  return rows.map((x) => normalizeTransitionRow(x)).filter((row) => {
+    if (projectType && transitionProjectType(row) !== projectType) return false;
+    if (level && row.level !== level) return false;
+    if (channel && cellText(row.sourceChannel || row.channel) !== channel) return false;
+    if (unit && ![row.responsibleUnit, row.demandUnit, row.center].some((x) => cellText(x) === unit)) return false;
+    if (status && cellText(row.projectStatus || row.acceptanceStatus) !== status) return false;
+    if (color && row.color !== color) return false;
+    if (kw) {
+      const hay = text([row.serial, row.code, row.name, row.projectType, row.sourceChannel, row.responsibleUnit].join(' '));
+      if (!hay.includes(kw)) return false;
+    }
+    return true;
+  });
+}
+
+function transitionFilterOptions(rows) {
+  const vals = (fn, extras = []) => [...new Set([...extras, ...rows.map((r) => cellText(fn(normalizeTransitionRow(r)))).filter(Boolean)])];
+  const dictionaries = transitionTemplateDictionaries();
+  return {
+    levels: vals((r) => r.level, LEVELS),
+    channels: vals((r) => r.sourceChannel || r.channel, dictionaries.sourceChannels),
+    units: vals((r) => r.responsibleUnit || r.demandUnit || r.center),
+    statuses: vals((r) => r.projectStatus || r.acceptanceStatus, ['已完成', '进行中', '延期']),
+    colors: ['red', 'yellow', 'blue', 'green'],
+  };
+}
+
+function previewTransitionMerge(existingRows, incomingRows, userName, mode = 'merge') {
+  const baseRows = mode === 'replace' ? [] : existingRows.map((x) => normalizeTransitionRow(x));
+  const index = new Map();
+  for (const row of baseRows) {
+    const key = transitionIdentity(row);
+    if (key) index.set(key, row);
+  }
+  const batch = new Set();
+  const rows = [];
+  const errors = [];
+  let added = 0;
+  let updated = 0;
+  let skipped = 0;
+  let invalid = 0;
+  for (const input of incomingRows) {
+    const row = normalizeTransitionRow({ ...input, updatedBy: userName, updatedAt: TODAY() });
+    const key = transitionIdentity(row);
+    const validation = validateTransitionRow(row);
+    let action = index.has(key) ? 'update' : 'add';
+    let issue = '';
+    if (!key) {
+      action = 'skip';
+      issue = '缺少项目名称，无法生成项目唯一标识';
+    } else if (batch.has(key)) {
+      action = 'skip';
+      issue = '同一批次内项目唯一性冲突，请保留一条记录后重新上传';
+    } else if (!validation.ok) {
+      action = 'skip';
+      issue = validation.missing.concat(validation.warnings).join('；');
+    }
+    if (key) batch.add(key);
+    if (action === 'add') added += 1;
+    if (action === 'update') updated += 1;
+    if (action === 'skip') {
+      skipped += 1;
+      invalid += 1;
+      errors.push({ row: row.sourceRow || '', name: row.name || row.serial || '', issue });
+    }
+    rows.push({ row, key, action, validation, issue });
+  }
+  return {
+    rows,
+    report: {
+      imported: incomingRows.length,
+      added,
+      updated,
+      skipped,
+      invalid,
+      errors,
+      subtables: transitionSubtables(baseRows.concat(rows.filter((x) => x.action !== 'skip').map((x) => x.row))),
+    },
+  };
+}
+
+function createTransitionBatch({ uploadId, fileName, mode, userName, parsed }) {
+  const preview = previewTransitionMerge(getTransitionRows(), parsed.rows, userName, mode);
+  const report = preview.report;
+  const batchId = db.transaction(() => {
+    const info = db.prepare(`INSERT INTO transition_import_batches
+      (upload_id,file_name,mode,status,uploaded_by,uploaded_at,parsed_count,added_count,updated_count,skipped_count,invalid_count,report_json,issues_json)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(uploadId, fileName, mode, report.invalid ? '待修正' : '待确认', userName, TODAY(), report.imported, report.added, report.updated,
+        report.skipped, report.invalid, JSON.stringify(report), JSON.stringify(parsed.issues || []));
+    const id = info.lastInsertRowid;
+    const ins = db.prepare(`INSERT INTO transition_import_rows
+      (batch_id,row_no,identity_key,project_type,project_name,action,row_json,validation_json,issue)
+      VALUES (?,?,?,?,?,?,?,?,?)`);
+    for (const item of preview.rows) {
+      ins.run(id, item.row.sourceRow || null, item.key || '', transitionProjectType(item.row), item.row.name || '', item.action,
+        JSON.stringify(item.row), JSON.stringify(item.validation), item.issue || '');
+    }
+    return id;
+  })();
+  return getTransitionBatch(batchId, true);
+}
+
+function mapTransitionBatch(row, withRows = false) {
+  if (!row) return null;
+  const batch = {
+    ...row,
+    report: J(row.report_json, {}),
+    issues: J(row.issues_json, []),
+  };
+  delete batch.report_json;
+  delete batch.issues_json;
+  if (withRows) {
+    batch.rows = db.prepare('SELECT * FROM transition_import_rows WHERE batch_id=? ORDER BY id').all(row.id).map((x) => ({
+      id: x.id,
+      rowNo: x.row_no,
+      identityKey: x.identity_key,
+      projectType: x.project_type,
+      projectName: x.project_name,
+      action: x.action,
+      row: normalizeTransitionRow(J(x.row_json, {})),
+      validation: J(x.validation_json, { ok: false, missing: [], warnings: [] }),
+      issue: x.issue || '',
+    }));
+  }
+  return batch;
+}
+
+function getTransitionBatch(id, withRows = false) {
+  return mapTransitionBatch(db.prepare('SELECT * FROM transition_import_batches WHERE id=?').get(id), withRows);
+}
+
+function recentTransitionBatches() {
+  return db.prepare('SELECT * FROM transition_import_batches ORDER BY id DESC LIMIT 8').all().map((x) => mapTransitionBatch(x));
+}
+
+function confirmTransitionBatch(batchId, userName) {
+  const batch = db.prepare('SELECT * FROM transition_import_batches WHERE id=?').get(batchId);
+  if (!batch) throw new Error('导入批次不存在');
+  if (!['待确认', '待修正'].includes(batch.status)) throw new Error('该导入批次已处理，不能重复确认');
+  if (batch.invalid_count > 0) throw new Error('该批次仍存在校验问题，请修正 Excel 后重新上传');
+  const rows = db.prepare("SELECT * FROM transition_import_rows WHERE batch_id=? AND action IN ('add','update') ORDER BY id").all(batch.id);
+  db.transaction(() => {
+    if (batch.mode === 'replace') db.prepare('DELETE FROM transition_records').run();
+    for (const r0 of rows) {
+      const row = normalizeTransitionRow({ ...J(r0.row_json, {}), updatedBy: userName, updatedAt: TODAY() });
+      upsertTransitionRecord(row, batch.id);
+    }
+    db.prepare("UPDATE transition_import_batches SET status='已入库', confirmed_by=?, confirmed_at=? WHERE id=?")
+      .run(userName, TODAY(), batch.id);
+    db.prepare('INSERT INTO kv (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
+      .run(transitionKey, JSON.stringify(getTransitionRows()));
+  })();
+  return getTransitionBatch(batch.id, true);
+}
+
+function transitionTemplatePath() {
+  const candidates = [
+    join(__dirname, '..', 'templates', TRANSITION_TEMPLATE_FILE),
+    join(__dirname, '..', 'data', 'templates', TRANSITION_TEMPLATE_FILE),
+    join(__dirname, '..', '..', '..', '需求跟进材料', TRANSITION_TEMPLATE_FILE),
+  ];
+  return candidates.find((p) => existsSync(p)) || null;
+}
+
+function transitionTemplateDictionaries() {
+  const template = transitionTemplatePath();
+  if (!template) return { major1: [], major2: [], projectTypes: [], sourceChannels: [] };
+  try {
+    const wb = XLSX.read(readFileSync(template), { type: 'buffer', cellDates: false });
+    const sheetByNameOrIndex = (names, index) => {
+      for (const name of names) {
+        if (wb.Sheets[name]) return wb.Sheets[name];
+      }
+      const fallbackName = wb.SheetNames[index];
+      return fallbackName ? wb.Sheets[fallbackName] : null;
+    };
+    const colValues = (sheetNames, fallbackIndex, col = 0) => {
+      const ws = sheetByNameOrIndex(sheetNames, fallbackIndex);
+      if (!ws) return [];
+      const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false, blankrows: false });
+      return [...new Set(aoa.map((r) => cellText(r[col])).filter(Boolean))];
+    };
+    return {
+      major1: colValues(['一级专业'], 1),
+      major2: colValues(['二级专业'], 2),
+      projectTypes: colValues(['sheet4', '项目类型'], 3, 0),
+      sourceChannels: colValues(['sheet4', '项目类型'], 3, 5),
+    };
+  } catch {
+    return { major1: [], major2: [], projectTypes: [], sourceChannels: [] };
+  }
+}
+
+function colName(idx) {
+  let n = idx + 1;
+  let s = '';
+  while (n > 0) {
+    const r1 = (n - 1) % 26;
+    s = String.fromCharCode(65 + r1) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+function xmlEscape(value) {
+  return cellRawText(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function xmlAttrEscape(value) {
+  return xmlEscape(value).replace(/'/g, '&apos;');
+}
+
+function mergeTouchesDataRows(ref) {
+  const nums = String(ref).match(/\d+/g)?.map(Number) || [];
+  return nums.some((n) => n >= 6);
+}
+
+function refreshMergeCells(sheetXml, hasData) {
+  if (!hasData) return sheetXml;
+  return sheetXml.replace(/<mergeCells[^>]*>[\s\S]*?<\/mergeCells>/, (block) => {
+    const refs = [...block.matchAll(/<mergeCell ref="([^"]+)"\/>/g)]
+      .map((m) => m[1])
+      .filter((ref) => !mergeTouchesDataRows(ref));
+    if (!refs.length) return '';
+    return `<mergeCells count="${refs.length}">${refs.map((ref) => `<mergeCell ref="${ref}"/>`).join('')}</mergeCells>`;
+  });
+}
+
+function templateRowStyle(sheetXml) {
+  const rowMatch = sheetXml.match(/<row\b[^>]*\br="6"[^>]*>[\s\S]*?<\/row>/);
+  const rowOpen = rowMatch?.[0].match(/^<row\b([^>]*)>/)?.[1] || ` spans="1:${TRANSITION_FIELDS.length}" ht="25" customHeight="1"`;
+  const rowAttrs = rowOpen
+    .replace(/\sr="6"/, '')
+    .replace(/\sspans="[^"]*"/, ` spans="1:${TRANSITION_FIELDS.length}"`)
+    .trim();
+  const styles = {};
+  if (rowMatch) {
+    for (const m of rowMatch[0].matchAll(/<c\b([^>]*)\br="([A-Z]+)6"([^>]*)/g)) {
+      const attrs = `${m[1]} ${m[3]}`;
+      const s = attrs.match(/\bs="([^"]+)"/)?.[1];
+      styles[m[2]] = s || '';
+    }
+  }
+  return { rowAttrs, styles };
+}
+
+function cellXml(rowNumber, field, row) {
+  const col = colName(field.index);
+  const value = exportTransitionValue(row || {}, field);
+  const ref = `${col}${rowNumber}`;
+  const style = field._style ? ` s="${field._style}"` : '';
+  if (field.number && value !== '' && Number.isFinite(Number(value))) {
+    return `<c r="${ref}"${style}><v>${Number(value)}</v></c>`;
+  }
+  if (value === '') return `<c r="${ref}"${style}/>`;
+  const escaped = xmlEscape(value);
+  const space = /\s/.test(String(value)[0] || '') || /\s$/.test(String(value)) || String(value).includes('\n') ? ' xml:space="preserve"' : '';
+  return `<c r="${ref}"${style} t="inlineStr"><is><t${space}>${escaped}</t></is></c>`;
+}
+
+function transitionRowXml(rowNumber, row, rowAttrs, styleByCol) {
+  const fields = TRANSITION_FIELDS.map((f) => ({ ...f, _style: styleByCol[colName(f.index)] || '' }));
+  const cells = fields.map((f) => cellXml(rowNumber, f, row)).join('');
+  return `<row r="${rowNumber}" ${rowAttrs}>${cells}</row>`;
+}
+
+function updateTemplateValidations(sheetXml, lastRow) {
+  if (lastRow <= 6) return sheetXml;
+  return sheetXml.replace(/sqref="([BCDEF])6"/g, (_, col) => `sqref="${col}6:${col}${lastRow}"`);
+}
+
+function replaceTemplateSheetData(sheetXml, rows) {
+  if (!rows.length) return sheetXml;
+  const lastRow = Math.max(6, rows.length + 5);
+  const lastCol = colName(TRANSITION_FIELDS.length - 1);
+  const { rowAttrs, styles } = templateRowStyle(sheetXml);
+  const headerRows = [...sheetXml.matchAll(/<row\b[^>]*\br="([1-5])"[^>]*>[\s\S]*?<\/row>/g)]
+    .sort((a, b) => Number(a[1]) - Number(b[1]))
+    .map((m) => m[0])
+    .join('');
+  const dataRows = rows.map((row, i) => transitionRowXml(i + 6, row, rowAttrs, styles)).join('');
+  let next = sheetXml.replace(/<dimension ref="[^"]+"\/>/, `<dimension ref="A1:${lastCol}${lastRow}"/>`);
+  next = next.replace(/<sheetData>[\s\S]*?<\/sheetData>/, `<sheetData>${headerRows}${dataRows}</sheetData>`);
+  next = next.replace(/<autoFilter\b([^>]*)\bref="[^"]+"/, `<autoFilter$1ref="A4:${lastCol}${lastRow}"`);
+  next = refreshMergeCells(next, true);
+  next = updateTemplateValidations(next, lastRow);
+  return next;
+}
+
+function nextRelationshipId(relsXml) {
+  const ids = [...relsXml.matchAll(/\bId="rId(\d+)"/g)].map((m) => Number(m[1]));
+  return Math.max(0, ...ids) + 1;
+}
+
+function nextSheetId(workbookXml) {
+  const ids = [...workbookXml.matchAll(/\bsheetId="(\d+)"/g)].map((m) => Number(m[1]));
+  return Math.max(0, ...ids) + 1;
+}
+
+async function makeTransitionTemplateWorkbook(rows) {
+  const template = transitionTemplatePath();
+  if (!template) throw new Error(`未找到导出模板：${TRANSITION_TEMPLATE_FILE}`);
+  const zip = await JSZip.loadAsync(readFileSync(template));
+  const sheet1Path = 'xl/worksheets/sheet1.xml';
+  const workbookPath = 'xl/workbook.xml';
+  const relsPath = 'xl/_rels/workbook.xml.rels';
+  const typesPath = '[Content_Types].xml';
+  const baseSheetXml = await zip.file(sheet1Path).async('string');
+  zip.file(sheet1Path, replaceTemplateSheetData(baseSheetXml, rows));
+
+  let workbookXml = await zip.file(workbookPath).async('string');
+  let relsXml = await zip.file(relsPath).async('string');
+  let typesXml = await zip.file(typesPath).async('string');
+  let relId = nextRelationshipId(relsXml);
+  let sheetId = nextSheetId(workbookXml);
+  let sheetNo = 4;
+  const used = new Set(['Sheet1', 'Sheet2', 'Sheet3']);
+  for (const table of transitionSubtables(rows)) {
+    const part = rows.filter((x) => transitionProjectType(x) === table.name);
+    if (!part.length) continue;
+    const sheetName = uniqueSheetName(table.name, used);
+    const path = `xl/worksheets/sheet${sheetNo}.xml`;
+    zip.file(path, replaceTemplateSheetData(baseSheetXml, part));
+    workbookXml = workbookXml.replace('</sheets>', `<sheet name="${xmlAttrEscape(sheetName)}" sheetId="${sheetId}" r:id="rId${relId}"/></sheets>`);
+    relsXml = relsXml.replace('</Relationships>', `<Relationship Id="rId${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${sheetNo}.xml"/></Relationships>`);
+    typesXml = typesXml.replace('</Types>', `<Override PartName="/xl/worksheets/sheet${sheetNo}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`);
+    relId += 1;
+    sheetId += 1;
+    sheetNo += 1;
+  }
+  zip.file(workbookPath, workbookXml);
+  zip.file(relsPath, relsXml);
+  zip.file(typesPath, typesXml);
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
+
+function makeTransitionValidationWorkbook(rows, batches = []) {
+  const reportRows = rows.map((row, i) => {
+    const validation = validateTransitionRow(row);
+    return {
+      序号: row.serial || i + 1,
+      项目类型: transitionProjectType(row),
+      项目名称: row.name || '',
+      责任单位: row.responsibleUnit || '',
+      更新时间: row.updatedAt || '',
+      更新人员: row.updatedBy || '',
+      校验结果: validation.ok ? '通过' : '不通过',
+      问题说明: validation.missing.concat(validation.warnings).join('；'),
+    };
+  });
+  const batchRows = batches.map((b) => ({
+    批次号: b.id,
+    文件名: b.file_name,
+    状态: b.status,
+    上传人: b.uploaded_by,
+    上传时间: b.uploaded_at,
+    确认人: b.confirmed_by || '',
+    确认时间: b.confirmed_at || '',
+    解析行数: b.parsed_count,
+    新增: b.added_count,
+    更新: b.updated_count,
+    跳过: b.skipped_count,
+    问题行: b.invalid_count,
+  }));
+  const wb = XLSX.utils.book_new();
+  const ws1 = XLSX.utils.json_to_sheet(reportRows.length ? reportRows : [{ 校验结果: '当前暂无台账记录' }]);
+  ws1['!cols'] = [{ wch: 8 }, { wch: 18 }, { wch: 34 }, { wch: 20 }, { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 42 }];
+  XLSX.utils.book_append_sheet(wb, ws1, '记录校验报告');
+  const ws2 = XLSX.utils.json_to_sheet(batchRows.length ? batchRows : [{ 状态: '暂无导入批次' }]);
+  ws2['!cols'] = [{ wch: 8 }, { wch: 32 }, { wch: 12 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 10 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }];
+  XLSX.utils.book_append_sheet(wb, ws2, '导入批次');
+  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+}
+
+function safeZipName(name) {
+  return safeSheetName(name).replace(/[<>:"/\\|?*]/g, '').slice(0, 80) || '未分类';
+}
+
+async function makeTransitionExportPackage(rows) {
+  const zip = new JSZip();
+  zip.file('01-最新总表.xlsx', await makeTransitionTemplateWorkbook(rows));
+  for (const table of transitionSubtables(rows)) {
+    const part = rows.filter((x) => transitionProjectType(x) === table.name);
+    if (!part.length) continue;
+    zip.file(`02-专项分表/${safeZipName(table.name)}.xlsx`, await makeTransitionTemplateWorkbook(part));
+  }
+  zip.file('03-校验报告.xlsx', makeTransitionValidationWorkbook(rows, recentTransitionBatches()));
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
+
+function isTransitionDataRow(cells, columnMap = null) {
+  if (normalizeHeaderLabel(cells[0]) === '填写说明') return false;
+  return TRANSITION_FIELDS.some((f) => {
+    const idx = columnMap?.get(f.code) ?? f.index;
+    return cellText(cells[idx]);
+  });
+}
+
+function transitionRowFromCells(cells, rowNumber, sourceFile, sourceSheet, userName, columnMap = null) {
+  const row = {
+    id: `TR-${Date.now().toString(36)}-${rowNumber}-${randomBytes(2).toString('hex')}`,
+    sourceFile,
+    sourceExcelSheet: sourceSheet,
+    sourceRow: rowNumber,
+    updatedBy: userName,
+    updatedAt: TODAY(),
+    raw: {},
+  };
+  for (const f of TRANSITION_FIELDS) {
+    const raw = cells[columnMap?.get(f.code) ?? f.index];
+    row[f.code] = f.number ? cellNumber(raw) : cellRawText(raw);
+    row.raw[f.label] = row[f.code];
+  }
+  return normalizeTransitionRow(row);
+}
+
+function parseTransitionWorkbook(storedPath, sourceFile, userName) {
+  const wb = XLSX.read(readFileSync(storedPath), { type: 'buffer', cellDates: false });
+  const parsedSheets = [];
+  const issues = [];
+  for (const sheetName of wb.SheetNames) {
+    const ws = wb.Sheets[sheetName];
+    const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false, blankrows: false });
+    const headerIndex = aoa.findIndex((line) => line.some((x) => cellText(x) === '项目类型') && line.some((x) => cellText(x) === '项目名称'));
+    if (headerIndex < 0) {
+      if (!['Sheet2', 'Sheet3'].includes(sheetName)) issues.push({ sheet: sheetName, row: 0, issue: '未识别到“项目类型/项目名称”表头，已跳过该工作表' });
+      continue;
+    }
+    const sheetRows = [];
+    const subHeaderLine = aoa[headerIndex + 1] || [];
+    const { map: columnMap, missing } = buildTransitionHeaderMap(aoa[headerIndex] || [], subHeaderLine);
+    if (missing.length) issues.push({ sheet: sheetName, row: headerIndex + 1, issue: `表头缺少必要字段：${missing.join('、')}` });
+    const dataStart = headerIndex + 2;
+    for (let i = dataStart; i < aoa.length; i += 1) {
+      const cells = aoa[i] || [];
+      if (!isTransitionDataRow(cells, columnMap)) continue;
+      sheetRows.push(transitionRowFromCells(cells, i + 1, sourceFile, sheetName, userName, columnMap));
+    }
+    parsedSheets.push({ sheetName, rows: sheetRows });
+  }
+  const primary = parsedSheets.find((x) => x.sheetName === 'Sheet1' && x.rows.length);
+  if (primary) return { rows: primary.rows, issues: issues.filter((x) => x.sheet === 'Sheet1') };
+  return { rows: parsedSheets.flatMap((x) => x.rows), issues };
+}
+
+function mergeTransitionRows(existingRows, incomingRows, userName, mode = 'merge') {
+  const rows = mode === 'replace' ? [] : existingRows.map((x) => normalizeTransitionRow(x));
+  const index = new Map();
+  rows.forEach((row, i) => {
+    const key = transitionIdentity(row);
+    if (key) index.set(key, i);
+  });
+  const batch = new Set();
+  const errors = [];
+  let added = 0;
+  let updated = 0;
+  let skipped = 0;
+  for (const incoming of incomingRows) {
+    const key = transitionIdentity(incoming);
+    if (!key) {
+      skipped += 1;
+      errors.push({ row: incoming.sourceRow || '', name: incoming.name || '', issue: '缺少序号或项目名称，无法合并' });
+      continue;
+    }
+    if (batch.has(key)) {
+      skipped += 1;
+      errors.push({ row: incoming.sourceRow || '', name: incoming.name || incoming.serial || '', issue: '同一批次内重复，保留首次记录' });
+      continue;
+    }
+    batch.add(key);
+    const next = normalizeTransitionRow({ ...incoming, updatedBy: userName, updatedAt: TODAY() });
+    if (index.has(key)) {
+      const idx = index.get(key);
+      rows[idx] = { ...rows[idx], ...next, id: rows[idx].id };
+      updated += 1;
+    } else {
+      rows.push(next);
+      index.set(key, rows.length - 1);
+      added += 1;
+    }
+  }
+  return {
+    rows,
+    report: {
+      imported: incomingRows.length,
+      added,
+      updated,
+      skipped,
+      errors,
+      subtables: transitionSubtables(rows),
+    },
+  };
+}
+
+function exportTransitionValue(row, field) {
+  const value = normalizeTransitionRow(row)[field.code];
+  if (field.number) return value == null ? '' : Number(value);
+  return cellRawText(value);
+}
+
+function makeTransitionSheet(rows, title) {
+  const groupRow = TRANSITION_FIELDS.map((f, i) => (i === 0 || TRANSITION_FIELDS[i - 1].group !== f.group ? f.group : ''));
+  const headerRow = TRANSITION_FIELDS.map((f) => f.label);
+  const subHeaderRow = TRANSITION_FIELDS.map(() => '');
+  const body = rows.map((row) => TRANSITION_FIELDS.map((f) => exportTransitionValue(row, f)));
+  const ws = XLSX.utils.aoa_to_sheet([[title], groupRow, headerRow, subHeaderRow, ...body]);
+  ws['!cols'] = TRANSITION_FIELDS.map((f) => ({ wch: f.width || 14 }));
+  ws['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: TRANSITION_FIELDS.length - 1 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 16 } },
+    { s: { r: 1, c: 17 }, e: { r: 1, c: 27 } },
+    { s: { r: 1, c: 28 }, e: { r: 1, c: 36 } },
+  ];
+  return ws;
+}
+
+function safeSheetName(name) {
+  const text = cellText(name).replace(/[\[\]\*\?\/\\:]/g, '').slice(0, 28) || '未分类';
+  return text || '未分类';
+}
+
+function uniqueSheetName(name, used) {
+  const base = safeSheetName(name).slice(0, 31) || '未分类';
+  let next = base;
+  let i = 1;
+  while (used.has(next)) {
+    const suffix = `-${i}`;
+    next = `${base.slice(0, 31 - suffix.length)}${suffix}`;
+    i += 1;
+  }
+  used.add(next);
+  return next;
 }
 
 /** V19 二次反馈：表单过渡工具 */
 r.get('/transition-tool', (req, res) => {
   const rows = getTransitionRows();
   const enriched = rows.map((x) => ({ ...x, validation: validateTransitionRow(x) }));
-  const subtables = LEVELS.map((lv) => ({ name: lv, count: rows.filter((x) => x.level === lv).length }));
-  const duplicates = rows.filter((r, i) => rows.findIndex((x) => x.code === r.code || x.name === r.name) !== i).map((x) => x.code || x.name);
+  const invalid = enriched.filter((x) => !x.validation.ok).length;
   res.json({
     fields: TRANSITION_FIELDS,
+    dictionaries: transitionTemplateDictionaries(),
+    filterOptions: transitionFilterOptions(rows),
     rows: enriched,
-    subtables,
+    subtables: transitionSubtables(rows),
     summary: {
       total: rows.length,
-      valid: enriched.filter((x) => x.validation.ok).length,
-      invalid: enriched.filter((x) => !x.validation.ok).length,
-      duplicates: [...new Set(duplicates)],
+      valid: rows.length - invalid,
+      invalid,
+      duplicates: transitionDuplicates(rows),
       lastUpdated: rows.map((x) => x.updatedAt).sort().pop() || null,
+      totalBudget: Math.round(rows.reduce((s, x) => s + (cellNumber(x.totalBudget) || 0), 0) * 100) / 100,
+      centralGrant: Math.round(rows.reduce((s, x) => s + (cellNumber(x.centralGrant) || 0), 0) * 100) / 100,
+      selfFund: Math.round(rows.reduce((s, x) => s + (cellNumber(x.selfFund) || 0), 0) * 100) / 100,
     },
-    pending: ['真实专项表格及填写说明', '下拉菜单最终口径', '内网机 IP/端口/安装权限', '安全审查和备份策略'],
+    batches: recentTransitionBatches(),
+    pending: ['项目类型主管正式授权范围', '分表模板锁定和下拉选项最终口径', '与正式项目库的批量迁移规则', '安全审查、病毒查杀和备份策略'],
   });
 });
 
 r.post('/transition-tool/records', (req, res) => {
-  const user = currentUser(req);
+  const user = ensureTransitionWriter(req, res);
+  if (!user) return;
+  const row = normalizeTransitionRow(req.body || {});
   const rows = getTransitionRows();
-  const row = req.body || {};
   const id = row.id || `TR-${String(rows.length + 1).padStart(3, '0')}`;
-  const next = { ...row, id, updatedBy: user.name, updatedAt: TODAY() };
-  const idx = rows.findIndex((x) => x.id === id);
-  if (idx >= 0) rows[idx] = next; else rows.push(next);
-  setTransitionRows(rows);
-  audit(user.name, '表单过渡工具', '分表维护', `保存 ${next.sourceSheet || next.level || '专项分表'}：${next.name || next.code}`);
-  res.json({ ok: true, row: { ...next, validation: validateTransitionRow(next) } });
+  const next = normalizeTransitionRow({ ...row, id, updatedBy: user.name, updatedAt: TODAY() });
+  const validation = validateTransitionRow(next);
+  if (!validation.ok) return res.status(400).json({ error: validation.missing.concat(validation.warnings).join('；') });
+  upsertTransitionRecord(next, null);
+  audit(user.name, '表单过渡工具', '分表维护', `保存 ${next.projectType || '专项分表'}：${next.name || next.code}`);
+  res.json({ ok: true, row: { ...next, validation } });
 });
 
 r.post('/transition-tool/import-demo', (req, res) => {
-  const user = currentUser(req);
+  const user = ensureTransitionWriter(req, res);
+  if (!user) return;
   const rows = defaultTransitionRows();
   setTransitionRows(rows);
-  audit(user.name, '表单过渡工具', '批量导入', `按 V19 字段口径导入演示数据 ${rows.length} 行`);
+  audit(user.name, '表单过渡工具', '批量导入', `按样例表字段口径导入演示数据 ${rows.length} 行`);
   res.json({ ok: true, imported: rows.length });
 });
 
-r.get('/transition-tool/export.xlsx', (req, res) => {
-  const rows = getTransitionRows();
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'V19总表');
-  for (const lv of LEVELS) {
-    const part = rows.filter((x) => x.level === lv);
-    if (part.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(part), lv);
+r.post('/transition-tool/import-upload', (req, res) => {
+  const user = ensureTransitionWriter(req, res);
+  if (!user) return;
+  const uploadId = req.body?.uploadId;
+  const mode = req.body?.mode === 'replace' ? 'replace' : 'merge';
+  const up = db.prepare('SELECT * FROM uploads WHERE id=?').get(uploadId);
+  if (!up) return res.status(404).json({ error: '上传文件不存在，请重新上传' });
+  const ext = extname(up.orig_name).toLowerCase();
+  if (!['.xlsx', '.xls'].includes(ext)) return res.status(400).json({ error: '仅支持上传 .xlsx / .xls 表格文件' });
+  const storedPath = join(UPLOAD_DIR, up.stored_name);
+  if (!existsSync(storedPath)) return res.status(410).json({ error: '上传文件已被清理，请重新上传' });
+  const parsed = parseTransitionWorkbook(storedPath, up.orig_name, user.name);
+  if (!parsed.rows.length) return res.status(400).json({ error: parsed.issues[0]?.issue || '未解析到有效项目记录' });
+  const batch = createTransitionBatch({ uploadId: up.id, fileName: up.orig_name, mode, userName: user.name, parsed });
+  audit(user.name, '表单过渡工具', '上传预校验', `${up.orig_name}：解析 ${batch.parsed_count} 行，待新增 ${batch.added_count} 行，待更新 ${batch.updated_count} 行，问题 ${batch.invalid_count} 行`);
+  res.json({ ok: true, batch, batchId: batch.id, file: up.orig_name, mode, status: batch.status, issues: batch.issues, ...batch.report, rows: batch.rows });
+});
+
+r.get('/transition-tool/import-batches/:id', (req, res) => {
+  const batch = getTransitionBatch(Number(req.params.id), true);
+  if (!batch) return res.status(404).json({ error: '导入批次不存在' });
+  res.json({ batch });
+});
+
+r.post('/transition-tool/import-batches/:id/confirm', (req, res) => {
+  const user = ensureTransitionWriter(req, res);
+  if (!user) return;
+  try {
+    const batch = confirmTransitionBatch(Number(req.params.id), user.name);
+    audit(user.name, '表单过渡工具', '确认入库', `${batch.file_name}：新增 ${batch.added_count} 行，更新 ${batch.updated_count} 行`);
+    res.json({ ok: true, batch });
+  } catch (err) {
+    res.status(400).json({ error: String(err.message || err) });
   }
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(TRANSITION_FIELDS), '字段口径');
-  const invalid = rows.map((x) => ({ id: x.id, code: x.code, name: x.name, ...validateTransitionRow(x) })).filter((x) => !x.ok);
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(invalid), '校验问题');
-  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.setHeader('Content-Disposition', `attachment; filename="transition-v19-${TODAY()}.xlsx"`);
-  res.send(buf);
+});
+
+r.post('/transition-tool/import-batches/:id/cancel', (req, res) => {
+  const user = ensureTransitionWriter(req, res);
+  if (!user) return;
+  const batch = db.prepare('SELECT * FROM transition_import_batches WHERE id=?').get(req.params.id);
+  if (!batch) return res.status(404).json({ error: '导入批次不存在' });
+  if (!['待确认', '待修正'].includes(batch.status)) return res.status(400).json({ error: '该批次已处理，不能取消' });
+  db.prepare("UPDATE transition_import_batches SET status='已取消', confirmed_by=?, confirmed_at=? WHERE id=?").run(user.name, TODAY(), batch.id);
+  audit(user.name, '表单过渡工具', '取消导入', batch.file_name, '上传预校验批次未入库，已取消');
+  res.json({ ok: true });
+});
+
+r.get('/transition-tool/export.xlsx', async (req, res, next) => {
+  try {
+    const rows = filterTransitionRows(getTransitionRows(), req.query);
+    const buf = await makeTransitionTemplateWorkbook(rows);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="transition-v19-template-${TODAY()}.xlsx"`);
+    res.send(buf);
+  } catch (err) {
+    next(err);
+  }
+});
+
+r.get('/transition-tool/export-package.zip', async (req, res, next) => {
+  try {
+    const rows = filterTransitionRows(getTransitionRows(), req.query);
+    const buf = await makeTransitionExportPackage(rows);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="transition-v19-package-${TODAY()}.zip"`);
+    res.send(buf);
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ---------- 项目业务动作：基本信息补充 / 立项备案 / 验收 / 评估检查 ----------
@@ -1244,6 +2081,7 @@ r.post('/uploads', uploadMw.single('file'), (req, res) => {
 
 async function fileToText(storedPath, ext) {
   if (ext === '.pdf') {
+    const { PDFParse } = await import('pdf-parse');
     const parser = new PDFParse({ data: new Uint8Array(readFileSync(storedPath)) });
     try {
       const r1 = await parser.getText();

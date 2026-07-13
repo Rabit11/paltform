@@ -45,6 +45,60 @@ export function createSchema(db) {
     value TEXT
   );
 
+  CREATE TABLE IF NOT EXISTS transition_type_owners (
+    project_type TEXT PRIMARY KEY,
+    owner_user_id TEXT,
+    owner_name TEXT,
+    can_import INTEGER NOT NULL DEFAULT 1,
+    can_export INTEGER NOT NULL DEFAULT 1
+  );
+
+  CREATE TABLE IF NOT EXISTS transition_import_batches (
+    id INTEGER PRIMARY KEY,
+    upload_id INTEGER,
+    file_name TEXT NOT NULL,
+    mode TEXT NOT NULL DEFAULT 'merge',       -- merge | replace
+    status TEXT NOT NULL DEFAULT '待确认',     -- 待确认 | 已入库 | 已取消
+    uploaded_by TEXT NOT NULL,
+    uploaded_at TEXT NOT NULL,
+    confirmed_by TEXT,
+    confirmed_at TEXT,
+    parsed_count INTEGER NOT NULL DEFAULT 0,
+    added_count INTEGER NOT NULL DEFAULT 0,
+    updated_count INTEGER NOT NULL DEFAULT 0,
+    skipped_count INTEGER NOT NULL DEFAULT 0,
+    invalid_count INTEGER NOT NULL DEFAULT 0,
+    report_json TEXT NOT NULL DEFAULT '{}',
+    issues_json TEXT NOT NULL DEFAULT '[]'
+  );
+
+  CREATE TABLE IF NOT EXISTS transition_import_rows (
+    id INTEGER PRIMARY KEY,
+    batch_id INTEGER NOT NULL,
+    row_no INTEGER,
+    identity_key TEXT,
+    project_type TEXT,
+    project_name TEXT,
+    action TEXT NOT NULL,                     -- add | update | skip
+    row_json TEXT NOT NULL,
+    validation_json TEXT NOT NULL,
+    issue TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS transition_records (
+    id TEXT PRIMARY KEY,
+    identity_key TEXT UNIQUE NOT NULL,
+    project_type TEXT NOT NULL,
+    project_name TEXT,
+    source_file TEXT,
+    source_excel_sheet TEXT,
+    source_row INTEGER,
+    updated_by TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    batch_id INTEGER,
+    row_json TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,

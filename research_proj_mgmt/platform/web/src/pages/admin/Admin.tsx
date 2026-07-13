@@ -15,14 +15,24 @@ interface AdminData {
 const ROLES = ['leader', 'mgmt', 'team', 'chief', 'finance', 'admin'] as const
 
 const PERMS: { label: string; roles: Record<User['role'], string> }[] = [
-  { label: '项目数据查看', roles: { leader: '项目台账只读', team: '仅本人关联项目', chief: '本人经手项目', mgmt: '全公司项目', finance: '本单位项目', admin: '全平台（运维视角）' } },
-  { label: '成果转化台账', roles: { leader: '只读查看', team: '关联项目填报', chief: '经手项目查看', mgmt: '审核/备案/统计', finance: '无', admin: '配置入口' } },
-  { label: '数据填报/编辑', roles: { leader: '—（无修改权限）', team: '提交前可编辑', chief: '—（无修改权限）', mgmt: '—（无修改权限）', finance: '经费核销录入', admin: '禁止修改业务数据' } },
-  { label: '全量数据导出', roles: { leader: '默认不开放', team: '无', chief: '无', mgmt: '支持（总部）', finance: '本单位台账', admin: '无' } },
-  { label: '审批职能', roles: { leader: '无', team: '发起流程/撤销', chief: '技术把关复核', mgmt: '总部终审/备案', finance: '财务审核', admin: '流程配置' } },
-  { label: '可视化看板', roles: { leader: '只读查看', team: '无', chief: '一级总师可见', mgmt: '专属分析模块', finance: '经费维度', admin: '无' } },
+  { label: '人员类型', roles: { leader: '公司领导', team: '项目责任人 / 技术责任人 / 项目主管', chief: '一级总师 / 二级总师', mgmt: '总部处长主管 / 单位管理负责人 / 单位项目主管', finance: '二级单位财务负责人 / 经办', admin: '科研项目处指定人员' } },
+  { label: '项目数据查看', roles: { leader: '领导只读视图', team: '仅本人关联项目', chief: '本人经手项目', mgmt: '总部全公司 / 单位本单位', finance: '本单位项目经费台账', admin: '全平台（运维视角）' } },
+  { label: '成果转化台账', roles: { leader: '只读查看', team: '关联项目基础信息填报', chief: '经手项目查看', mgmt: '审核 / 备案 / 进度督办', finance: '无', admin: '配置入口' } },
+  { label: '数据填报/编辑', roles: { leader: '—（无修改权限）', team: '提交保存前可编辑', chief: '—（无修改权限）', mgmt: '—（无修改权限）', finance: '—（无修改权限）', admin: '禁止修改业务数据' } },
+  { label: '全量数据导出', roles: { leader: '默认不开放', team: '无', chief: '无', mgmt: '总部支持导出', finance: '无', admin: '无' } },
+  { label: '审批/评审职能', roles: { leader: '无', team: '发起流程 / 配合审核验收', chief: '技术指导 / 重要节点审核', mgmt: '组织评价 / 统筹管理', finance: '经费核对 / 异常监管', admin: '流程模板维护' } },
+  { label: '可视化看板', roles: { leader: '只读查看', team: '无', chief: '一级总师可见', mgmt: '管理分析模块', finance: '经费维度', admin: '无' } },
   { label: '后评价', roles: { leader: '暂缓', team: '暂缓', chief: '暂缓', mgmt: '暂缓', finance: '暂缓', admin: '暂缓' } },
 ]
+
+const ACCOUNT_NOTES: Record<User['role'], string> = {
+  leader: '领导账号用于决策查看，不提供业务修改入口。',
+  team: '项目团队账号按项目责任人、技术责任人、项目主管拆分，均按本人关联项目授权。',
+  chief: '责任总师账号区分一级公司级总师与二级单位级总师，按经手项目查看。',
+  mgmt: '管理团队账号区分总部与单位范围，总部可看全公司，单位账号仅看本单位。',
+  finance: '财务团队账号按二级单位财务负责人、经办配置，聚焦本单位经费台账。',
+  admin: '超级管理员仅做权限、字典、流程和运维配置，禁止直接修改业务数据。',
+}
 
 export default function Admin() {
   const toast = useToast()
@@ -55,6 +65,7 @@ export default function Admin() {
   }
 
   if (!d) return <div className="text-faint text-sm py-20 text-center">加载中…</div>
+  const usersByRole = (role: User['role']) => d.users.filter((x) => x.role === role)
 
   return (
     <div className="flex flex-col gap-4 fade-up">
@@ -99,7 +110,7 @@ export default function Admin() {
       )}
 
       {tab === 'perm' && (
-        <Card title="角色权限矩阵（需求 V18 §二(二)角色定义）" pad={false}>
+        <Card title="角色权限矩阵与账号清单（需求 V19 第5页 §二(二)角色定义）" pad={false}>
           <table className="dtable">
             <thead>
               <tr>
@@ -119,28 +130,48 @@ export default function Admin() {
                 </tr>
               ))}
               <tr>
-                <td className="font-medium">演示账号</td>
+                <td className="font-medium">账号人员<span className="block text-[10px] text-faint font-normal">按 V19 人员类型拆分</span></td>
                 {ROLES.map((r) => {
-                  const u = d.users.find((x) => x.role === r)
-                  return <td key={r}><Tag tone="accent">{u?.name}</Tag></td>
-                })}
-              </tr>
-              <tr>
-                <td className="font-medium">账号状态<span className="block text-[10px] text-faint font-normal">离岗自动回收权限</span></td>
-                {ROLES.map((r) => {
-                  const u = d.users.find((x) => x.role === r)
-                  if (!u) return <td key={r}>—</td>
+                  const users = usersByRole(r)
                   return (
                     <td key={r}>
-                      <span className="flex items-center gap-2">
-                        <Tag tone={u.status === '在岗' ? 'green' : 'red'}>{u.status}</Tag>
-                        {u.role !== 'admin' && (
-                          <Btn size="sm" onClick={() => toggleUser(u.id)}>{u.status === '在岗' ? '离岗' : '恢复'}</Btn>
-                        )}
-                      </span>
+                      <div className="flex flex-col gap-1.5">
+                        {users.map((u) => (
+                          <div key={u.id} className="flex flex-wrap items-center gap-1.5">
+                            <Tag tone="accent">{u.name}</Tag>
+                            <span className="text-[10.5px] text-faint">{u.title}</span>
+                          </div>
+                        ))}
+                      </div>
                     </td>
                   )
                 })}
+              </tr>
+              <tr>
+                <td className="font-medium">账号状态<span className="block text-[10px] text-faint font-normal">离岗自动回收权限；管理员 7 个工作日内注销/移交</span></td>
+                {ROLES.map((r) => {
+                  const users = usersByRole(r)
+                  if (!users.length) return <td key={r}>—</td>
+                  return (
+                    <td key={r}>
+                      <div className="flex flex-col gap-1.5">
+                        {users.map((u) => (
+                          <span key={u.id} className="flex items-center gap-2">
+                            <span className="text-[11px] text-dim min-w-[48px]">{u.name}</span>
+                            <Tag tone={u.status === '在岗' ? 'green' : 'red'}>{u.status}</Tag>
+                            {u.role !== 'admin' && (
+                              <Btn size="sm" onClick={() => toggleUser(u.id)}>{u.status === '在岗' ? '离岗' : '恢复'}</Btn>
+                            )}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                  )
+                })}
+              </tr>
+              <tr>
+                <td className="font-medium">配置说明</td>
+                {ROLES.map((r) => <td key={r} className="text-[12px] text-faint">{ACCOUNT_NOTES[r]}</td>)}
               </tr>
             </tbody>
           </table>

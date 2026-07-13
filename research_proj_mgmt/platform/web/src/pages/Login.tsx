@@ -22,25 +22,25 @@ const ROLE_META: Record<User['role'], { icon: ReactNode; desc: string; order: nu
   },
   mgmt: {
     icon: <IconCockpit size={20} />,
-    desc: '全域台账、驾驶舱、审批终审、风险统筹',
+    desc: '总部统筹 / 单位管理 / 计划经费风险 / 成果转化督办',
     order: 2,
-    accent: '总部管理',
+    accent: '统筹管理',
   },
   team: {
     icon: <IconWorkbench size={20} />,
-    desc: '项目申报、里程碑填报、计划办结、变更发起',
+    desc: '全周期资料填报 / 节点推进 / 成果转化基础信息更新',
     order: 3,
-    accent: '项目执行',
+    accent: '项目填报',
   },
   chief: {
     icon: <IconChief size={20} />,
-    desc: '建议书、任务书、验收材料技术把关与线上评审',
+    desc: '一级/二级总师技术指导、重要节点审核、线上材料评审',
     order: 4,
     accent: '技术复核',
   },
   finance: {
     icon: <IconFunds size={20} />,
-    desc: '经费执行核销、预算台账、总部拨付管控',
+    desc: '本单位经费台账查看、经费核对、预算核销、异常监管',
     order: 5,
     accent: '经费管控',
   },
@@ -53,9 +53,9 @@ const ROLE_META: Record<User['role'], { icon: ReactNode; desc: string; order: nu
 }
 
 const V19_POINTS = [
-  { icon: <ShieldCheck size={14} />, text: '新增领导只读角色' },
-  { icon: <IconTransform size={14} />, text: '成果转化独立台账' },
-  { icon: <Database size={14} />, text: 'V19 台账字段口径' },
+  { icon: <ShieldCheck size={14} />, text: '领导只读' },
+  { icon: <IconTransform size={14} />, text: '成果转化台账' },
+  { icon: <Database size={14} />, text: 'V19 字段口径' },
   { icon: <GitBranch size={14} />, text: '表单过渡工具' },
 ]
 
@@ -77,14 +77,14 @@ export default function Login() {
   const levels = Array.from(new Set(boot.channels.map((x) => x.level))).length
 
   return (
-    <div className="h-full blueprint-bg overflow-y-auto">
-      <div className="min-h-full max-w-[1320px] mx-auto px-5 sm:px-8 xl:px-10 py-8 sm:py-10 flex flex-col">
-        <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-10 xl:mb-14">
-          <div className="flex items-center gap-3">
+    <div className="h-full blueprint-bg overflow-y-auto overflow-x-hidden">
+      <div className="min-h-full max-w-[1280px] mx-auto px-5 sm:px-8 lg:px-10 py-7 sm:py-9 xl:py-10 flex flex-col">
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-7 sm:mb-9 xl:mb-10">
+          <div className="flex min-w-0 items-center gap-3">
             <Logo size={38} />
-            <div className="leading-tight">
-              <div className="text-[15px] font-semibold tracking-wide">科研项目信息化管理平台</div>
-              <div className="text-[10px] text-faint tracking-[0.24em]">SCIENTIFIC RESEARCH PROJECT MANAGEMENT</div>
+            <div className="min-w-0 leading-tight">
+              <div className="truncate text-[14px] sm:text-[15px] font-semibold tracking-wide">科研项目信息化管理平台</div>
+              <div className="truncate text-[10px] text-faint tracking-[0.22em] sm:tracking-[0.3em]">SCIENTIFIC RESEARCH PROJECT MANAGEMENT</div>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2.5 text-[11px] text-faint num">
@@ -94,31 +94,31 @@ export default function Login() {
           </div>
         </header>
 
-        <div className="grow grid xl:grid-cols-[1.02fr_0.98fr] gap-9 xl:gap-14 items-center">
-          <section className="fade-up">
-            <div className="inline-flex items-center gap-2 text-[11px] tracking-[0.26em] text-accent mb-4">
+        <div className="grow grid min-w-0 grid-cols-1 xl:grid-cols-[540px_minmax(0,1fr)] 2xl:grid-cols-[560px_minmax(0,1fr)] gap-8 xl:gap-12 items-center">
+          <section className="fade-up w-full min-w-0 max-w-[calc(100vw-40px)] sm:max-w-[560px]">
+            <div className="inline-flex items-center gap-2 text-[11px] tracking-[0.32em] text-accent mb-3.5">
               <Sparkles size={14} />
               一本账 / 全生命周期 / 分级管控
             </div>
-            <h1 className="text-[30px] sm:text-[36px] leading-[1.22] font-bold mb-3">
-              科研项目全生命周期<br className="hidden sm:block" /> 信息化管控体系
+            <h1 className="break-words text-[30px] sm:text-[34px] xl:text-[35px] leading-[1.24] font-bold mb-3">
+              科研项目全生命周期<br />信息化管控体系
             </h1>
-            <p className="text-[13px] sm:text-[13.5px] leading-6 text-dim mb-5 max-w-[560px]">
+            <p className="max-w-full text-[13px] leading-[1.72] text-dim mb-5 sm:max-w-[540px]">
               继承 V18 登录页的角色化入口和科研蓝图视觉，按 V19 反馈补充领导决策查看、项目台账字段口径、
               可视化看板逻辑、成果转化独立台账和表单过渡工具。后评价按本轮反馈暂缓建设，避免干扰当前演示主线。
             </p>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 max-w-[640px] mb-8">
+            <div className="grid w-full min-w-0 grid-cols-1 min-[480px]:grid-cols-2 sm:grid-cols-4 gap-2 max-w-full sm:max-w-[560px] mb-6">
               {V19_POINTS.map((x) => (
-                <div key={x.text} className="card px-3 py-2 flex items-center gap-2 text-[11.5px] text-dim">
+                <div key={x.text} className="card min-w-0 h-[34px] px-3 flex items-center gap-2 text-[10.5px] leading-tight text-dim">
                   <span className="text-accent shrink-0">{x.icon}</span>
-                  <span className="truncate">{x.text}</span>
+                  <span className="min-w-0 truncate">{x.text}</span>
                 </div>
               ))}
             </div>
 
-            <div className="text-[11.5px] tracking-[0.18em] text-faint mb-3">选择角色进入演示</div>
-            <div className="flex flex-col gap-2.5 max-w-[620px]">
+            <div className="text-[11.5px] tracking-[0.18em] text-faint mb-3">选择角色账号进入演示</div>
+            <div className="flex w-full min-w-0 flex-col gap-1.5 max-w-full sm:max-w-[540px] xl:max-w-[560px]">
               {users.map((u, i) => {
                 const off = u.status !== '在岗'
                 const meta = ROLE_META[u.role]
@@ -132,15 +132,15 @@ export default function Login() {
                         nav(ROLE_HOME[u.role])
                       }
                     }}
-                    className={`card group flex items-center gap-4 px-4 sm:px-5 py-3.5 text-left transition-all duration-200 fade-up ${
+                    className={`card group flex min-h-[58px] w-full min-w-0 items-center gap-3.5 px-4 py-2.5 text-left transition-all duration-200 fade-up ${
                       off ? 'opacity-45 cursor-not-allowed' : 'cursor-pointer hover:border-[rgba(56,189,248,0.45)] hover:bg-[rgba(56,189,248,0.05)]'
                     }`}
                     style={{ animationDelay: `${i * 55}ms` }}
                   >
-                    <span className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 text-accent bg-[rgba(56,189,248,0.1)] border border-[rgba(56,189,248,0.25)]">
+                    <span className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 text-accent bg-[rgba(56,189,248,0.1)] border border-[rgba(56,189,248,0.25)]">
                       {meta.icon}
                     </span>
-                    <span className="grow min-w-0">
+                    <span className="grow min-w-0 overflow-hidden">
                       <span className="flex flex-wrap items-center gap-2">
                         <span className="text-[14px] font-semibold">{u.name}</span>
                         <span className="chip">{ROLE_LABEL[u.role]}</span>
@@ -151,7 +151,7 @@ export default function Login() {
                           </span>
                         )}
                       </span>
-                      <span className="block text-[11.5px] text-faint mt-1 truncate">{u.title} / {meta.desc}</span>
+                      <span className="block text-[11px] leading-[18px] text-faint mt-0.5 truncate">{u.title} / {meta.desc}</span>
                     </span>
                     <ChevronRight size={16} className="text-faint group-hover:text-accent group-hover:translate-x-0.5 transition-all shrink-0" />
                   </button>
@@ -160,20 +160,20 @@ export default function Login() {
             </div>
           </section>
 
-          <section className="hidden xl:flex flex-col gap-3.5 fade-up" style={{ animationDelay: '120ms' }}>
-            <div className="grid grid-cols-3 gap-2.5">
+          <section className="hidden xl:flex flex-col gap-3.5 fade-up min-w-0" style={{ animationDelay: '120ms' }}>
+            <div className="flex gap-2.5 justify-end">
               {[
                 ['项目层级', `${levels}`],
                 ['立项渠道', `${enabledChannels}`],
                 ['承担单位', `${managedUnits}`],
               ].map(([k, v]) => (
-                <div key={k} className="card px-3.5 py-2 flex items-baseline justify-between gap-2.5">
+                <div key={k} className="card min-w-[120px] px-3.5 py-1.5 flex items-baseline justify-between gap-2.5">
                   <span className="text-[10.5px] text-faint">{k}</span>
-                  <span className="num text-[18px] font-semibold text-accent">{v}</span>
+                  <span className="num text-[17px] font-semibold text-accent">{v}</span>
                 </div>
               ))}
             </div>
-            <ArtAirfoilFlow className="w-full" />
+            <ArtAirfoilFlow className="w-full max-h-[300px]" />
             <div className="grid grid-cols-2 gap-3.5">
               <ArtFeaMesh className="w-full" />
               <ArtVortexStreet className="w-full" />
@@ -181,7 +181,7 @@ export default function Login() {
           </section>
         </div>
 
-        <footer className="mt-10 xl:mt-12 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-[10.5px] text-faint">
+        <footer className="mt-8 xl:mt-10 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-[10.5px] text-faint">
           <span>
             依据《科研项目信息化管理平台需求 V18/V19》构建 / 交互演示版 /{' '}
             <a href="/traceability.html" target="_blank" rel="noreferrer" className="text-accent hover:underline">
