@@ -9,6 +9,14 @@ const LEVELS = ['国家级', '地方级', '公司级']
 type UploadMode = 'replace' | 'merge'
 type ImportUploadResponse = { batch: TransitionImportBatch }
 type TransitionFieldMeta = TransitionToolData['fields'][number]
+type MaintenanceTab = 'master' | 'split' | 'upload' | 'reports'
+
+const TABS: { key: MaintenanceTab; label: string }[] = [
+  { key: 'master', label: '总表管理' },
+  { key: 'split', label: '分表拆分' },
+  { key: 'upload', label: '批量上传' },
+  { key: 'reports', label: '校验报告' },
+]
 
 function excelColName(index: number) {
   let n = index + 1
@@ -58,13 +66,21 @@ function transitionCellValue(row: TransitionRow, field: TransitionFieldMeta) {
 export default function TransitionTool() {
   const toast = useToast()
   const [data, setData] = useState<TransitionToolData | null>(null)
+  const [activeTab, setActiveTab] = useState<MaintenanceTab>('master')
   const [kw, setKw] = useState('')
   const [level, setLevel] = useState('')
   const [channel, setChannel] = useState('')
   const [unit, setUnit] = useState('')
   const [status, setStatus] = useState('')
+  const [acceptanceStatus, setAcceptanceStatus] = useState('')
   const [color, setColor] = useState('')
   const [projectType, setProjectType] = useState('')
+  const [startFrom, setStartFrom] = useState('')
+  const [endTo, setEndTo] = useState('')
+  const [budgetMin, setBudgetMin] = useState('')
+  const [budgetMax, setBudgetMax] = useState('')
+  const [transformStatus, setTransformStatus] = useState('')
+  const [visibleGroups, setVisibleGroups] = useState<string[]>([])
   const [edit, setEdit] = useState<TransitionRow | null>(null)
   const [busy, setBusy] = useState(false)
   const [previewBatches, setPreviewBatches] = useState<TransitionImportBatch[]>([])
@@ -81,14 +97,27 @@ export default function TransitionTool() {
     if (channel && (r.sourceChannel || r.channel) !== channel) return false
     if (unit && ![r.responsibleUnit, r.demandUnit, r.center].some((x) => x === unit)) return false
     if (status && (r.projectStatus || r.acceptanceStatus) !== status) return false
+    if (acceptanceStatus && r.acceptanceStatus !== acceptanceStatus) return false
     if (color && r.color !== color) return false
+    if (startFrom && r.startMonth && String(r.startMonth) < startFrom) return false
+    if (endTo && r.endMonth && String(r.endMonth) > endTo) return false
+    const totalBudget = Number(r.totalBudget)
+    if (budgetMin && (!Number.isFinite(totalBudget) || totalBudget < Number(budgetMin))) return false
+    if (budgetMax && (!Number.isFinite(totalBudget) || totalBudget > Number(budgetMax))) return false
+    if (transformStatus) {
+      const converted = Number(r.convertedCount) || 0
+      const result = Number(r.resultCount) || 0
+      if (transformStatus === '已转化' && converted <= 0) return false
+      if (transformStatus === '有成果未转化' && !(result > 0 && converted <= 0)) return false
+      if (transformStatus === '暂无成果' && result > 0) return false
+    }
     if (kw.trim()) {
       const needle = kw.trim().toLowerCase()
-      const hay = [r.serial, r.code, r.name, r.projectType, r.sourceChannel, r.responsibleUnit].join(' ').toLowerCase()
+      const hay = [r.serial, r.code, r.name, r.projectType, r.sourceChannel, r.responsibleUnit, r.demandUnit].join(' ').toLowerCase()
       if (!hay.includes(needle)) return false
     }
     return true
-  }), [data, projectType, level, channel, unit, status, color, kw])
+  }), [data, projectType, level, channel, unit, status, acceptanceStatus, color, startFrom, endTo, budgetMin, budgetMax, transformStatus, kw])
   const filteredSummary = useMemo(() => ({
     total: rows.length,
     valid: rows.filter((r) => r.validation.ok).length,
@@ -105,23 +134,34 @@ export default function TransitionTool() {
     if (channel) q.set('channel', channel)
     if (unit) q.set('unit', unit)
     if (status) q.set('status', status)
+    if (acceptanceStatus) q.set('acceptanceStatus', acceptanceStatus)
     if (color) q.set('color', color)
+    if (startFrom) q.set('startFrom', startFrom)
+    if (endTo) q.set('endTo', endTo)
+    if (budgetMin) q.set('budgetMin', budgetMin)
+    if (budgetMax) q.set('budgetMax', budgetMax)
+    if (transformStatus) q.set('transformStatus', transformStatus)
     const s = q.toString()
     return s ? `?${s}` : ''
-  }, [kw, projectType, level, channel, unit, status, color])
+  }, [kw, projectType, level, channel, unit, status, acceptanceStatus, color, startFrom, endTo, budgetMin, budgetMax, transformStatus])
   const excelFields = useMemo(
     () => [...(data?.fields || [])].sort((a, b) => (a.index ?? 0) - (b.index ?? 0)),
     [data],
   )
+  const allGroupNames = useMemo(() => [...new Set(excelFields.map((field) => field.group))], [excelFields])
+  const tableFields = useMemo(() => {
+    if (!visibleGroups.length) return excelFields
+    return excelFields.filter((field) => visibleGroups.includes(field.group))
+  }, [excelFields, visibleGroups])
   const excelGroups = useMemo(() => {
     const groups: { name: string; span: number }[] = []
-    for (const field of excelFields) {
+    for (const field of tableFields) {
       const last = groups[groups.length - 1]
       if (last && last.name === field.group) last.span += 1
       else groups.push({ name: field.group, span: 1 })
     }
     return groups
-  }, [excelFields])
+  }, [tableFields])
   const latestBatch = useMemo(() => data?.batches[0] || null, [data])
   const currentTypeCount = useMemo(() => {
     const set = new Set(rows.map((r) => r.projectType || r.sourceSheet).filter(Boolean))
@@ -217,14 +257,22 @@ export default function TransitionTool() {
     } catch (e) { toast((e as Error).message, 'err') } finally { setBusy(false) }
   }
 
-  if (!data) return <div className="text-faint text-sm py-20 text-center">正在加载表单过渡工具…</div>
+  const toggleGroup = (group: string) => {
+    setVisibleGroups((old) => (
+      old.includes(group)
+        ? old.filter((x) => x !== group)
+        : [...old, group]
+    ))
+  }
+
+  if (!data) return <div className="text-faint text-sm py-20 text-center">正在加载表单维护…</div>
 
   return (
     <div className="flex flex-col gap-4 fade-up">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-[13px] font-semibold">表单过渡工具</div>
-          <div className="text-[11.5px] text-faint mt-0.5">字段、项目类型、一级/二级专业均以《预先研究项目信息-表头 (1).xlsx》为准；样例表仅用于导入测试，不作为完整字典。</div>
+          <div className="text-[13px] font-semibold">表单维护</div>
+          <div className="text-[11.5px] text-faint mt-0.5">采用“自动台账 + 表单工具”双轨设计：正式台账由业务节点自动归集，表单维护用于总部批量维护、专项分发表、历史数据迁移和临时批量校验导入。</div>
         </div>
       </div>
 
@@ -255,19 +303,45 @@ export default function TransitionTool() {
             <option value="">全部状态</option>
             {data.filterOptions.statuses.map((x) => <option key={x}>{x}</option>)}
           </Select>
+          <Select aria-label="验收状态" value={acceptanceStatus} onChange={(e) => setAcceptanceStatus(e.target.value)} style={{ width: 130 }}>
+            <option value="">全部验收</option>
+            {data.filterOptions.acceptanceStatuses.map((x) => <option key={x}>{x}</option>)}
+          </Select>
+          <Select aria-label="成果转化状态" value={transformStatus} onChange={(e) => setTransformStatus(e.target.value)} style={{ width: 140 }}>
+            <option value="">全部成果</option>
+            {data.filterOptions.transformStatuses.map((x) => <option key={x}>{x}</option>)}
+          </Select>
           <Select aria-label="预警" value={color} onChange={(e) => setColor(e.target.value)} style={{ width: 110 }}>
             <option value="">全部预警</option>
             <option value="red">红</option><option value="yellow">黄</option><option value="blue">蓝</option><option value="green">绿</option>
           </Select>
+          <Input aria-label="开始年月不早于" placeholder="开始≥YYYY.M" value={startFrom} onChange={(e) => setStartFrom(e.target.value)} style={{ width: 118 }} />
+          <Input aria-label="结束年月不晚于" placeholder="结束≤YYYY.M" value={endTo} onChange={(e) => setEndTo(e.target.value)} style={{ width: 118 }} />
+          <Input aria-label="经费下限" placeholder="经费≥万" value={budgetMin} onChange={(e) => setBudgetMin(e.target.value)} style={{ width: 98 }} />
+          <Input aria-label="经费上限" placeholder="经费≤万" value={budgetMax} onChange={(e) => setBudgetMax(e.target.value)} style={{ width: 98 }} />
           <div className="grow" />
-          <Btn disabled={busy} onClick={() => pickFiles('replace')}><UploadCloud size={14} />预校验总表</Btn>
-          <Btn disabled={busy} onClick={() => pickFiles('merge')}><UploadCloud size={14} />预校验分表</Btn>
+          <Btn disabled={busy} onClick={() => { setActiveTab('upload'); pickFiles('replace') }}><UploadCloud size={14} />上传总表预校验</Btn>
+          <Btn disabled={busy} onClick={() => { setActiveTab('upload'); pickFiles('merge') }}><UploadCloud size={14} />上传分表预校验</Btn>
           <a href={`/api/transition-tool/export.xlsx${exportQuery}`} download><Btn variant="primary"><Download size={14} />导出 Excel</Btn></a>
           <a href={`/api/transition-tool/export-package.zip${exportQuery}`} download><Btn variant="primary"><Download size={14} />导出分表包</Btn></a>
         </div>
       </Card>
 
-      <Card
+      <div className="flex items-center gap-2 flex-wrap">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`px-3 py-1.5 rounded-lg border text-[12px] cursor-pointer ${
+              activeTab === tab.key ? 'border-accent text-accent bg-[rgba(56,189,248,0.09)]' : 'border-line2 text-dim hover:text-ink'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'master' && <Card
         title={<span className="flex items-center gap-2"><FileSpreadsheet size={15} />预先研究项目信息</span>}
         extra={
           <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -283,6 +357,16 @@ export default function TransitionTool() {
         pad={false}
         className="overflow-hidden"
       >
+        <div className="flex items-center gap-2 flex-wrap px-4 py-3 border-b border-line">
+          <span className="text-[11px] text-faint">自定义显示列：</span>
+          <button onClick={() => setVisibleGroups([])} className={`chip ${visibleGroups.length === 0 ? 'text-accent border-[rgba(56,189,248,0.35)]' : ''}`}>全部字段</button>
+          {allGroupNames.map((group) => (
+            <button key={group} onClick={() => toggleGroup(group)} className={`chip ${visibleGroups.includes(group) ? 'text-accent border-[rgba(56,189,248,0.35)]' : ''}`}>
+              {group}
+            </button>
+          ))}
+          <span className="text-[11px] text-faint">导出仍按完整 A:AN 模板输出。</span>
+        </div>
         <div className="overflow-x-auto max-h-[calc(100vh-260px)]">
           <table className="excel-ledger-table">
             <thead>
@@ -292,7 +376,7 @@ export default function TransitionTool() {
                 ))}
               </tr>
               <tr>
-                {excelFields.map((field, i) => (
+                {tableFields.map((field, i) => (
                   <th key={field.code} style={{ minWidth: fieldMinWidth(field) }}>
                     <span className="excel-col">{excelColName(field.index ?? i)}</span>
                     {field.label}
@@ -303,7 +387,7 @@ export default function TransitionTool() {
             <tbody>
               {rows.map((row) => (
                 <tr key={row.id} onClick={() => setEdit(row)} className={!row.validation.ok ? 'row-warning' : ''}>
-                  {excelFields.map((field) => {
+                  {tableFields.map((field) => {
                     const value = transitionCellValue(row, field)
                     const isNumber = field.number || typeof (row as unknown as Record<string, unknown>)[field.code] === 'number'
                     return (
@@ -323,7 +407,136 @@ export default function TransitionTool() {
           </table>
           {rows.length === 0 && <Empty text="当前筛选条件下暂无记录" />}
         </div>
-      </Card>
+      </Card>}
+
+      {activeTab === 'split' && (
+        <div className="grid grid-cols-12 gap-4">
+          <Card title="按项目类型拆分专项分表" className="col-span-7" pad={false}>
+            <table className="dtable">
+              <thead><tr><th>项目类型</th><th>记录数</th><th className="text-right">总经费(万元)</th><th>问题行</th><th>分发状态</th></tr></thead>
+              <tbody>
+                {data.subtables.map((item) => (
+                  <tr key={item.name}>
+                    <td className="font-medium">{item.name}</td>
+                    <td className="num text-dim">{item.count}</td>
+                    <td className="num text-right">{wan(item.totalBudget, 1)}</td>
+                    <td>{item.invalid ? <Tag tone="yellow">{item.invalid} 行</Tag> : <Tag tone="green">通过</Tag>}</td>
+                    <td><Tag tone="accent">可导出分表</Tag></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {data.subtables.length === 0 && <Empty text="暂无可拆分的项目类型" />}
+          </Card>
+          <Card title="分表分发规则" className="col-span-5">
+            <div className="flex flex-col gap-3 text-[12px] text-dim">
+              <div>拆分依据：严格按 Excel 字段 <span className="text-ink">项目类型</span> 分组，不按列拆分。</div>
+              <div>分表格式：每个专项分表保留完整 40 列表头、合并单元格、列顺序和下拉字典。</div>
+              <div>主管维护：项目类型主管只维护本人负责的专项分表，回传后由总部确认入库。</div>
+              <div className="pt-2 border-t border-line flex gap-2 flex-wrap">
+                <a href={`/api/transition-tool/export-package.zip${exportQuery}`} download><Btn variant="primary"><Download size={14} />导出总表+分表包</Btn></a>
+                <a href={`/api/transition-tool/export.xlsx${exportQuery}`} download><Btn><Download size={14} />仅导出当前总表</Btn></a>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {activeTab === 'upload' && (
+        <div className="grid grid-cols-12 gap-4">
+          <Card title="五步导入闭环" className="col-span-4">
+            <div className="flex flex-col gap-2">
+              {data.workflow.map((step, i) => (
+                <div key={step} className="flex items-center gap-2 rounded-lg border border-line2 px-3 py-2">
+                  <span className="num text-accent">{i + 1}</span>
+                  <span className="text-[12.5px]">{step}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 flex gap-2 flex-wrap">
+              <Btn disabled={busy} onClick={() => pickFiles('replace')}><UploadCloud size={14} />上传总表</Btn>
+              <Btn disabled={busy} onClick={() => pickFiles('merge')}><UploadCloud size={14} />上传多个分表</Btn>
+            </div>
+          </Card>
+          <Card title="双轨设计" className="col-span-4">
+            <div className="text-[11px] tracking-wider text-faint mb-2">自动台账</div>
+            <div className="flex flex-col gap-1.5 mb-4">
+              {data.railDesign.autoLedger.map((x) => <div key={x} className="text-[12px] text-dim">· {x}</div>)}
+            </div>
+            <div className="text-[11px] tracking-wider text-faint mb-2">表单工具</div>
+            <div className="flex flex-col gap-1.5">
+              {data.railDesign.formMaintenance.map((x) => <div key={x} className="text-[12px] text-dim">· {x}</div>)}
+            </div>
+          </Card>
+          <Card title="最近导入批次" className="col-span-4">
+            <div className="flex flex-col gap-2">
+              {data.batches.map((b) => (
+                <button key={b.id} onClick={() => openBatch(b.id)}
+                  className="rounded-lg border border-line2 px-3 py-2 text-left cursor-pointer hover:border-[rgba(56,189,248,0.38)]">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[12px] text-ink truncate grow">{b.file_name}</span>
+                    <Tag tone={b.status === '已入库' ? 'green' : b.status === '待确认' ? 'accent' : b.status === '待修正' ? 'yellow' : 'dim'}>{b.status}</Tag>
+                  </div>
+                  <div className="text-[10.5px] text-faint mt-1">解析 {b.parsed_count} · 新增 {b.added_count} · 更新 {b.updated_count} · 问题 {b.invalid_count}</div>
+                  <div className="text-[10.5px] text-faint mt-0.5">{b.uploaded_by} · {b.uploaded_at}</div>
+                </button>
+              ))}
+              {data.batches.length === 0 && <Empty text="暂无导入批次" />}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {activeTab === 'reports' && (
+        <div className="grid grid-cols-12 gap-4">
+          <Card title="校验报告与批次记录" className="col-span-5" pad={false}>
+            <table className="dtable">
+              <thead><tr><th>批次</th><th>文件名</th><th>状态</th><th>问题</th><th>确认人</th></tr></thead>
+              <tbody>
+                {data.batches.map((b) => (
+                  <tr key={b.id} className="clickable" onClick={() => openBatch(b.id)}>
+                    <td className="num">{b.id}</td>
+                    <td className="max-w-[220px] truncate">{b.file_name}</td>
+                    <td><Tag tone={b.status === '已入库' ? 'green' : b.status === '待确认' ? 'accent' : b.status === '待修正' ? 'yellow' : 'dim'}>{b.status}</Tag></td>
+                    <td className="num">{b.invalid_count}</td>
+                    <td className="text-dim">{b.confirmed_by || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+          <Card title="字段变更明细" className="col-span-7" pad={false}>
+            <div className="overflow-x-auto max-h-[420px]">
+              <table className="dtable">
+                <thead><tr><th>动作</th><th>项目类型</th><th>项目名称</th><th>字段</th><th>变更前</th><th>变更后</th><th>操作人</th><th>时间</th></tr></thead>
+                <tbody>
+                  {data.changeLogs.flatMap((log) => {
+                    const diffs = log.diff.length ? log.diff : [{ code: '', field: '整行', before: '', after: '' }]
+                    return diffs.slice(0, 8).map((d, i) => (
+                      <tr key={`${log.id}-${d.code}-${i}`}>
+                        <td><Tag tone={log.action === 'add' ? 'green' : log.action === 'manual' ? 'violet' : 'accent'}>{log.action === 'add' ? '新增' : log.action === 'manual' ? '手工维护' : '更新'}</Tag></td>
+                        <td className="text-dim">{log.projectType}</td>
+                        <td className="max-w-[220px] truncate">{log.projectName}</td>
+                        <td className="text-dim">{d.field}</td>
+                        <td className="max-w-[180px] truncate text-faint">{d.before || '—'}</td>
+                        <td className="max-w-[180px] truncate">{d.after || '—'}</td>
+                        <td className="text-dim">{log.changedBy}</td>
+                        <td className="text-faint">{log.changedAt}</td>
+                      </tr>
+                    ))
+                  })}
+                </tbody>
+              </table>
+              {data.changeLogs.length === 0 && <Empty text="暂无字段变更明细" />}
+            </div>
+          </Card>
+          <Card title="仍需正式接口确认" className="col-span-12">
+            <div className="flex flex-wrap gap-2">
+              {data.pending.map((p) => <Tag key={p} tone="yellow">{p}</Tag>)}
+            </div>
+          </Card>
+        </div>
+      )}
 
       <Modal open={!!activeBatch} onClose={() => setActiveBatchId(null)} title="导入批次校验预览" width={960}>
         {activeBatch && (

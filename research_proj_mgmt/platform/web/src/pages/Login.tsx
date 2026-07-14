@@ -56,7 +56,7 @@ const V19_POINTS = [
   { icon: <ShieldCheck size={14} />, text: '领导只读' },
   { icon: <IconTransform size={14} />, text: '成果转化台账' },
   { icon: <Database size={14} />, text: 'V19 字段口径' },
-  { icon: <GitBranch size={14} />, text: '表单过渡工具' },
+  { icon: <GitBranch size={14} />, text: '表单维护' },
 ]
 
 export default function Login() {
@@ -105,7 +105,7 @@ export default function Login() {
             </h1>
             <p className="max-w-full text-[13px] leading-[1.72] text-dim mb-5 sm:max-w-[540px]">
               继承 V18 登录页的角色化入口和科研蓝图视觉，按 V19 反馈补充领导决策查看、项目台账字段口径、
-              可视化看板逻辑、成果转化独立台账和表单过渡工具。后评价按本轮反馈暂缓建设，避免干扰当前演示主线。
+              可视化看板逻辑、成果转化独立台账和表单维护。后评价按本轮反馈暂缓建设，避免干扰当前演示主线。
             </p>
 
             <div className="grid w-full min-w-0 grid-cols-1 min-[480px]:grid-cols-2 sm:grid-cols-4 gap-2 max-w-full sm:max-w-[560px] mb-6">

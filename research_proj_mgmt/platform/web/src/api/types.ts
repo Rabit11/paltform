@@ -183,13 +183,36 @@ export interface TransitionImportBatch {
   issues: { sheet?: string; row?: number; issue: string }[]
   rows?: TransitionImportRow[]
 }
+export interface TransitionChangeLog {
+  id: number
+  batchId: number | null
+  identityKey: string
+  projectType: string
+  projectName: string
+  action: 'add' | 'update' | 'manual'
+  changedBy: string
+  changedAt: string
+  sourceFile: string
+  diff: { code: string; field: string; before: string; after: string }[]
+}
 export interface TransitionToolData {
   fields: TransitionField[]
   dictionaries: { major1: string[]; major2: string[]; projectTypes: string[]; sourceChannels: string[] }
-  filterOptions: { levels: string[]; channels: string[]; units: string[]; statuses: string[]; colors: string[] }
+  filterOptions: {
+    levels: string[]
+    channels: string[]
+    units: string[]
+    statuses: string[]
+    acceptanceStatuses: string[]
+    transformStatuses: string[]
+    colors: string[]
+  }
   rows: TransitionRow[]
   subtables: { name: string; count: number; totalBudget?: number; invalid?: number }[]
   summary: { total: number; valid: number; invalid: number; duplicates: string[]; lastUpdated: string | null; totalBudget?: number; centralGrant?: number; selfFund?: number }
   batches: TransitionImportBatch[]
+  changeLogs: TransitionChangeLog[]
+  railDesign: { autoLedger: string[]; formMaintenance: string[] }
+  workflow: string[]
   pending: string[]
 }

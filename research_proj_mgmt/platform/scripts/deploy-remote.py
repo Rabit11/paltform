@@ -96,9 +96,21 @@ AI_MODEL=glm-5.2
 """
     run(ssh, f"cat > {REMOTE_DIR}/.env << 'ENVEOF'\n{env_content}ENVEOF")
 
-    print("=== Stopping old container if any ===")
+    print(f"=== Stopping old process/container on port {SRPM_PORT} ===")
+    # Stop docker compose / named container first
     run(ssh, f"cd {REMOTE_DIR} && docker compose down 2>/dev/null || true")
     run(ssh, "docker rm -f srpm 2>/dev/null || true")
+    # Free the host port: any published container or host process on SRPM_PORT
+    run(
+        ssh,
+        f"ids=$(docker ps -q --filter publish={SRPM_PORT}); "
+        f"if [ -n \"$ids\" ]; then docker stop $ids; docker rm -f $ids; fi; "
+        f"pids=$(ss -tlnp 2>/dev/null | awk '/:{SRPM_PORT} /{{print}}' | "
+        f"grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u); "
+        f"if [ -n \"$pids\" ]; then kill -9 $pids 2>/dev/null || true; fi; "
+        f"fuser -k {SRPM_PORT}/tcp 2>/dev/null || true; "
+        f"echo \"port {SRPM_PORT} cleared\"",
+    )
 
     print("=== Building and starting (this may take several minutes) ===")
     code, _, _ = run(

@@ -99,6 +99,19 @@ export function createSchema(db) {
     row_json TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS transition_change_logs (
+    id INTEGER PRIMARY KEY,
+    batch_id INTEGER,
+    identity_key TEXT NOT NULL,
+    project_type TEXT,
+    project_name TEXT,
+    action TEXT NOT NULL,               -- add | update | manual
+    changed_by TEXT NOT NULL,
+    changed_at TEXT NOT NULL,
+    diff_json TEXT NOT NULL DEFAULT '[]',
+    source_file TEXT
+  );
+
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,

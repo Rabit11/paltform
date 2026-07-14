@@ -952,7 +952,7 @@ function canWriteTransition(user) {
 function ensureTransitionWriter(req, res) {
   const user = currentUser(req);
   if (!canWriteTransition(user)) {
-    res.status(403).json({ error: '仅总部管理团队或授权管理员可维护表单过渡工具数据' });
+    res.status(403).json({ error: '仅总部管理团队或授权管理员可维护表单数据' });
     return null;
   }
   return user;
@@ -1051,6 +1051,49 @@ function transitionDuplicates(rows) {
   return [...new Set(dup)];
 }
 
+function transitionDiff(before, after) {
+  const oldRow = before ? normalizeTransitionRow(before) : null;
+  const nextRow = normalizeTransitionRow(after);
+  return TRANSITION_FIELDS.flatMap((field) => {
+    const nextValue = cellRawText(nextRow[field.code]);
+    const oldValue = oldRow ? cellRawText(oldRow[field.code]) : '';
+    if (!oldRow && !nextValue) return [];
+    if (oldRow && oldValue === nextValue) return [];
+    return [{
+      code: field.code,
+      field: field.label,
+      before: oldValue,
+      after: nextValue,
+    }];
+  });
+}
+
+function insertTransitionChangeLog({ batchId = null, row, action, userName, sourceFile = '', before = null }) {
+  const normalized = normalizeTransitionRow(row);
+  const diff = transitionDiff(before, normalized);
+  if (action !== 'add' && diff.length === 0) return;
+  db.prepare(`INSERT INTO transition_change_logs
+    (batch_id,identity_key,project_type,project_name,action,changed_by,changed_at,diff_json,source_file)
+    VALUES (?,?,?,?,?,?,?,?,?)`)
+    .run(batchId, transitionIdentity(normalized) || normalized.id, transitionProjectType(normalized), normalized.name || '',
+      action, userName || normalized.updatedBy || '表单维护人', TODAY(), JSON.stringify(diff), sourceFile || normalized.sourceFile || '');
+}
+
+function recentTransitionChangeLogs(limit = 60) {
+  return db.prepare('SELECT * FROM transition_change_logs ORDER BY id DESC LIMIT ?').all(limit).map((row) => ({
+    id: row.id,
+    batchId: row.batch_id,
+    identityKey: row.identity_key,
+    projectType: row.project_type,
+    projectName: row.project_name,
+    action: row.action,
+    changedBy: row.changed_by,
+    changedAt: row.changed_at,
+    sourceFile: row.source_file,
+    diff: J(row.diff_json, []),
+  }));
+}
+
 function filterTransitionRows(rows, query = {}) {
   const text = (v) => normalizeKey(v);
   const kw = text(query.kw);
@@ -1058,17 +1101,36 @@ function filterTransitionRows(rows, query = {}) {
   const channel = cellText(query.channel);
   const unit = cellText(query.unit);
   const status = cellText(query.status);
+  const acceptanceStatus = cellText(query.acceptanceStatus);
   const color = cellText(query.color);
   const projectType = cellText(query.projectType);
+  const startFrom = cellText(query.startFrom);
+  const endTo = cellText(query.endTo);
+  const budgetMin = cellNumber(query.budgetMin);
+  const budgetMax = cellNumber(query.budgetMax);
+  const transformStatus = cellText(query.transformStatus);
   return rows.map((x) => normalizeTransitionRow(x)).filter((row) => {
     if (projectType && transitionProjectType(row) !== projectType) return false;
     if (level && row.level !== level) return false;
     if (channel && cellText(row.sourceChannel || row.channel) !== channel) return false;
     if (unit && ![row.responsibleUnit, row.demandUnit, row.center].some((x) => cellText(x) === unit)) return false;
     if (status && cellText(row.projectStatus || row.acceptanceStatus) !== status) return false;
+    if (acceptanceStatus && cellText(row.acceptanceStatus) !== acceptanceStatus) return false;
     if (color && row.color !== color) return false;
+    if (startFrom && cellText(row.startMonth) && cellText(row.startMonth) < startFrom) return false;
+    if (endTo && cellText(row.endMonth) && cellText(row.endMonth) > endTo) return false;
+    const total = cellNumber(row.totalBudget);
+    if (budgetMin != null && (total == null || total < budgetMin)) return false;
+    if (budgetMax != null && (total == null || total > budgetMax)) return false;
+    if (transformStatus) {
+      const converted = cellNumber(row.convertedCount) || 0;
+      const result = cellNumber(row.resultCount) || 0;
+      if (transformStatus === '已转化' && converted <= 0) return false;
+      if (transformStatus === '有成果未转化' && !(result > 0 && converted <= 0)) return false;
+      if (transformStatus === '暂无成果' && result > 0) return false;
+    }
     if (kw) {
-      const hay = text([row.serial, row.code, row.name, row.projectType, row.sourceChannel, row.responsibleUnit].join(' '));
+      const hay = text([row.serial, row.code, row.name, row.projectType, row.sourceChannel, row.responsibleUnit, row.demandUnit].join(' '));
       if (!hay.includes(kw)) return false;
     }
     return true;
@@ -1083,6 +1145,8 @@ function transitionFilterOptions(rows) {
     channels: vals((r) => r.sourceChannel || r.channel, dictionaries.sourceChannels),
     units: vals((r) => r.responsibleUnit || r.demandUnit || r.center),
     statuses: vals((r) => r.projectStatus || r.acceptanceStatus, ['已完成', '进行中', '延期']),
+    acceptanceStatuses: vals((r) => r.acceptanceStatus, ['单位级验收', '公司级验收', '机关验收', '未验收']),
+    transformStatuses: ['已转化', '有成果未转化', '暂无成果'],
     colors: ['red', 'yellow', 'blue', 'green'],
   };
 }
@@ -1206,7 +1270,17 @@ function confirmTransitionBatch(batchId, userName) {
     if (batch.mode === 'replace') db.prepare('DELETE FROM transition_records').run();
     for (const r0 of rows) {
       const row = normalizeTransitionRow({ ...J(r0.row_json, {}), updatedBy: userName, updatedAt: TODAY() });
+      const beforeRaw = db.prepare('SELECT row_json FROM transition_records WHERE identity_key=?').get(r0.identity_key || transitionIdentity(row));
+      const before = beforeRaw ? J(beforeRaw.row_json, null) : null;
       upsertTransitionRecord(row, batch.id);
+      insertTransitionChangeLog({
+        batchId: batch.id,
+        row,
+        action: r0.action === 'update' ? 'update' : 'add',
+        userName,
+        sourceFile: batch.file_name,
+        before,
+      });
     }
     db.prepare("UPDATE transition_import_batches SET status='已入库', confirmed_by=?, confirmed_at=? WHERE id=?")
       .run(userName, TODAY(), batch.id);
@@ -1401,7 +1475,7 @@ async function makeTransitionTemplateWorkbook(rows) {
   return zip.generateAsync({ type: 'nodebuffer' });
 }
 
-function makeTransitionValidationWorkbook(rows, batches = []) {
+function makeTransitionValidationWorkbook(rows, batches = [], changeLogs = recentTransitionChangeLogs(500)) {
   const reportRows = rows.map((row, i) => {
     const validation = validateTransitionRow(row);
     return {
@@ -1429,6 +1503,21 @@ function makeTransitionValidationWorkbook(rows, batches = []) {
     跳过: b.skipped_count,
     问题行: b.invalid_count,
   }));
+  const changeRows = changeLogs.flatMap((log) => {
+    const diffs = log.diff?.length ? log.diff : [{ field: '', before: '', after: '' }];
+    return diffs.map((d) => ({
+      批次号: log.batchId || '',
+      动作: log.action === 'add' ? '新增' : log.action === 'manual' ? '手工维护' : '更新',
+      项目类型: log.projectType || '',
+      项目名称: log.projectName || '',
+      字段名: d.field || '',
+      变更前: d.before || '',
+      变更后: d.after || '',
+      操作人: log.changedBy || '',
+      操作时间: log.changedAt || '',
+      来源文件: log.sourceFile || '',
+    }));
+  });
   const wb = XLSX.utils.book_new();
   const ws1 = XLSX.utils.json_to_sheet(reportRows.length ? reportRows : [{ 校验结果: '当前暂无台账记录' }]);
   ws1['!cols'] = [{ wch: 8 }, { wch: 18 }, { wch: 34 }, { wch: 20 }, { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 42 }];
@@ -1436,6 +1525,9 @@ function makeTransitionValidationWorkbook(rows, batches = []) {
   const ws2 = XLSX.utils.json_to_sheet(batchRows.length ? batchRows : [{ 状态: '暂无导入批次' }]);
   ws2['!cols'] = [{ wch: 8 }, { wch: 32 }, { wch: 12 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 10 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }];
   XLSX.utils.book_append_sheet(wb, ws2, '导入批次');
+  const ws3 = XLSX.utils.json_to_sheet(changeRows.length ? changeRows : [{ 状态: '暂无变更明细' }]);
+  ws3['!cols'] = [{ wch: 8 }, { wch: 12 }, { wch: 18 }, { wch: 34 }, { wch: 18 }, { wch: 28 }, { wch: 28 }, { wch: 16 }, { wch: 14 }, { wch: 32 }];
+  XLSX.utils.book_append_sheet(wb, ws3, '变更明细');
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 }
 
@@ -1451,7 +1543,7 @@ async function makeTransitionExportPackage(rows) {
     if (!part.length) continue;
     zip.file(`02-专项分表/${safeZipName(table.name)}.xlsx`, await makeTransitionTemplateWorkbook(part));
   }
-  zip.file('03-校验报告.xlsx', makeTransitionValidationWorkbook(rows, recentTransitionBatches()));
+  zip.file('03-校验报告.xlsx', makeTransitionValidationWorkbook(rows, recentTransitionBatches(), recentTransitionChangeLogs(500)));
   return zip.generateAsync({ type: 'nodebuffer' });
 }
 
@@ -1599,11 +1691,12 @@ function uniqueSheetName(name, used) {
   return next;
 }
 
-/** V19 二次反馈：表单过渡工具 */
+/** V19 二次反馈：表单维护 */
 r.get('/transition-tool', (req, res) => {
   const rows = getTransitionRows();
   const enriched = rows.map((x) => ({ ...x, validation: validateTransitionRow(x) }));
   const invalid = enriched.filter((x) => !x.validation.ok).length;
+  const changeLogs = recentTransitionChangeLogs();
   res.json({
     fields: TRANSITION_FIELDS,
     dictionaries: transitionTemplateDictionaries(),
@@ -1621,7 +1714,21 @@ r.get('/transition-tool', (req, res) => {
       selfFund: Math.round(rows.reduce((s, x) => s + (cellNumber(x.selfFund) || 0), 0) * 100) / 100,
     },
     batches: recentTransitionBatches(),
-    pending: ['项目类型主管正式授权范围', '分表模板锁定和下拉选项最终口径', '与正式项目库的批量迁移规则', '安全审查、病毒查杀和备份策略'],
+    changeLogs,
+    railDesign: {
+      autoLedger: [
+        '立项备案与项目基本信息自动回写项目台账',
+        '年度里程碑、CMOS计划、经费抓取、验收归档自动归集',
+        '交付物、成果转化、协作单位评价形成正式台账字段',
+      ],
+      formMaintenance: [
+        '总部上传总表并按项目类型拆分专项分表',
+        '项目类型主管维护分表后批量上传',
+        '预校验通过并确认上传后更新临时总表与历史迁移库',
+      ],
+    },
+    workflow: ['上传文件', '系统解析', '预校验', '上传人确认', '建档入库'],
+    pending: ['项目类型主管正式授权范围', '与正式项目库的批量迁移规则', '安全审查、病毒查杀和备份策略'],
   });
 });
 
@@ -1634,8 +1741,12 @@ r.post('/transition-tool/records', (req, res) => {
   const next = normalizeTransitionRow({ ...row, id, updatedBy: user.name, updatedAt: TODAY() });
   const validation = validateTransitionRow(next);
   if (!validation.ok) return res.status(400).json({ error: validation.missing.concat(validation.warnings).join('；') });
+  const identity = transitionIdentity(next);
+  const beforeRaw = identity ? db.prepare('SELECT row_json FROM transition_records WHERE identity_key=?').get(identity) : null;
+  const before = beforeRaw ? J(beforeRaw.row_json, null) : null;
   upsertTransitionRecord(next, null);
-  audit(user.name, '表单过渡工具', '分表维护', `保存 ${next.projectType || '专项分表'}：${next.name || next.code}`);
+  insertTransitionChangeLog({ row: next, action: before ? 'manual' : 'add', userName: user.name, before });
+  audit(user.name, '表单维护', '分表维护', `保存 ${next.projectType || '专项分表'}：${next.name || next.code}`);
   res.json({ ok: true, row: { ...next, validation } });
 });
 
@@ -1644,7 +1755,7 @@ r.post('/transition-tool/import-demo', (req, res) => {
   if (!user) return;
   const rows = defaultTransitionRows();
   setTransitionRows(rows);
-  audit(user.name, '表单过渡工具', '批量导入', `按样例表字段口径导入演示数据 ${rows.length} 行`);
+  audit(user.name, '表单维护', '批量导入', `按样例表字段口径导入演示数据 ${rows.length} 行`);
   res.json({ ok: true, imported: rows.length });
 });
 
@@ -1662,7 +1773,7 @@ r.post('/transition-tool/import-upload', (req, res) => {
   const parsed = parseTransitionWorkbook(storedPath, up.orig_name, user.name);
   if (!parsed.rows.length) return res.status(400).json({ error: parsed.issues[0]?.issue || '未解析到有效项目记录' });
   const batch = createTransitionBatch({ uploadId: up.id, fileName: up.orig_name, mode, userName: user.name, parsed });
-  audit(user.name, '表单过渡工具', '上传预校验', `${up.orig_name}：解析 ${batch.parsed_count} 行，待新增 ${batch.added_count} 行，待更新 ${batch.updated_count} 行，问题 ${batch.invalid_count} 行`);
+  audit(user.name, '表单维护', '上传预校验', `${up.orig_name}：解析 ${batch.parsed_count} 行，待新增 ${batch.added_count} 行，待更新 ${batch.updated_count} 行，问题 ${batch.invalid_count} 行`);
   res.json({ ok: true, batch, batchId: batch.id, file: up.orig_name, mode, status: batch.status, issues: batch.issues, ...batch.report, rows: batch.rows });
 });
 
@@ -1677,7 +1788,7 @@ r.post('/transition-tool/import-batches/:id/confirm', (req, res) => {
   if (!user) return;
   try {
     const batch = confirmTransitionBatch(Number(req.params.id), user.name);
-    audit(user.name, '表单过渡工具', '确认入库', `${batch.file_name}：新增 ${batch.added_count} 行，更新 ${batch.updated_count} 行`);
+    audit(user.name, '表单维护', '确认入库', `${batch.file_name}：新增 ${batch.added_count} 行，更新 ${batch.updated_count} 行`);
     res.json({ ok: true, batch });
   } catch (err) {
     res.status(400).json({ error: String(err.message || err) });
@@ -1691,7 +1802,7 @@ r.post('/transition-tool/import-batches/:id/cancel', (req, res) => {
   if (!batch) return res.status(404).json({ error: '导入批次不存在' });
   if (!['待确认', '待修正'].includes(batch.status)) return res.status(400).json({ error: '该批次已处理，不能取消' });
   db.prepare("UPDATE transition_import_batches SET status='已取消', confirmed_by=?, confirmed_at=? WHERE id=?").run(user.name, TODAY(), batch.id);
-  audit(user.name, '表单过渡工具', '取消导入', batch.file_name, '上传预校验批次未入库，已取消');
+  audit(user.name, '表单维护', '取消导入', batch.file_name, '上传预校验批次未入库，已取消');
   res.json({ ok: true });
 });
 

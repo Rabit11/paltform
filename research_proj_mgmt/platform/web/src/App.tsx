@@ -52,6 +52,7 @@ export default function App() {
               <Route path="/post-evals" element={<Navigate to="/evaluations" replace />} />
               <Route path="/transformations" element={<Transformations />} />
               <Route path="/transition-tool" element={<TransitionTool />} />
+              <Route path="/form-maintenance" element={<TransitionTool />} />
               <Route path="/workbench" element={<Workbench />} />
               <Route path="/declare" element={<Declare />} />
               <Route path="/milestones" element={<Milestones />} />
