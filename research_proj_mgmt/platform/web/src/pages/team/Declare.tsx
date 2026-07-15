@@ -209,7 +209,7 @@ export default function Declare() {
             <div key={lv}>
               <div className="flex items-center gap-2 mb-2.5 mt-1">
                 <Tag tone={LEVEL_TONE[lv]}>{lv}</Tag>
-                <span className="text-[11px] text-faint">{grouped[lv]?.length || 0} 条渠道</span>
+                <span className="text-[11px] text-faint">{grouped[lv]?.length || 0} 个项目类型</span>
               </div>
               <div className="grid grid-cols-3 gap-3">
                 {(grouped[lv] || []).map((c) => (
@@ -219,7 +219,7 @@ export default function Declare() {
                       <span className="truncate">{c.name}</span>
                       {c.declare_mode === '报备' && <Tag tone="green">报备类</Tag>}
                     </div>
-                    <div className="text-[10.5px] text-faint mb-2">{c.org}{c.declare_mode === '报备' ? ' · 单位审批后归档，总部备案可溯' : ''}</div>
+                    <div className="text-[10.5px] text-faint mb-2">{c.source_channel || '—'} · {c.org_office || c.org}{c.declare_mode === '报备' ? ' · 单位审批后归档，总部备案可溯' : ''}</div>
                     <div className="text-[10.5px] text-dim leading-4 line-clamp-2">{c.flow.slice(0, 4).join(' → ')}{c.flow.length > 4 ? ' → …' : ''}</div>
                   </button>
                 ))}

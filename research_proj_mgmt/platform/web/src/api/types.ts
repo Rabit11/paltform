@@ -132,9 +132,24 @@ export interface DuplicateMatch {
 }
 
 export interface TransitionField { group: string; code: string; label: string; required: boolean; index?: number; width?: number; number?: boolean }
+export interface TransitionCascade {
+  version?: string
+  updated?: string
+  rules?: Record<string, unknown>
+  levels: string[]
+  sourcesByLevel: Record<string, string[]>
+  typesByLevel?: Record<string, string[]>
+  typesByLevelSource: Record<string, Record<string, string[]>>
+  officesByLevelSource: Record<string, Record<string, string[]>>
+  typesByLevelSourceOffice: Record<string, Record<string, Record<string, string[]>>>
+  officeByType: Record<string, { level: string; source: string; office: string }>
+  pathByType: Record<string, { level: string; sourceChannel: string; orgOffice: string; projectType: string }>
+  paths?: { level: string; sourceChannel: string; orgOffice: string; projectType: string }[]
+  tree?: Record<string, Record<string, Record<string, string[]>>>
+}
 export interface TransitionRow {
   id: string; sourceType: string; sourceSheet: string; sourceFile?: string; sourceRow?: number
-  code: string; serial?: string; name: string; level: string; channel: string; sourceChannel?: string; projectType?: string
+  code: string; serial?: string; name: string; level: string; channel: string; sourceChannel?: string; orgOffice?: string; projectType?: string
   major1: string; major2: string; center?: string; managerUnit?: string; demandUnit: string; responsibleUnit?: string; leadWork: string
   projectStatus?: string; acceptanceStatus?: string; owner?: string; approvalMonth?: string; startMonth?: string; endMonth?: string; duration?: string | number
   totalBudget: number | null; centralGrant: number | null; internalGrant?: number | null; selfFund: number | null; internalSelfFund?: number | null
@@ -142,77 +157,14 @@ export interface TransitionRow {
   closedActualBudget?: number | null; closedGrantSpent?: number | null; closedSelfSpent?: number | null; closedExecutionRate?: string; executionRate?: string
   resultCount?: number | null; resultNames?: string; convertedCount?: number | null; convertedNames?: string; convertedMonth?: string; convertedModel?: string
   reserveCount?: number | null; reserveNames?: string; reserveYear?: string; remarks?: string
-  color?: 'red' | 'yellow' | 'blue' | 'green'
   transformSummary: string; updatedBy: string; updatedAt: string
   validation: { ok: boolean; missing: string[]; warnings: string[] }
 }
-export interface TransitionImportRow {
-  id: number
-  rowNo: number | null
-  identityKey: string
-  projectType: string
-  projectName: string
-  action: 'add' | 'update' | 'skip'
-  row: TransitionRow
-  validation: { ok: boolean; missing: string[]; warnings: string[] }
-  issue: string
-}
-export interface TransitionImportBatch {
-  id: number
-  upload_id: number
-  file_name: string
-  mode: 'merge' | 'replace'
-  status: '待确认' | '待修正' | '已入库' | '已取消'
-  uploaded_by: string
-  uploaded_at: string
-  confirmed_by: string | null
-  confirmed_at: string | null
-  parsed_count: number
-  added_count: number
-  updated_count: number
-  skipped_count: number
-  invalid_count: number
-  report: {
-    imported: number
-    added: number
-    updated: number
-    skipped: number
-    invalid: number
-    errors?: { row?: number | string; name?: string; issue: string }[]
-  }
-  issues: { sheet?: string; row?: number; issue: string }[]
-  rows?: TransitionImportRow[]
-}
-export interface TransitionChangeLog {
-  id: number
-  batchId: number | null
-  identityKey: string
-  projectType: string
-  projectName: string
-  action: 'add' | 'update' | 'manual'
-  changedBy: string
-  changedAt: string
-  sourceFile: string
-  diff: { code: string; field: string; before: string; after: string }[]
-}
 export interface TransitionToolData {
   fields: TransitionField[]
-  dictionaries: { major1: string[]; major2: string[]; projectTypes: string[]; sourceChannels: string[] }
-  filterOptions: {
-    levels: string[]
-    channels: string[]
-    units: string[]
-    statuses: string[]
-    acceptanceStatuses: string[]
-    transformStatuses: string[]
-    colors: string[]
-  }
+  cascade?: TransitionCascade
   rows: TransitionRow[]
   subtables: { name: string; count: number; totalBudget?: number; invalid?: number }[]
   summary: { total: number; valid: number; invalid: number; duplicates: string[]; lastUpdated: string | null; totalBudget?: number; centralGrant?: number; selfFund?: number }
-  batches: TransitionImportBatch[]
-  changeLogs: TransitionChangeLog[]
-  railDesign: { autoLedger: string[]; formMaintenance: string[] }
-  workflow: string[]
   pending: string[]
 }

@@ -41,6 +41,7 @@ WORKDIR /app
 COPY --from=serverdeps /build/server/node_modules server/node_modules
 COPY server/package.json server/package.json
 COPY server/src server/src
+COPY server/config server/config
 COPY server/ai.config.example.json server/ai.config.example.json
 COPY --from=webbuild /build/web/dist web/dist
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh

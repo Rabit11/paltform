@@ -5,12 +5,14 @@ import { api } from '../../api/client'
 import type { Project } from '../../api/types'
 import { useSession } from '../../store/session'
 import { Btn, Card, FourBadge, Input, Select, StatusDot, Tag, Empty, Bar } from '../../components/ui'
-import { wan, fmtDate, daysText } from '../../lib/format'
+import { wan, daysText } from '../../lib/format'
 import { FOUR_HEX, FOUR_SHORT } from '../../lib/status'
 import type { Four } from '../../lib/status'
+import { resolveCascade } from '../../lib/cascadePath'
 
 const ALL_COLS = ['编号', '层级/渠道', '专业/单位', '项目周期', '状态', '预警', '里程碑', '经费拆分', '年度预算/支出', '负责人', '交付/协作', '成果转化', '下一节点'] as const
 type Col = typeof ALL_COLS[number]
+type CascadeDriver = 'level' | 'sourceChannel' | 'orgOffice' | 'projectType'
 
 export default function Ledger() {
   const { boot, user, unitOf, channelOf } = useSession()
@@ -22,25 +24,113 @@ export default function Ledger() {
   const [cols, setCols] = useState<Set<Col>>(new Set(ALL_COLS))
 
   const level = sp.get('level') || ''
+  const sourceChannel = sp.get('sourceChannel') || ''
+  const orgOffice = sp.get('orgOffice') || ''
+  const projectType = sp.get('projectType') || ''
   const unit = sp.get('unit') || ''
   const status = sp.get('status') || ''
   const color = sp.get('color') || ''
-  const channel = sp.get('channel') || ''
+  const cascade = boot?.cascade
+
+  // 兼容旧 URL ?channel=<id>
+  useEffect(() => {
+    const legacyId = sp.get('channel')
+    if (!legacyId || !boot?.channels?.length) return
+    const leaf = boot.channels.find((c) => String(c.id) === String(legacyId))
+    if (!leaf) return
+    const n = new URLSearchParams(sp)
+    n.delete('channel')
+    if (leaf.level) n.set('level', leaf.level)
+    if (leaf.source_channel) n.set('sourceChannel', leaf.source_channel)
+    if (leaf.org_office || leaf.org) n.set('orgOffice', leaf.org_office || leaf.org)
+    if (leaf.name) n.set('projectType', leaf.name)
+    setSp(n, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boot?.channels, sp.get('channel')])
+
+  const cascadeView = useMemo(() => {
+    if (!cascade) {
+      return {
+        next: { level, sourceChannel, orgOffice, projectType },
+        options: {
+          levels: ['国家级', '地方级', '公司级'],
+          sources: [] as string[],
+          offices: [] as string[],
+          types: [] as string[],
+        },
+      }
+    }
+    return resolveCascade(cascade, { level, sourceChannel, orgOffice, projectType }, {
+      mode: 'filter',
+      reverseBackfill: true,
+      forwardClear: true,
+    })
+  }, [cascade, level, sourceChannel, orgOffice, projectType])
+
+  useEffect(() => {
+    if (!cascade) return
+    const n = cascadeView.next
+    if (
+      n.level === level
+      && n.sourceChannel === sourceChannel
+      && n.orgOffice === orgOffice
+      && n.projectType === projectType
+    ) return
+    const next = new URLSearchParams(sp)
+    if (n.level) next.set('level', n.level); else next.delete('level')
+    if (n.sourceChannel) next.set('sourceChannel', n.sourceChannel); else next.delete('sourceChannel')
+    if (n.orgOffice) next.set('orgOffice', n.orgOffice); else next.delete('orgOffice')
+    if (n.projectType) next.set('projectType', n.projectType); else next.delete('projectType')
+    setSp(next, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cascade, cascadeView.next, level, sourceChannel, orgOffice, projectType])
 
   useEffect(() => {
     const q = new URLSearchParams()
     if (level) q.set('level', level)
+    if (sourceChannel) q.set('sourceChannel', sourceChannel)
+    if (orgOffice) q.set('orgOffice', orgOffice)
+    if (projectType) q.set('projectType', projectType)
     if (unit) q.set('unit', unit)
     if (status) q.set('status', status)
     if (color) q.set('color', color)
-    if (channel) q.set('channel', channel)
     if (kw) q.set('kw', kw)
     api.get<Project[]>(`/projects?${q}`).then(setRows)
-  }, [level, unit, status, color, channel, kw])
+  }, [level, sourceChannel, orgOffice, projectType, unit, status, color, kw])
 
   const setFilter = (k: string, v: string) => {
     const n = new URLSearchParams(sp)
     if (v) n.set(k, v); else n.delete(k)
+    setSp(n, { replace: true })
+  }
+
+  const applyCascadeFilter = (driver: CascadeDriver, value: string) => {
+    if (!cascade) {
+      const map: Record<CascadeDriver, string> = {
+        level: 'level',
+        sourceChannel: 'sourceChannel',
+        orgOffice: 'orgOffice',
+        projectType: 'projectType',
+      }
+      setFilter(map[driver], value)
+      return
+    }
+    const r = resolveCascade(cascade, {
+      level: driver === 'level' ? value : level,
+      sourceChannel: driver === 'sourceChannel' ? value : sourceChannel,
+      orgOffice: driver === 'orgOffice' ? value : orgOffice,
+      projectType: driver === 'projectType' ? value : projectType,
+    }, {
+      mode: 'filter',
+      driver,
+      reverseBackfill: true,
+      forwardClear: true,
+    })
+    const n = new URLSearchParams(sp)
+    if (r.next.level) n.set('level', r.next.level); else n.delete('level')
+    if (r.next.sourceChannel) n.set('sourceChannel', r.next.sourceChannel); else n.delete('sourceChannel')
+    if (r.next.orgOffice) n.set('orgOffice', r.next.orgOffice); else n.delete('orgOffice')
+    if (r.next.projectType) n.set('projectType', r.next.projectType); else n.delete('projectType')
     setSp(n, { replace: true })
   }
 
@@ -54,28 +144,34 @@ export default function Ledger() {
   }, [rows])
 
   const units = boot?.units.filter((u) => u.kind === 'unit') || []
-  const channels = boot?.channels || []
   const isTeam = user?.role === 'team'
 
   return (
     <div className="flex flex-col gap-4 fade-up">
-      {/* 筛选条 */}
       <Card pad className="!p-3.5">
         <div className="flex items-center gap-2.5 flex-wrap">
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
-            <Input aria-label="搜索" placeholder="项目名称 / 编号" value={kw} onChange={(e) => setKw(e.target.value)} style={{ width: 220, paddingLeft: 32 }} />
+            <Input aria-label="搜索" placeholder="项目名称 / 编号" value={kw} onChange={(e) => setKw(e.target.value)} style={{ width: 200, paddingLeft: 32 }} />
           </div>
-          <Select aria-label="层级" value={level} onChange={(e) => setFilter('level', e.target.value)} style={{ width: 108 }}>
+          <Select aria-label="层级" value={level} onChange={(e) => applyCascadeFilter('level', e.target.value)} style={{ width: 108 }}>
             <option value="">全部层级</option>
-            {['国家级', '地方级', '公司级'].map((l) => <option key={l}>{l}</option>)}
+            {cascadeView.options.levels.map((l) => <option key={l}>{l}</option>)}
           </Select>
-          <Select aria-label="渠道" value={channel} onChange={(e) => setFilter('channel', e.target.value)} style={{ width: 190 }}>
+          <Select aria-label="渠道" value={sourceChannel} onChange={(e) => applyCascadeFilter('sourceChannel', e.target.value)} style={{ width: 120 }}>
             <option value="">全部渠道</option>
-            {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {cascadeView.options.sources.map((s) => <option key={s}>{s}</option>)}
+          </Select>
+          <Select aria-label="司局/处室" title="辅助筛选，不写入 Excel" value={orgOffice} onChange={(e) => applyCascadeFilter('orgOffice', e.target.value)} style={{ width: 140 }}>
+            <option value="">全部司局/处室</option>
+            {cascadeView.options.offices.map((o) => <option key={o}>{o}</option>)}
+          </Select>
+          <Select aria-label="项目类型" value={projectType} onChange={(e) => applyCascadeFilter('projectType', e.target.value)} style={{ width: 200 }}>
+            <option value="">全部项目类型</option>
+            {cascadeView.options.types.map((t) => <option key={t}>{t}</option>)}
           </Select>
           {!isTeam && (
-            <Select aria-label="单位" value={unit} onChange={(e) => setFilter('unit', e.target.value)} style={{ width: 130 }}>
+            <Select aria-label="单位" value={unit} onChange={(e) => setFilter('unit', e.target.value)} style={{ width: 120 }}>
               <option value="">全部单位</option>
               {units.map((u) => <option key={u.id} value={u.id}>{u.short}</option>)}
             </Select>
@@ -112,7 +208,6 @@ export default function Ledger() {
         </div>
       </Card>
 
-      {/* 汇总条 */}
       {summary && (
         <div className="flex items-center gap-5 text-[12px] text-dim px-1">
           <span>共 <b className="num text-ink">{summary.n}</b> 项</span>
@@ -130,7 +225,6 @@ export default function Ledger() {
         </div>
       )}
 
-      {/* 台账表 */}
       <Card pad={false} className="overflow-hidden">
         <div className="overflow-x-auto max-h-[calc(100vh-320px)]">
           <table className="dtable">
@@ -138,7 +232,7 @@ export default function Ledger() {
               <tr>
                 <th>项目名称</th>
                 {cols.has('编号') && <th>编号</th>}
-                {cols.has('层级/渠道') && <th>层级 / 渠道</th>}
+                {cols.has('层级/渠道') && <th>层级 / 渠道 / 类型</th>}
                 {cols.has('专业/单位') && <th>专业 / 管理单位</th>}
                 {cols.has('项目周期') && <th>项目周期</th>}
                 {cols.has('状态') && <th>状态</th>}
@@ -165,9 +259,12 @@ export default function Ledger() {
                     </td>
                     {cols.has('编号') && <td className="num text-dim">{p.code}</td>}
                     {cols.has('层级/渠道') && <td>
-                      <span className="flex items-center gap-1.5">
-                        <Tag tone={p.level === '国家级' ? 'accent' : p.level === '地方级' ? 'violet' : 'dim'}>{p.level}</Tag>
-                        <span className="text-dim text-[11.5px] max-w-[130px] truncate inline-block align-middle">{ch?.name}</span>
+                      <span className="flex flex-col gap-0.5">
+                        <span className="flex items-center gap-1.5">
+                          <Tag tone={p.level === '国家级' ? 'accent' : p.level === '地方级' ? 'violet' : 'dim'}>{p.level}</Tag>
+                          <span className="text-dim text-[11.5px]">{ch?.source_channel || '—'}</span>
+                        </span>
+                        <span className="text-faint text-[11px] max-w-[180px] truncate">{ch?.org_office || ch?.org || '—'} · {ch?.name}</span>
                       </span>
                     </td>}
                     {cols.has('专业/单位') && <td className="text-[11.5px]">

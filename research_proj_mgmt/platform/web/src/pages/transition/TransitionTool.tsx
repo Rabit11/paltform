@@ -1,176 +1,126 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CheckCircle2, Download, FileSpreadsheet, Save, Search, UploadCloud, XCircle } from 'lucide-react'
+import { Download, FileSpreadsheet, RefreshCcw, Save, UploadCloud } from 'lucide-react'
 import { api, apiUpload } from '../../api/client'
-import type { TransitionImportBatch, TransitionRow, TransitionToolData } from '../../api/types'
+import type { TransitionRow, TransitionToolData } from '../../api/types'
 import { Btn, Card, Empty, Field, Input, KPI, Modal, Select, Tag, Textarea, useToast } from '../../components/ui'
 import { wan } from '../../lib/format'
+import { resolveCascade, resolveOrgOfficeFromCascade } from '../../lib/cascadePath'
 
-const LEVELS = ['国家级', '地方级', '公司级']
 type UploadMode = 'replace' | 'merge'
-type ImportUploadResponse = { batch: TransitionImportBatch }
-type TransitionFieldMeta = TransitionToolData['fields'][number]
-type MaintenanceTab = 'master' | 'split' | 'upload' | 'reports'
-
-const TABS: { key: MaintenanceTab; label: string }[] = [
-  { key: 'master', label: '总表管理' },
-  { key: 'split', label: '分表拆分' },
-  { key: 'upload', label: '批量上传' },
-  { key: 'reports', label: '校验报告' },
-]
-
-function excelColName(index: number) {
-  let n = index + 1
-  let name = ''
-  while (n > 0) {
-    const mod = (n - 1) % 26
-    name = String.fromCharCode(65 + mod) + name
-    n = Math.floor((n - 1) / 26)
-  }
-  return name
+type ImportReport = {
+  file: string
+  mode: UploadMode
+  imported: number
+  added: number
+  updated: number
+  skipped: number
+  errors?: { row?: number | string; name?: string; issue: string }[]
+  issues?: { sheet?: string; row?: number; issue: string }[]
 }
 
-function fieldMinWidth(field: TransitionFieldMeta) {
-  return Math.max(86, Math.min(260, (field.width || 14) * 8))
-}
+type FilterState = { level: string; sourceChannel: string; orgOffice: string; projectType: string }
 
-function transitionCellValue(row: TransitionRow, field: TransitionFieldMeta) {
-  const values: Record<string, unknown> = {
-    serial: row.serial || row.code,
-    sourceChannel: row.sourceChannel || row.channel,
-    projectType: row.projectType || row.sourceSheet,
-    demandUnit: row.demandUnit,
-    responsibleUnit: row.responsibleUnit,
-    totalBudget: row.totalBudget,
-    centralGrant: row.centralGrant,
-    internalGrant: row.internalGrant,
-    selfFund: row.selfFund,
-    internalSelfFund: row.internalSelfFund,
-    spent: row.spent,
-    budget2026: row.budget2026,
-    budget2026Actual: row.budget2026Actual,
-    closedActualBudget: row.closedActualBudget,
-    closedGrantSpent: row.closedGrantSpent,
-    closedSelfSpent: row.closedSelfSpent,
-    resultCount: row.resultCount,
-    convertedCount: row.convertedCount,
-    reserveCount: row.reserveCount,
-  }
-  const value = Object.prototype.hasOwnProperty.call(values, field.code)
-    ? values[field.code]
-    : (row as unknown as Record<string, unknown>)[field.code]
-  if (value == null || value === '') return '—'
-  if (field.number && typeof value === 'number') return wan(value, 1)
-  return String(value)
-}
+const EMPTY_FILTER: FilterState = { level: '', sourceChannel: '', orgOffice: '', projectType: '' }
 
 export default function TransitionTool() {
   const toast = useToast()
   const [data, setData] = useState<TransitionToolData | null>(null)
-  const [activeTab, setActiveTab] = useState<MaintenanceTab>('master')
-  const [kw, setKw] = useState('')
-  const [level, setLevel] = useState('')
-  const [channel, setChannel] = useState('')
-  const [unit, setUnit] = useState('')
-  const [status, setStatus] = useState('')
-  const [acceptanceStatus, setAcceptanceStatus] = useState('')
-  const [color, setColor] = useState('')
-  const [projectType, setProjectType] = useState('')
-  const [startFrom, setStartFrom] = useState('')
-  const [endTo, setEndTo] = useState('')
-  const [budgetMin, setBudgetMin] = useState('')
-  const [budgetMax, setBudgetMax] = useState('')
-  const [transformStatus, setTransformStatus] = useState('')
-  const [visibleGroups, setVisibleGroups] = useState<string[]>([])
+  const [filters, setFilters] = useState<FilterState>(EMPTY_FILTER)
+  const [filterDriver, setFilterDriver] = useState<keyof FilterState | ''>('')
   const [edit, setEdit] = useState<TransitionRow | null>(null)
+  const [editDriver, setEditDriver] = useState<keyof FilterState | ''>('')
   const [busy, setBusy] = useState(false)
-  const [previewBatches, setPreviewBatches] = useState<TransitionImportBatch[]>([])
-  const [activeBatchId, setActiveBatchId] = useState<number | null>(null)
+  const [reports, setReports] = useState<ImportReport[]>([])
   const uploadRef = useRef<HTMLInputElement | null>(null)
   const uploadModeRef = useRef<UploadMode>('merge')
 
   const load = useCallback(() => { api.get<TransitionToolData>('/transition-tool').then(setData) }, [])
   useEffect(load, [load])
 
-  const rows = useMemo(() => (data?.rows || []).filter((r) => {
-    if (projectType && (r.projectType || r.sourceSheet) !== projectType) return false
-    if (level && r.level !== level) return false
-    if (channel && (r.sourceChannel || r.channel) !== channel) return false
-    if (unit && ![r.responsibleUnit, r.demandUnit, r.center].some((x) => x === unit)) return false
-    if (status && (r.projectStatus || r.acceptanceStatus) !== status) return false
-    if (acceptanceStatus && r.acceptanceStatus !== acceptanceStatus) return false
-    if (color && r.color !== color) return false
-    if (startFrom && r.startMonth && String(r.startMonth) < startFrom) return false
-    if (endTo && r.endMonth && String(r.endMonth) > endTo) return false
-    const totalBudget = Number(r.totalBudget)
-    if (budgetMin && (!Number.isFinite(totalBudget) || totalBudget < Number(budgetMin))) return false
-    if (budgetMax && (!Number.isFinite(totalBudget) || totalBudget > Number(budgetMax))) return false
-    if (transformStatus) {
-      const converted = Number(r.convertedCount) || 0
-      const result = Number(r.resultCount) || 0
-      if (transformStatus === '已转化' && converted <= 0) return false
-      if (transformStatus === '有成果未转化' && !(result > 0 && converted <= 0)) return false
-      if (transformStatus === '暂无成果' && result > 0) return false
+  const cascade = data?.cascade
+
+  const filterResolved = useMemo(() => {
+    if (!cascade) {
+      return {
+        next: filters,
+        options: { levels: ['国家级', '地方级', '公司级'], sources: [] as string[], offices: [] as string[], types: [] as string[] },
+      }
     }
-    if (kw.trim()) {
-      const needle = kw.trim().toLowerCase()
-      const hay = [r.serial, r.code, r.name, r.projectType, r.sourceChannel, r.responsibleUnit, r.demandUnit].join(' ').toLowerCase()
-      if (!hay.includes(needle)) return false
+    return resolveCascade(cascade, filters, {
+      mode: 'filter',
+      driver: filterDriver,
+      reverseBackfill: true,
+      forwardClear: true,
+    })
+  }, [cascade, filters, filterDriver])
+
+  useEffect(() => {
+    if (!cascade) return
+    const n = filterResolved.next
+    if (
+      n.level !== filters.level
+      || n.sourceChannel !== filters.sourceChannel
+      || n.orgOffice !== filters.orgOffice
+      || n.projectType !== filters.projectType
+    ) {
+      setFilters({
+        level: n.level,
+        sourceChannel: n.sourceChannel,
+        orgOffice: n.orgOffice,
+        projectType: n.projectType,
+      })
     }
-    return true
-  }), [data, projectType, level, channel, unit, status, acceptanceStatus, color, startFrom, endTo, budgetMin, budgetMax, transformStatus, kw])
-  const filteredSummary = useMemo(() => ({
-    total: rows.length,
-    valid: rows.filter((r) => r.validation.ok).length,
-    invalid: rows.filter((r) => !r.validation.ok).length,
-    budget: rows.reduce((s, r) => s + (Number(r.totalBudget) || 0), 0),
-    centralGrant: rows.reduce((s, r) => s + (Number(r.centralGrant) || 0), 0),
-    selfFund: rows.reduce((s, r) => s + (Number(r.selfFund) || 0), 0),
-  }), [rows])
-  const exportQuery = useMemo(() => {
-    const q = new URLSearchParams()
-    if (kw.trim()) q.set('kw', kw.trim())
-    if (projectType) q.set('projectType', projectType)
-    if (level) q.set('level', level)
-    if (channel) q.set('channel', channel)
-    if (unit) q.set('unit', unit)
-    if (status) q.set('status', status)
-    if (acceptanceStatus) q.set('acceptanceStatus', acceptanceStatus)
-    if (color) q.set('color', color)
-    if (startFrom) q.set('startFrom', startFrom)
-    if (endTo) q.set('endTo', endTo)
-    if (budgetMin) q.set('budgetMin', budgetMin)
-    if (budgetMax) q.set('budgetMax', budgetMax)
-    if (transformStatus) q.set('transformStatus', transformStatus)
-    const s = q.toString()
-    return s ? `?${s}` : ''
-  }, [kw, projectType, level, channel, unit, status, acceptanceStatus, color, startFrom, endTo, budgetMin, budgetMax, transformStatus])
-  const excelFields = useMemo(
-    () => [...(data?.fields || [])].sort((a, b) => (a.index ?? 0) - (b.index ?? 0)),
-    [data],
-  )
-  const allGroupNames = useMemo(() => [...new Set(excelFields.map((field) => field.group))], [excelFields])
-  const tableFields = useMemo(() => {
-    if (!visibleGroups.length) return excelFields
-    return excelFields.filter((field) => visibleGroups.includes(field.group))
-  }, [excelFields, visibleGroups])
-  const excelGroups = useMemo(() => {
-    const groups: { name: string; span: number }[] = []
-    for (const field of tableFields) {
-      const last = groups[groups.length - 1]
-      if (last && last.name === field.group) last.span += 1
-      else groups.push({ name: field.group, span: 1 })
+  }, [cascade, filterResolved.next, filters])
+
+  const editResolved = useMemo(() => {
+    if (!cascade || !edit) return null
+    return resolveCascade(cascade, {
+      level: edit.level,
+      sourceChannel: edit.sourceChannel || edit.channel,
+      orgOffice: edit.orgOffice,
+      projectType: edit.projectType || edit.sourceSheet,
+    }, { mode: 'edit', driver: editDriver, reverseBackfill: true, forwardClear: true })
+  }, [cascade, edit, editDriver])
+
+  useEffect(() => {
+    if (!edit || !editResolved) return
+    const n = editResolved.next
+    if (
+      n.level !== edit.level
+      || n.sourceChannel !== (edit.sourceChannel || edit.channel)
+      || n.orgOffice !== (edit.orgOffice || '')
+      || n.projectType !== (edit.projectType || edit.sourceSheet)
+    ) {
+      setEdit({
+        ...edit,
+        level: n.level,
+        sourceChannel: n.sourceChannel,
+        channel: n.sourceChannel,
+        orgOffice: n.orgOffice,
+        projectType: n.projectType,
+        sourceType: n.projectType,
+        sourceSheet: n.projectType,
+      })
     }
-    return groups
-  }, [tableFields])
-  const latestBatch = useMemo(() => data?.batches[0] || null, [data])
-  const currentTypeCount = useMemo(() => {
-    const set = new Set(rows.map((r) => r.projectType || r.sourceSheet).filter(Boolean))
-    return set.size
-  }, [rows])
-  const activeBatch = useMemo(
-    () => previewBatches.find((x) => x.id === activeBatchId) || null,
-    [previewBatches, activeBatchId],
-  )
+  }, [edit, editResolved])
+
+  const rows = useMemo(() => {
+    const f = filterResolved.next
+    return (data?.rows || []).filter((r) => {
+      const office = cascade ? resolveOrgOfficeFromCascade(cascade, r) : (r.orgOffice || '')
+      if (f.level && r.level !== f.level) return false
+      if (f.sourceChannel && (r.sourceChannel || r.channel) !== f.sourceChannel) return false
+      if (f.orgOffice && office !== f.orgOffice) return false
+      if (f.projectType && (r.projectType || r.sourceSheet) !== f.projectType) return false
+      return true
+    })
+  }, [data, filterResolved.next, cascade])
+
+  const byGroup = useMemo(() => {
+    const g: Record<string, number> = {}
+    for (const f of data?.fields || []) g[f.group] = (g[f.group] || 0) + 1
+    return Object.entries(g)
+  }, [data])
 
   const importDemo = async () => {
     setBusy(true)
@@ -190,20 +140,18 @@ export default function TransitionTool() {
     if (!files?.length) return
     const mode = uploadModeRef.current
     setBusy(true)
-    const batches: TransitionImportBatch[] = []
+    const nextReports: ImportReport[] = []
     try {
       for (let i = 0; i < files.length; i += 1) {
         const upload = await apiUpload(files[i])
         const importMode: UploadMode = mode === 'replace' && i > 0 ? 'merge' : mode
-        const result = await api.post<ImportUploadResponse>('/transition-tool/import-upload', { uploadId: upload.id, mode: importMode })
-        batches.push(result.batch)
+        const report = await api.post<ImportReport>('/transition-tool/import-upload', { uploadId: upload.id, mode: importMode })
+        nextReports.push(report)
       }
-      setPreviewBatches(batches)
-      setActiveBatchId(batches[0]?.id || null)
-      const added = batches.reduce((s, x) => s + x.added_count, 0)
-      const updated = batches.reduce((s, x) => s + x.updated_count, 0)
-      const invalid = batches.reduce((s, x) => s + x.invalid_count, 0)
-      toast(`预校验完成：待新增 ${added} 行，待更新 ${updated} 行，问题 ${invalid} 行`)
+      setReports(nextReports)
+      const added = nextReports.reduce((s, x) => s + x.added, 0)
+      const updated = nextReports.reduce((s, x) => s + x.updated, 0)
+      toast(`上传完成：新增 ${added} 行，更新 ${updated} 行`)
       load()
     } catch (e) {
       toast((e as Error).message, 'err')
@@ -213,42 +161,12 @@ export default function TransitionTool() {
     }
   }
 
-  const openBatch = async (id: number) => {
-    setBusy(true)
-    try {
-      const r = await api.get<{ batch: TransitionImportBatch }>(`/transition-tool/import-batches/${id}`)
-      setPreviewBatches((old) => {
-        const rest = old.filter((x) => x.id !== r.batch.id)
-        return [r.batch, ...rest]
-      })
-      setActiveBatchId(r.batch.id)
-    } catch (e) { toast((e as Error).message, 'err') } finally { setBusy(false) }
-  }
-
-  const confirmBatch = async (id: number) => {
-    setBusy(true)
-    try {
-      const r = await api.post<{ batch: TransitionImportBatch }>(`/transition-tool/import-batches/${id}/confirm`)
-      toast(`已确认入库：新增 ${r.batch.added_count} 行，更新 ${r.batch.updated_count} 行`)
-      setPreviewBatches((old) => old.filter((x) => x.id !== id))
-      setActiveBatchId(null)
-      load()
-    } catch (e) { toast((e as Error).message, 'err') } finally { setBusy(false) }
-  }
-
-  const cancelBatch = async (id: number) => {
-    setBusy(true)
-    try {
-      await api.post(`/transition-tool/import-batches/${id}/cancel`)
-      toast('已取消该导入批次，未写入总表')
-      setPreviewBatches((old) => old.filter((x) => x.id !== id))
-      setActiveBatchId(null)
-      load()
-    } catch (e) { toast((e as Error).message, 'err') } finally { setBusy(false) }
-  }
-
   const save = async () => {
     if (!edit) return
+    if (editResolved && !editResolved.valid) {
+      toast('层级/渠道/司局/项目类型组合不合法', 'err')
+      return
+    }
     setBusy(true)
     try {
       await api.post('/transition-tool/records', edit)
@@ -257,392 +175,186 @@ export default function TransitionTool() {
     } catch (e) { toast((e as Error).message, 'err') } finally { setBusy(false) }
   }
 
-  const toggleGroup = (group: string) => {
-    setVisibleGroups((old) => (
-      old.includes(group)
-        ? old.filter((x) => x !== group)
-        : [...old, group]
-    ))
+  const applyFilter = (key: keyof FilterState, value: string) => {
+    setFilterDriver(key)
+    setFilters((prev) => ({ ...prev, [key]: value }))
   }
 
-  if (!data) return <div className="text-faint text-sm py-20 text-center">正在加载表单维护…</div>
+  if (!data) return <div className="text-faint text-sm py-20 text-center">正在加载表单过渡工具…</div>
 
   return (
     <div className="flex flex-col gap-4 fade-up">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-[13px] font-semibold">表单维护</div>
-          <div className="text-[11.5px] text-faint mt-0.5">采用“自动台账 + 表单工具”双轨设计：正式台账由业务节点自动归集，表单维护用于总部批量维护、专项分发表、历史数据迁移和临时批量校验导入。</div>
+          <div className="text-[13px] font-semibold">表单过渡工具</div>
+          <div className="text-[11.5px] text-faint mt-0.5">用于正式平台上线前的专项分表维护、自动汇总总表、批量导入和一键导出；拆分依据为样例表 D 列“项目类型”。司局/处室仅辅助筛选，不写入 Excel。</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <input ref={uploadRef} type="file" accept=".xlsx,.xls" multiple className="hidden" onChange={(e) => importFiles(e.target.files)} />
+          <Btn disabled={busy} onClick={() => pickFiles('replace')}><UploadCloud size={14} />重新导入总表</Btn>
+          <Btn disabled={busy} onClick={() => pickFiles('merge')}><UploadCloud size={14} />批量上传分表</Btn>
+          <Btn disabled={busy} onClick={importDemo}><RefreshCcw size={14} />模拟批量导入</Btn>
+          <a href="/api/transition-tool/export.xlsx" download><Btn variant="primary"><Download size={14} />导出总表+分表</Btn></a>
         </div>
       </div>
 
-      <Card pad className="!p-3.5">
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <input ref={uploadRef} type="file" accept=".xlsx,.xls" multiple className="hidden" onChange={(e) => importFiles(e.target.files)} />
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
-            <Input aria-label="搜索" placeholder="序号 / 项目名称 / 编号" value={kw} onChange={(e) => setKw(e.target.value)} style={{ width: 230, paddingLeft: 32 }} />
-          </div>
-          <Select aria-label="层级" value={level} onChange={(e) => setLevel(e.target.value)} style={{ width: 108 }}>
-            <option value="">全部层级</option>
-            {(data.filterOptions.levels || LEVELS).map((x) => <option key={x}>{x}</option>)}
-          </Select>
-          <Select aria-label="渠道" value={channel} onChange={(e) => setChannel(e.target.value)} style={{ width: 180 }}>
-            <option value="">全部渠道</option>
-            {data.filterOptions.channels.map((x) => <option key={x}>{x}</option>)}
-          </Select>
-          <Select aria-label="项目类型" value={projectType} onChange={(e) => setProjectType(e.target.value)} style={{ width: 180 }}>
-            <option value="">全部项目类型</option>
-            {data.dictionaries.projectTypes.concat(data.subtables.map((x) => x.name)).filter((x, i, a) => x && a.indexOf(x) === i).map((x) => <option key={x}>{x}</option>)}
-          </Select>
-          <Select aria-label="单位" value={unit} onChange={(e) => setUnit(e.target.value)} style={{ width: 150 }}>
-            <option value="">全部单位</option>
-            {data.filterOptions.units.map((x) => <option key={x}>{x}</option>)}
-          </Select>
-          <Select aria-label="状态" value={status} onChange={(e) => setStatus(e.target.value)} style={{ width: 120 }}>
-            <option value="">全部状态</option>
-            {data.filterOptions.statuses.map((x) => <option key={x}>{x}</option>)}
-          </Select>
-          <Select aria-label="验收状态" value={acceptanceStatus} onChange={(e) => setAcceptanceStatus(e.target.value)} style={{ width: 130 }}>
-            <option value="">全部验收</option>
-            {data.filterOptions.acceptanceStatuses.map((x) => <option key={x}>{x}</option>)}
-          </Select>
-          <Select aria-label="成果转化状态" value={transformStatus} onChange={(e) => setTransformStatus(e.target.value)} style={{ width: 140 }}>
-            <option value="">全部成果</option>
-            {data.filterOptions.transformStatuses.map((x) => <option key={x}>{x}</option>)}
-          </Select>
-          <Select aria-label="预警" value={color} onChange={(e) => setColor(e.target.value)} style={{ width: 110 }}>
-            <option value="">全部预警</option>
-            <option value="red">红</option><option value="yellow">黄</option><option value="blue">蓝</option><option value="green">绿</option>
-          </Select>
-          <Input aria-label="开始年月不早于" placeholder="开始≥YYYY.M" value={startFrom} onChange={(e) => setStartFrom(e.target.value)} style={{ width: 118 }} />
-          <Input aria-label="结束年月不晚于" placeholder="结束≤YYYY.M" value={endTo} onChange={(e) => setEndTo(e.target.value)} style={{ width: 118 }} />
-          <Input aria-label="经费下限" placeholder="经费≥万" value={budgetMin} onChange={(e) => setBudgetMin(e.target.value)} style={{ width: 98 }} />
-          <Input aria-label="经费上限" placeholder="经费≤万" value={budgetMax} onChange={(e) => setBudgetMax(e.target.value)} style={{ width: 98 }} />
-          <div className="grow" />
-          <Btn disabled={busy} onClick={() => { setActiveTab('upload'); pickFiles('replace') }}><UploadCloud size={14} />上传总表预校验</Btn>
-          <Btn disabled={busy} onClick={() => { setActiveTab('upload'); pickFiles('merge') }}><UploadCloud size={14} />上传分表预校验</Btn>
-          <a href={`/api/transition-tool/export.xlsx${exportQuery}`} download><Btn variant="primary"><Download size={14} />导出 Excel</Btn></a>
-          <a href={`/api/transition-tool/export-package.zip${exportQuery}`} download><Btn variant="primary"><Download size={14} />导出分表包</Btn></a>
+      <div className="grid grid-cols-5 gap-3">
+        <KPI label="总表记录" value={data.summary.total} unit="行" tone="accent" />
+        <KPI label="校验通过" value={data.summary.valid} unit="行" tone="green" />
+        <KPI label="待修正" value={data.summary.invalid} unit="行" tone={data.summary.invalid ? 'yellow' : 'green'} />
+        <KPI label="项目类型分表" value={data.subtables.filter((x) => x.count > 0).length} unit="张" />
+        <KPI label="总经费合计" value={data.summary.totalBudget || 0} unit="万元" decimals={1} sub={`国拨 ${wan(data.summary.centralGrant, 1)} / 自筹 ${wan(data.summary.selfFund, 1)}`} />
+      </div>
+
+      <Card title="双向级联筛选" extra={<Btn size="sm" onClick={() => { setFilterDriver(''); setFilters(EMPTY_FILTER) }}>清空</Btn>}>
+        <div className="grid grid-cols-4 gap-3">
+          <Field label="全部层级">
+            <Select value={filters.level} onChange={(e) => applyFilter('level', e.target.value)}>
+              <option value="">全部层级</option>
+              {filterResolved.options.levels.map((x) => <option key={x}>{x}</option>)}
+            </Select>
+          </Field>
+          <Field label="全部渠道">
+            <Select value={filters.sourceChannel} onChange={(e) => applyFilter('sourceChannel', e.target.value)}>
+              <option value="">全部渠道</option>
+              {filterResolved.options.sources.map((x) => <option key={x}>{x}</option>)}
+            </Select>
+          </Field>
+          <Field label="全部司局/处室" hint="辅助筛选，不写入 Excel">
+            <Select value={filters.orgOffice} onChange={(e) => applyFilter('orgOffice', e.target.value)}>
+              <option value="">全部司局/处室</option>
+              {filterResolved.options.offices.map((x) => <option key={x}>{x}</option>)}
+            </Select>
+          </Field>
+          <Field label="全部项目类型">
+            <Select value={filters.projectType} onChange={(e) => applyFilter('projectType', e.target.value)}>
+              <option value="">全部项目类型</option>
+              {filterResolved.options.types.map((x) => <option key={x}>{x}</option>)}
+            </Select>
+          </Field>
         </div>
       </Card>
 
-      <div className="flex items-center gap-2 flex-wrap">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`px-3 py-1.5 rounded-lg border text-[12px] cursor-pointer ${
-              activeTab === tab.key ? 'border-accent text-accent bg-[rgba(56,189,248,0.09)]' : 'border-line2 text-dim hover:text-ink'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div className="grid grid-cols-12 gap-4">
+        <Card title="项目类型分表" className="col-span-3">
+          <div className="flex flex-col gap-2">
+            <button onClick={() => applyFilter('projectType', '')} className={`text-left px-3 py-2 rounded-lg border cursor-pointer ${filters.projectType === '' ? 'border-accent text-accent bg-[rgba(56,189,248,0.08)]' : 'border-line2 text-dim hover:text-ink'}`}>
+              全部总表 <span className="num float-right">{data.summary.total}</span>
+            </button>
+            {data.subtables.map((s) => (
+              <button key={s.name} onClick={() => applyFilter('projectType', s.name)} className={`text-left px-3 py-2 rounded-lg border cursor-pointer ${filters.projectType === s.name ? 'border-accent text-accent bg-[rgba(56,189,248,0.08)]' : 'border-line2 text-dim hover:text-ink'}`}>
+                {s.name} <span className="num float-right">{s.count}</span>
+                <div className="text-[10.5px] text-faint mt-1">经费 {wan(s.totalBudget, 1)} 万 · 问题 {s.invalid || 0}</div>
+              </button>
+            ))}
+          </div>
+          <div className="mt-4 pt-4 border-t border-line">
+            <div className="text-[11px] tracking-wider text-faint mb-2">字段板块</div>
+            <div className="flex flex-wrap gap-1.5">
+              {byGroup.map(([g, n]) => <Tag key={g} tone="dim">{g} · {n}</Tag>)}
+            </div>
+          </div>
+          <div className="mt-4 pt-4 border-t border-line">
+            <div className="text-[11px] tracking-wider text-faint mb-2">接口待补充</div>
+            <div className="flex flex-col gap-1.5">
+              {data.pending.map((p) => <span key={p} className="text-[11.5px] text-syellow">· {p}</span>)}
+            </div>
+          </div>
+          {reports.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-line">
+              <div className="text-[11px] tracking-wider text-faint mb-2">最近导入</div>
+              <div className="flex flex-col gap-2">
+                {reports.map((r) => (
+                  <div key={`${r.file}-${r.mode}`} className="rounded-lg border border-line2 px-2.5 py-2">
+                    <div className="text-[11.5px] text-dim truncate">{r.file}</div>
+                    <div className="text-[10.5px] text-faint mt-1">解析 {r.imported} · 新增 {r.added} · 更新 {r.updated} · 跳过 {r.skipped}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </Card>
+
+        <Card title={<span className="flex items-center gap-2"><FileSpreadsheet size={15} />自动汇总总表</span>}
+          extra={<Tag tone={data.summary.duplicates.length ? 'yellow' : 'green'}>{data.summary.duplicates.length ? `重复 ${data.summary.duplicates.length}` : '无重复项目'}</Tag>}
+          className="col-span-9" pad={false}>
+          <div className="overflow-x-auto max-h-[calc(100vh-420px)]">
+            <table className="dtable">
+              <thead><tr><th>项目类型</th><th>序号/项目名称</th><th>级别/渠道/司局</th><th>单位/状态</th><th>经费</th><th>成果转化</th><th>校验</th><th></th></tr></thead>
+              <tbody>
+                {rows.map((r) => {
+                  const office = cascade ? resolveOrgOfficeFromCascade(cascade, r) : (r.orgOffice || '')
+                  return (
+                    <tr key={r.id}>
+                      <td>
+                        <Tag tone={r.level === '国家级' ? 'accent' : r.level === '地方级' ? 'violet' : 'dim'}>{r.projectType || r.sourceSheet}</Tag>
+                        <div className="text-[10.5px] text-faint mt-1">{r.updatedBy} · {r.updatedAt}</div>
+                      </td>
+                      <td>
+                        <div className="num text-accent text-[11px]">序号 {r.serial || r.code || '—'}</div>
+                        <div className="max-w-[240px] truncate">{r.name}</div>
+                      </td>
+                      <td className="text-dim">
+                        {r.level}
+                        <div className="text-[10.5px] text-faint max-w-[190px] truncate">{r.sourceChannel || r.channel || '—'}</div>
+                        <div className="text-[10.5px] text-faint max-w-[190px] truncate">{office || '未归类'}</div>
+                      </td>
+                      <td className="text-dim">{r.responsibleUnit || r.demandUnit || '—'}<div className="text-[10.5px] text-faint">{r.projectStatus || r.acceptanceStatus || '—'}</div></td>
+                      <td className="num text-dim">{wan(r.totalBudget)} 万<div className="text-[10.5px] text-faint">国拨 {wan(r.centralGrant)} / 自筹 {wan(r.selfFund)}</div></td>
+                      <td className="max-w-[190px] truncate text-dim">{r.transformSummary}</td>
+                      <td>{r.validation.ok ? <Tag tone="green">通过</Tag> : <Tag tone="yellow">{r.validation.missing.length + r.validation.warnings.length} 项问题</Tag>}</td>
+                      <td className="text-right"><Btn size="sm" onClick={() => { setEditDriver(''); setEdit(r) }}>维护</Btn></td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            {rows.length === 0 && <Empty text="当前筛选下暂无记录" />}
+          </div>
+        </Card>
       </div>
 
-      {activeTab === 'master' && <Card
-        title={<span className="flex items-center gap-2"><FileSpreadsheet size={15} />预先研究项目信息</span>}
-        extra={
-          <div className="flex items-center gap-2 flex-wrap justify-end">
-            <Tag tone="accent">{filteredSummary.total} 行</Tag>
-            <Tag tone="dim">{excelFields.length} 列 · A:AN</Tag>
-            <Tag tone={filteredSummary.invalid ? 'yellow' : 'green'}>{filteredSummary.invalid ? `待修正 ${filteredSummary.invalid}` : '校验通过'}</Tag>
-            <Tag tone="dim">项目类型 {currentTypeCount}</Tag>
-            <Tag tone="dim">经费 {wan(filteredSummary.budget, 1)} 万</Tag>
-            {data.summary.duplicates.length > 0 && <Tag tone="yellow">重复 {data.summary.duplicates.length}</Tag>}
-            {latestBatch && <button onClick={() => openBatch(latestBatch.id)} className="chip hover:text-accent">{latestBatch.status} · {latestBatch.file_name}</button>}
-          </div>
-        }
-        pad={false}
-        className="overflow-hidden"
-      >
-        <div className="flex items-center gap-2 flex-wrap px-4 py-3 border-b border-line">
-          <span className="text-[11px] text-faint">自定义显示列：</span>
-          <button onClick={() => setVisibleGroups([])} className={`chip ${visibleGroups.length === 0 ? 'text-accent border-[rgba(56,189,248,0.35)]' : ''}`}>全部字段</button>
-          {allGroupNames.map((group) => (
-            <button key={group} onClick={() => toggleGroup(group)} className={`chip ${visibleGroups.includes(group) ? 'text-accent border-[rgba(56,189,248,0.35)]' : ''}`}>
-              {group}
-            </button>
-          ))}
-          <span className="text-[11px] text-faint">导出仍按完整 A:AN 模板输出。</span>
-        </div>
-        <div className="overflow-x-auto max-h-[calc(100vh-260px)]">
-          <table className="excel-ledger-table">
-            <thead>
-              <tr>
-                {excelGroups.map((group) => (
-                  <th key={group.name} colSpan={group.span} className="excel-group">{group.name}</th>
-                ))}
-              </tr>
-              <tr>
-                {tableFields.map((field, i) => (
-                  <th key={field.code} style={{ minWidth: fieldMinWidth(field) }}>
-                    <span className="excel-col">{excelColName(field.index ?? i)}</span>
-                    {field.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.id} onClick={() => setEdit(row)} className={!row.validation.ok ? 'row-warning' : ''}>
-                  {tableFields.map((field) => {
-                    const value = transitionCellValue(row, field)
-                    const isNumber = field.number || typeof (row as unknown as Record<string, unknown>)[field.code] === 'number'
-                    return (
-                      <td
-                        key={field.code}
-                        title={value}
-                        className={`${isNumber ? 'num text-right' : ''} ${field.code === 'name' ? 'font-medium text-ink' : ''}`}
-                        style={{ minWidth: fieldMinWidth(field), maxWidth: fieldMinWidth(field) + 70 }}
-                      >
-                        {value}
-                      </td>
-                    )
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {rows.length === 0 && <Empty text="当前筛选条件下暂无记录" />}
-        </div>
-      </Card>}
-
-      {activeTab === 'split' && (
-        <div className="grid grid-cols-12 gap-4">
-          <Card title="按项目类型拆分专项分表" className="col-span-7" pad={false}>
-            <table className="dtable">
-              <thead><tr><th>项目类型</th><th>记录数</th><th className="text-right">总经费(万元)</th><th>问题行</th><th>分发状态</th></tr></thead>
-              <tbody>
-                {data.subtables.map((item) => (
-                  <tr key={item.name}>
-                    <td className="font-medium">{item.name}</td>
-                    <td className="num text-dim">{item.count}</td>
-                    <td className="num text-right">{wan(item.totalBudget, 1)}</td>
-                    <td>{item.invalid ? <Tag tone="yellow">{item.invalid} 行</Tag> : <Tag tone="green">通过</Tag>}</td>
-                    <td><Tag tone="accent">可导出分表</Tag></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {data.subtables.length === 0 && <Empty text="暂无可拆分的项目类型" />}
-          </Card>
-          <Card title="分表分发规则" className="col-span-5">
-            <div className="flex flex-col gap-3 text-[12px] text-dim">
-              <div>拆分依据：严格按 Excel 字段 <span className="text-ink">项目类型</span> 分组，不按列拆分。</div>
-              <div>分表格式：每个专项分表保留完整 40 列表头、合并单元格、列顺序和下拉字典。</div>
-              <div>主管维护：项目类型主管只维护本人负责的专项分表，回传后由总部确认入库。</div>
-              <div className="pt-2 border-t border-line flex gap-2 flex-wrap">
-                <a href={`/api/transition-tool/export-package.zip${exportQuery}`} download><Btn variant="primary"><Download size={14} />导出总表+分表包</Btn></a>
-                <a href={`/api/transition-tool/export.xlsx${exportQuery}`} download><Btn><Download size={14} />仅导出当前总表</Btn></a>
-              </div>
-            </div>
-          </Card>
-        </div>
-      )}
-
-      {activeTab === 'upload' && (
-        <div className="grid grid-cols-12 gap-4">
-          <Card title="五步导入闭环" className="col-span-4">
-            <div className="flex flex-col gap-2">
-              {data.workflow.map((step, i) => (
-                <div key={step} className="flex items-center gap-2 rounded-lg border border-line2 px-3 py-2">
-                  <span className="num text-accent">{i + 1}</span>
-                  <span className="text-[12.5px]">{step}</span>
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 flex gap-2 flex-wrap">
-              <Btn disabled={busy} onClick={() => pickFiles('replace')}><UploadCloud size={14} />上传总表</Btn>
-              <Btn disabled={busy} onClick={() => pickFiles('merge')}><UploadCloud size={14} />上传多个分表</Btn>
-            </div>
-          </Card>
-          <Card title="双轨设计" className="col-span-4">
-            <div className="text-[11px] tracking-wider text-faint mb-2">自动台账</div>
-            <div className="flex flex-col gap-1.5 mb-4">
-              {data.railDesign.autoLedger.map((x) => <div key={x} className="text-[12px] text-dim">· {x}</div>)}
-            </div>
-            <div className="text-[11px] tracking-wider text-faint mb-2">表单工具</div>
-            <div className="flex flex-col gap-1.5">
-              {data.railDesign.formMaintenance.map((x) => <div key={x} className="text-[12px] text-dim">· {x}</div>)}
-            </div>
-          </Card>
-          <Card title="最近导入批次" className="col-span-4">
-            <div className="flex flex-col gap-2">
-              {data.batches.map((b) => (
-                <button key={b.id} onClick={() => openBatch(b.id)}
-                  className="rounded-lg border border-line2 px-3 py-2 text-left cursor-pointer hover:border-[rgba(56,189,248,0.38)]">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[12px] text-ink truncate grow">{b.file_name}</span>
-                    <Tag tone={b.status === '已入库' ? 'green' : b.status === '待确认' ? 'accent' : b.status === '待修正' ? 'yellow' : 'dim'}>{b.status}</Tag>
-                  </div>
-                  <div className="text-[10.5px] text-faint mt-1">解析 {b.parsed_count} · 新增 {b.added_count} · 更新 {b.updated_count} · 问题 {b.invalid_count}</div>
-                  <div className="text-[10.5px] text-faint mt-0.5">{b.uploaded_by} · {b.uploaded_at}</div>
-                </button>
-              ))}
-              {data.batches.length === 0 && <Empty text="暂无导入批次" />}
-            </div>
-          </Card>
-        </div>
-      )}
-
-      {activeTab === 'reports' && (
-        <div className="grid grid-cols-12 gap-4">
-          <Card title="校验报告与批次记录" className="col-span-5" pad={false}>
-            <table className="dtable">
-              <thead><tr><th>批次</th><th>文件名</th><th>状态</th><th>问题</th><th>确认人</th></tr></thead>
-              <tbody>
-                {data.batches.map((b) => (
-                  <tr key={b.id} className="clickable" onClick={() => openBatch(b.id)}>
-                    <td className="num">{b.id}</td>
-                    <td className="max-w-[220px] truncate">{b.file_name}</td>
-                    <td><Tag tone={b.status === '已入库' ? 'green' : b.status === '待确认' ? 'accent' : b.status === '待修正' ? 'yellow' : 'dim'}>{b.status}</Tag></td>
-                    <td className="num">{b.invalid_count}</td>
-                    <td className="text-dim">{b.confirmed_by || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Card>
-          <Card title="字段变更明细" className="col-span-7" pad={false}>
-            <div className="overflow-x-auto max-h-[420px]">
-              <table className="dtable">
-                <thead><tr><th>动作</th><th>项目类型</th><th>项目名称</th><th>字段</th><th>变更前</th><th>变更后</th><th>操作人</th><th>时间</th></tr></thead>
-                <tbody>
-                  {data.changeLogs.flatMap((log) => {
-                    const diffs = log.diff.length ? log.diff : [{ code: '', field: '整行', before: '', after: '' }]
-                    return diffs.slice(0, 8).map((d, i) => (
-                      <tr key={`${log.id}-${d.code}-${i}`}>
-                        <td><Tag tone={log.action === 'add' ? 'green' : log.action === 'manual' ? 'violet' : 'accent'}>{log.action === 'add' ? '新增' : log.action === 'manual' ? '手工维护' : '更新'}</Tag></td>
-                        <td className="text-dim">{log.projectType}</td>
-                        <td className="max-w-[220px] truncate">{log.projectName}</td>
-                        <td className="text-dim">{d.field}</td>
-                        <td className="max-w-[180px] truncate text-faint">{d.before || '—'}</td>
-                        <td className="max-w-[180px] truncate">{d.after || '—'}</td>
-                        <td className="text-dim">{log.changedBy}</td>
-                        <td className="text-faint">{log.changedAt}</td>
-                      </tr>
-                    ))
-                  })}
-                </tbody>
-              </table>
-              {data.changeLogs.length === 0 && <Empty text="暂无字段变更明细" />}
-            </div>
-          </Card>
-          <Card title="仍需正式接口确认" className="col-span-12">
-            <div className="flex flex-wrap gap-2">
-              {data.pending.map((p) => <Tag key={p} tone="yellow">{p}</Tag>)}
-            </div>
-          </Card>
-        </div>
-      )}
-
-      <Modal open={!!activeBatch} onClose={() => setActiveBatchId(null)} title="导入批次校验预览" width={960}>
-        {activeBatch && (
-          <div className="flex flex-col gap-4">
-            <div className="grid grid-cols-5 gap-3">
-              <KPI label="解析记录" value={activeBatch.parsed_count} unit="行" />
-              <KPI label="待新增" value={activeBatch.added_count} unit="行" tone="green" />
-              <KPI label="待更新" value={activeBatch.updated_count} unit="行" tone="accent" />
-              <KPI label="问题行" value={activeBatch.invalid_count} unit="行" tone={activeBatch.invalid_count ? 'yellow' : 'green'} />
-              <div className="card px-4 py-3 flex flex-col gap-1 min-w-0">
-                <div className="text-[11.5px] tracking-wider text-dim">批次状态</div>
-                <div className="text-[22px] leading-8 font-semibold">{activeBatch.status}</div>
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-line2 px-3.5 py-3">
-              <div className="flex items-center gap-2">
-                {activeBatch.invalid_count ? <XCircle size={16} className="text-syellow" /> : <CheckCircle2 size={16} className="text-sgreen" />}
-                <div className="text-[12.5px] font-medium">{activeBatch.file_name}</div>
-                <Tag tone={activeBatch.mode === 'replace' ? 'yellow' : 'accent'}>{activeBatch.mode === 'replace' ? '总表替换' : '分表合并'}</Tag>
-              </div>
-              <div className="text-[11.5px] text-faint mt-1.5">上传人：{activeBatch.uploaded_by} · 上传时间：{activeBatch.uploaded_at}</div>
-              {activeBatch.issues.length > 0 && (
-                <div className="mt-2 flex flex-col gap-1">
-                  {activeBatch.issues.slice(0, 4).map((x, i) => <div key={i} className="text-[11.5px] text-syellow">{x.sheet || '工作表'}：{x.issue}</div>)}
-                </div>
-              )}
-            </div>
-
-            <div className="overflow-x-auto max-h-[360px] rounded-lg border border-line">
-              <table className="dtable">
-                <thead><tr><th>动作</th><th>行号</th><th>项目类型</th><th>项目名称</th><th>校验结果</th><th>说明</th></tr></thead>
-                <tbody>
-                  {(activeBatch.rows || []).slice(0, 120).map((x) => (
-                    <tr key={x.id}>
-                      <td>
-                        <Tag tone={x.action === 'add' ? 'green' : x.action === 'update' ? 'accent' : 'yellow'}>
-                          {x.action === 'add' ? '新增' : x.action === 'update' ? '更新' : '跳过'}
-                        </Tag>
-                      </td>
-                      <td className="num text-dim">{x.rowNo || '—'}</td>
-                      <td className="text-dim">{x.projectType || '未分类'}</td>
-                      <td className="max-w-[280px] truncate">{x.projectName || x.row.name || '—'}</td>
-                      <td>{x.validation.ok ? <Tag tone="green">通过</Tag> : <Tag tone="yellow">不通过</Tag>}</td>
-                      <td className={x.issue ? 'text-syellow max-w-[360px]' : 'text-faint'}>
-                        {x.issue || x.validation.missing.concat(x.validation.warnings).join('；') || '确认后写入台账'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {(activeBatch.rows || []).length === 0 && <Empty text="该批次暂无行级明细" />}
-            </div>
-
-            {activeBatch.invalid_count > 0 && (
-              <div className="rounded-lg border border-[rgba(251,191,36,0.32)] bg-[rgba(251,191,36,0.08)] px-3 py-2 text-[12px] text-syellow">
-                存在问题行，系统不会入库。请按校验说明修正 Excel 后重新上传。
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2.5">
-              {['待确认', '待修正'].includes(activeBatch.status) && <Btn disabled={busy} onClick={() => cancelBatch(activeBatch.id)}>取消批次</Btn>}
-              <Btn variant="primary" disabled={busy || activeBatch.status !== '待确认' || activeBatch.invalid_count > 0} onClick={() => confirmBatch(activeBatch.id)}>
-                <CheckCircle2 size={14} />确认入库
-              </Btn>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      <Modal open={!!edit} onClose={() => setEdit(null)} title="维护专项分表记录" width={660}>
+      <Modal open={!!edit} onClose={() => setEdit(null)} title="维护专项分表记录" width={680}>
         {edit && (
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-2 gap-3">
               <Field label="序号"><Input value={edit.serial || ''} onChange={(e) => setEdit({ ...edit, serial: e.target.value, code: e.target.value })} /></Field>
               <Field label="项目名称" required><Input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
               <Field label="项目级别" required>
-                <Select value={edit.level} onChange={(e) => setEdit({ ...edit, level: e.target.value })}>
-                  {LEVELS.map((x) => <option key={x}>{x}</option>)}
+                <Select value={edit.level} onChange={(e) => {
+                  setEditDriver('level')
+                  setEdit({ ...edit, level: e.target.value })
+                }}>
+                  {(editResolved?.options.levels || ['国家级', '地方级', '公司级']).map((x) => <option key={x}>{x}</option>)}
                 </Select>
               </Field>
               <Field label="项目来源/渠道" required>
-                <Select value={edit.sourceChannel || edit.channel || ''} onChange={(e) => setEdit({ ...edit, sourceChannel: e.target.value, channel: e.target.value })}>
+                <Select value={edit.sourceChannel || edit.channel || ''} onChange={(e) => {
+                  setEditDriver('sourceChannel')
+                  setEdit({ ...edit, sourceChannel: e.target.value, channel: e.target.value })
+                }}>
                   <option value="">请选择</option>
-                  {data.dictionaries.sourceChannels.concat(data.filterOptions.channels).filter((x, i, a) => x && a.indexOf(x) === i).map((x) => <option key={x}>{x}</option>)}
+                  {(editResolved?.options.sources || []).map((x) => <option key={x}>{x}</option>)}
+                </Select>
+              </Field>
+              <Field label="司局/处室" hint="辅助字段，不导出 Excel">
+                <Select value={edit.orgOffice || ''} onChange={(e) => {
+                  setEditDriver('orgOffice')
+                  setEdit({ ...edit, orgOffice: e.target.value })
+                }}>
+                  <option value="">请选择</option>
+                  {(editResolved?.options.offices || []).map((x) => <option key={x}>{x}</option>)}
                 </Select>
               </Field>
               <Field label="项目类型" required>
-                <Select value={edit.projectType || edit.sourceSheet || ''} onChange={(e) => setEdit({ ...edit, projectType: e.target.value, sourceType: e.target.value, sourceSheet: e.target.value })}>
+                <Select value={edit.projectType || edit.sourceSheet || ''} onChange={(e) => {
+                  setEditDriver('projectType')
+                  setEdit({ ...edit, projectType: e.target.value, sourceType: e.target.value, sourceSheet: e.target.value })
+                }}>
                   <option value="">请选择</option>
-                  {data.dictionaries.projectTypes.concat(data.subtables.map((x) => x.name)).filter((x, i, a) => x && a.indexOf(x) === i).map((x) => <option key={x}>{x}</option>)}
+                  {(editResolved?.options.types || []).map((x) => <option key={x}>{x}</option>)}
                 </Select>
               </Field>
-              <Field label="一级专业">
-                <Select value={edit.major1 || ''} onChange={(e) => setEdit({ ...edit, major1: e.target.value })}>
-                  <option value="">请选择</option>
-                  {data.dictionaries.major1.map((x) => <option key={x}>{x}</option>)}
-                </Select>
-              </Field>
-              <Field label="二级专业">
-                <Select value={edit.major2 || ''} onChange={(e) => setEdit({ ...edit, major2: e.target.value })}>
-                  <option value="">请选择</option>
-                  {data.dictionaries.major2.map((x) => <option key={x}>{x}</option>)}
-                </Select>
-              </Field>
-              <Field label="所中心"><Input value={edit.center || ''} onChange={(e) => setEdit({ ...edit, center: e.target.value })} /></Field>
               <Field label="责任单位" required><Input value={edit.responsibleUnit || ''} onChange={(e) => setEdit({ ...edit, responsibleUnit: e.target.value })} /></Field>
               <Field label="项目状态" required><Input value={edit.projectStatus || ''} onChange={(e) => setEdit({ ...edit, projectStatus: e.target.value })} /></Field>
               <Field label="内部负责人"><Input value={edit.owner || ''} onChange={(e) => setEdit({ ...edit, owner: e.target.value })} /></Field>
@@ -656,6 +368,11 @@ export default function TransitionTool() {
             </div>
             <Field label="产生成果名称"><Textarea rows={2} value={edit.resultNames || ''} onChange={(e) => setEdit({ ...edit, resultNames: e.target.value, transformSummary: e.target.value || edit.transformSummary })} /></Field>
             <Field label="成果转化情况"><Textarea rows={2} value={edit.transformSummary || ''} onChange={(e) => setEdit({ ...edit, transformSummary: e.target.value })} /></Field>
+            {editResolved && !editResolved.valid && (
+              <div className="rounded-lg border border-[rgba(248,113,113,0.32)] bg-[rgba(248,113,113,0.08)] px-3 py-2 text-[12px] text-sred">
+                当前四级组合不在合法路径表内，请修正后再保存
+              </div>
+            )}
             {!edit.validation?.ok && (
               <div className="rounded-lg border border-[rgba(251,191,36,0.32)] bg-[rgba(251,191,36,0.08)] px-3 py-2 text-[12px] text-syellow">
                 {edit.validation.missing.concat(edit.validation.warnings).join('；') || '保存后将重新校验'}
@@ -663,7 +380,7 @@ export default function TransitionTool() {
             )}
             <div className="flex justify-end gap-2.5">
               <Btn onClick={() => setEdit(null)}>取消</Btn>
-              <Btn variant="primary" disabled={busy} onClick={save}><Save size={14} />保存并汇总</Btn>
+              <Btn variant="primary" disabled={busy || (editResolved ? !editResolved.valid : false)} onClick={save}><Save size={14} />保存并汇总</Btn>
             </div>
           </div>
         )}

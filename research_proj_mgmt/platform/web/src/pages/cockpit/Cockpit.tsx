@@ -9,24 +9,93 @@ import { EChart } from '../../components/charts/EChart'
 import { RadarSweep } from '../../components/art'
 import { FOUR_HEX, FOUR_SHORT } from '../../lib/status'
 import { wan, daysText } from '../../lib/format'
+import { resolveCascade } from '../../lib/cascadePath'
+
+type CascadeDriver = 'level' | 'sourceChannel' | 'orgOffice' | 'projectType'
 
 export default function Cockpit() {
   const { boot } = useSession()
   const nav = useNavigate()
   const [d, setD] = useState<Dashboard | null>(null)
   const [unit, setUnit] = useState('')
-  const [level, setLevel] = useState('')
   const [year, setYear] = useState('')
-  const [channel, setChannel] = useState('')
+  const [level, setLevel] = useState('')
+  const [sourceChannel, setSourceChannel] = useState('')
+  const [orgOffice, setOrgOffice] = useState('')
+  const [projectType, setProjectType] = useState('')
+
+  const cascade = boot?.cascade
+
+  const cascadeView = useMemo(() => {
+    if (!cascade) {
+      return {
+        next: { level, sourceChannel, orgOffice, projectType },
+        options: {
+          levels: ['国家级', '地方级', '公司级'],
+          sources: [] as string[],
+          offices: [] as string[],
+          types: [] as string[],
+        },
+      }
+    }
+    return resolveCascade(cascade, { level, sourceChannel, orgOffice, projectType }, {
+      mode: 'filter',
+      reverseBackfill: true,
+      forwardClear: true,
+    })
+  }, [cascade, level, sourceChannel, orgOffice, projectType])
+
+  useEffect(() => {
+    if (!cascade) return
+    const n = cascadeView.next
+    if (
+      n.level !== level
+      || n.sourceChannel !== sourceChannel
+      || n.orgOffice !== orgOffice
+      || n.projectType !== projectType
+    ) {
+      setLevel(n.level)
+      setSourceChannel(n.sourceChannel)
+      setOrgOffice(n.orgOffice)
+      setProjectType(n.projectType)
+    }
+  }, [cascade, cascadeView.next, level, sourceChannel, orgOffice, projectType])
+
+  const applyCascadeFilter = (driver: CascadeDriver, value: string) => {
+    if (!cascade) {
+      if (driver === 'level') setLevel(value)
+      if (driver === 'sourceChannel') setSourceChannel(value)
+      if (driver === 'orgOffice') setOrgOffice(value)
+      if (driver === 'projectType') setProjectType(value)
+      return
+    }
+    const r = resolveCascade(cascade, {
+      level: driver === 'level' ? value : level,
+      sourceChannel: driver === 'sourceChannel' ? value : sourceChannel,
+      orgOffice: driver === 'orgOffice' ? value : orgOffice,
+      projectType: driver === 'projectType' ? value : projectType,
+    }, {
+      mode: 'filter',
+      driver,
+      reverseBackfill: true,
+      forwardClear: true,
+    })
+    setLevel(r.next.level)
+    setSourceChannel(r.next.sourceChannel)
+    setOrgOffice(r.next.orgOffice)
+    setProjectType(r.next.projectType)
+  }
 
   useEffect(() => {
     const q = new URLSearchParams()
     if (unit) q.set('unit', unit)
     if (level) q.set('level', level)
     if (year) q.set('year', year)
-    if (channel) q.set('channel', channel)
+    if (sourceChannel) q.set('sourceChannel', sourceChannel)
+    if (orgOffice) q.set('orgOffice', orgOffice)
+    if (projectType) q.set('projectType', projectType)
     api.get<Dashboard>(`/dashboard?${q}`).then(setD)
-  }, [unit, level, year, channel])
+  }, [unit, level, year, sourceChannel, orgOffice, projectType])
 
   const fundsOpt = useMemo<EChartsOption>(() => {
     if (!d) return {}
@@ -204,15 +273,23 @@ export default function Cockpit() {
             <option value="">全部年度</option>
             {[2026, 2025, 2024, 2023, 2022].map((y) => <option key={y} value={y}>{y} 年度</option>)}
           </Select>
-          <Select aria-label="层级" value={level} onChange={(e) => setLevel(e.target.value)} style={{ width: 110, height: 32 }}>
+          <Select aria-label="层级" value={level} onChange={(e) => applyCascadeFilter('level', e.target.value)} style={{ width: 108, height: 32 }}>
             <option value="">全部层级</option>
-            {['国家级', '地方级', '公司级'].map((l) => <option key={l} value={l}>{l}</option>)}
+            {cascadeView.options.levels.map((l) => <option key={l} value={l}>{l}</option>)}
           </Select>
-          <Select aria-label="渠道" value={channel} onChange={(e) => setChannel(e.target.value)} style={{ width: 170, height: 32 }}>
+          <Select aria-label="渠道" value={sourceChannel} onChange={(e) => applyCascadeFilter('sourceChannel', e.target.value)} style={{ width: 118, height: 32 }}>
             <option value="">全部渠道</option>
-            {(boot?.channels || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {cascadeView.options.sources.map((s) => <option key={s}>{s}</option>)}
           </Select>
-          <Select aria-label="单位" value={unit} onChange={(e) => setUnit(e.target.value)} style={{ width: 130, height: 32 }}>
+          <Select aria-label="司局/处室" title="辅助筛选" value={orgOffice} onChange={(e) => applyCascadeFilter('orgOffice', e.target.value)} style={{ width: 132, height: 32 }}>
+            <option value="">全部司局/处室</option>
+            {cascadeView.options.offices.map((o) => <option key={o}>{o}</option>)}
+          </Select>
+          <Select aria-label="项目类型" value={projectType} onChange={(e) => applyCascadeFilter('projectType', e.target.value)} style={{ width: 180, height: 32 }}>
+            <option value="">全部项目类型</option>
+            {cascadeView.options.types.map((t) => <option key={t}>{t}</option>)}
+          </Select>
+          <Select aria-label="单位" value={unit} onChange={(e) => setUnit(e.target.value)} style={{ width: 120, height: 32 }}>
             <option value="">全部单位</option>
             {units.map((u) => <option key={u.id} value={u.id}>{u.short}</option>)}
           </Select>

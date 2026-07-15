@@ -27,10 +27,12 @@ export function createSchema(db) {
   CREATE TABLE IF NOT EXISTS channels (
     id INTEGER PRIMARY KEY,
     key TEXT UNIQUE NOT NULL,
-    name TEXT NOT NULL,
+    name TEXT NOT NULL,                 -- 项目类型(D列)，叶子展示名
     level TEXT NOT NULL,                -- 国家级 | 地方级 | 公司级
-    org TEXT,                           -- 渠道部门（部委/委局）
-    dept TEXT,                          -- 内部管理处室
+    source_channel TEXT,                -- 项目来源/渠道(C列)：工信部/科技部/发改委/市科委/ZGSF
+    org_office TEXT,                    -- 司局/处室（辅助；公司级=内部处室）
+    org TEXT,                           -- 兼容字段：等同 org_office
+    dept TEXT,                          -- 内部管理处室（国家/地方默认科研项目处；公司级=org_office）
     flow_json TEXT NOT NULL,            -- 全周期流程节点数组
     declare_json TEXT NOT NULL,         -- 申报需提交材料
     filing_json TEXT NOT NULL,          -- 立项需提交材料
@@ -43,73 +45,6 @@ export function createSchema(db) {
   CREATE TABLE IF NOT EXISTS kv (
     key TEXT PRIMARY KEY,
     value TEXT
-  );
-
-  CREATE TABLE IF NOT EXISTS transition_type_owners (
-    project_type TEXT PRIMARY KEY,
-    owner_user_id TEXT,
-    owner_name TEXT,
-    can_import INTEGER NOT NULL DEFAULT 1,
-    can_export INTEGER NOT NULL DEFAULT 1
-  );
-
-  CREATE TABLE IF NOT EXISTS transition_import_batches (
-    id INTEGER PRIMARY KEY,
-    upload_id INTEGER,
-    file_name TEXT NOT NULL,
-    mode TEXT NOT NULL DEFAULT 'merge',       -- merge | replace
-    status TEXT NOT NULL DEFAULT '待确认',     -- 待确认 | 已入库 | 已取消
-    uploaded_by TEXT NOT NULL,
-    uploaded_at TEXT NOT NULL,
-    confirmed_by TEXT,
-    confirmed_at TEXT,
-    parsed_count INTEGER NOT NULL DEFAULT 0,
-    added_count INTEGER NOT NULL DEFAULT 0,
-    updated_count INTEGER NOT NULL DEFAULT 0,
-    skipped_count INTEGER NOT NULL DEFAULT 0,
-    invalid_count INTEGER NOT NULL DEFAULT 0,
-    report_json TEXT NOT NULL DEFAULT '{}',
-    issues_json TEXT NOT NULL DEFAULT '[]'
-  );
-
-  CREATE TABLE IF NOT EXISTS transition_import_rows (
-    id INTEGER PRIMARY KEY,
-    batch_id INTEGER NOT NULL,
-    row_no INTEGER,
-    identity_key TEXT,
-    project_type TEXT,
-    project_name TEXT,
-    action TEXT NOT NULL,                     -- add | update | skip
-    row_json TEXT NOT NULL,
-    validation_json TEXT NOT NULL,
-    issue TEXT
-  );
-
-  CREATE TABLE IF NOT EXISTS transition_records (
-    id TEXT PRIMARY KEY,
-    identity_key TEXT UNIQUE NOT NULL,
-    project_type TEXT NOT NULL,
-    project_name TEXT,
-    source_file TEXT,
-    source_excel_sheet TEXT,
-    source_row INTEGER,
-    updated_by TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    batch_id INTEGER,
-    row_json TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS transition_change_logs (
-    id INTEGER PRIMARY KEY,
-    batch_id INTEGER,
-    identity_key TEXT NOT NULL,
-    project_type TEXT,
-    project_name TEXT,
-    action TEXT NOT NULL,               -- add | update | manual
-    changed_by TEXT NOT NULL,
-    changed_at TEXT NOT NULL,
-    diff_json TEXT NOT NULL DEFAULT '[]',
-    source_file TEXT
   );
 
   CREATE TABLE IF NOT EXISTS users (

@@ -32,7 +32,7 @@ const NAVS: Record<User['role'], { group: string; items: NavItem[] }[]> = {
     { group: '管控闭环', items: [
       { to: '/approvals', label: '审批中心', icon: <IconAccept /> },
       { to: '/evaluations', label: '协作评价与黑名单', icon: <IconCollab /> },
-      { to: '/form-maintenance', label: '表单维护', icon: <IconDeclare /> },
+      { to: '/transition-tool', label: '表单过渡工具', icon: <IconDeclare /> },
     ]},
   ],
   team: [
@@ -67,14 +67,14 @@ const NAVS: Record<User['role'], { group: string; items: NavItem[] }[]> = {
     { group: '平台运维', items: [
       { to: '/admin', label: '配置中心', icon: <IconAdmin /> },
       { to: '/projects', label: '项目台账（只读）', icon: <IconLedger /> },
-      { to: '/form-maintenance', label: '表单维护', icon: <IconDeclare /> },
+      { to: '/transition-tool', label: '表单过渡工具', icon: <IconDeclare /> },
     ]},
   ],
 }
 
 const TITLES: Record<string, string> = {
   '/cockpit': '可视化驾驶舱', '/projects': '项目台账', '/approvals': '审批中心', '/alerts': '预警中心',
-  '/evaluations': '协作单位评价与黑名单', '/transformations': '成果转化台账', '/transition-tool': '表单维护', '/form-maintenance': '表单维护', '/workbench': '工作台',
+  '/evaluations': '协作单位评价与黑名单', '/transformations': '成果转化台账', '/transition-tool': '表单过渡工具', '/workbench': '工作台',
   '/declare': '项目申报', '/milestones': '里程碑填报', '/plans': '计划管理', '/changes': '项目变更', '/assessments': '评估检查',
   '/review': '评审工作台', '/finance': '经费执行台账', '/funding': '总部经费拨付管控', '/admin': '配置中心',
 }

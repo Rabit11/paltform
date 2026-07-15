@@ -13,11 +13,15 @@ export interface User {
 }
 export interface Unit { id: number; name: string; short: string; kind: string }
 export interface Channel {
-  id: number; key: string; name: string; level: string; org: string; dept: string
+  id: number; key: string; name: string; level: string
+  source_channel?: string; org_office?: string; org: string; dept: string
   flow: string[]; declare: string[]; filing: string[]; chain: string[]
   declare_mode: string; assess: string[]; enabled: number
 }
-export interface Bootstrap { today: string; units: Unit[]; channels: Channel[]; users: User[] }
+export interface Bootstrap {
+  today: string; units: Unit[]; channels: Channel[]; users: User[]
+  cascade?: import('../api/types').TransitionCascade
+}
 
 interface Session {
   boot: Bootstrap | null

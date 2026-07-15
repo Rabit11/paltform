@@ -2,6 +2,7 @@
 import { unlinkSync, existsSync } from 'node:fs';
 import { openDb, createSchema, DB_PATH } from './db.js';
 import { todayISO, addDays, statusColor, evalGrade } from './domain.js';
+import { getCascadeConfig } from './cascadeConfig.js';
 
 const TODAY = todayISO();
 const THIS_YEAR = Number(TODAY.slice(0, 4));
@@ -32,43 +33,117 @@ const unitByShort = Object.fromEntries(UNITS.map((u) => [u.short, u]));
 
 const DECLARE_CHAIN = ['项目联系人', '项目负责人', '项目承担部门负责人', '二级总师', '单位财务部门负责人', '单位科技部门负责人', '单位分管领导', '一级总师', '总部科研项目处'];
 
-const CHANNELS = [
-  { id: 1, key: 'MJKY', name: 'MJKY', level: '国家级', org: 'GXB·装备二司', dept: '科研项目处', flow: ['建议书申报', '立项批复', '任务书/可研报告申报', '任务书/可研批复', '中期评估', '单位、公司两级验收评审', '国家级验收'], declare: ['建议书', '建议书意见'], filing: ['立项批复'] },
-  { id: 2, key: 'ZX04', name: '04专项接续', level: '国家级', org: 'GXB·装备一司', dept: '科研项目处', flow: ['建议书申报', '立项批复', '合同书签署', '中期评估', '单位、公司两级验收评审', '国家级验收'], declare: ['建议书', '建议书意见'], filing: ['立项批复'] },
-  { id: 3, key: 'ZDYF', name: '重点研发计划', level: '国家级', org: 'GXB·高新技术司', dept: '科研项目处', flow: ['申请书提交', '申请书评审', '任务书签署', '启动会', '中期评估', '单位、公司两级验收评审', '综合绩效评价'], declare: ['申请书', '申请书评审'], filing: [] },
-  { id: 4, key: 'XX25', name: 'XX25专项', level: '国家级', org: '国资委·科技创新局', dept: '科研项目处', flow: ['任务清单报送', '任务清单评估并下达', '签署任务书', '季度会/双月报/年度评估', '国资委现场督导', '单位、公司两级验收评审', '验收评估'], declare: ['申报通知', '任务清单', '任务清单评估'], filing: [] },
-  { id: 5, key: 'NSFC', name: '国家自然科学基金', level: '国家级', org: '科学技术部·国自然', dept: '科研项目处', flow: ['申请书提交', '申请书评审', '批准通知', '年度实施报告', '中期评估', '单位、公司两级验收评审', '国家级验收'], declare: ['申请书', '申请书评审'], filing: ['批准通知'] },
-  { id: 6, key: 'FGW', name: 'FGW GXJC项目', level: '国家级', org: 'FGW·高技术司', dept: '科研项目处', flow: ['可研报告申报', '批复/投资补助下达', '实施', '中期评估', '单位、公司两级验收评审', '国家级验收'], declare: ['可研报告', '申报批复申请'], filing: ['投资补助批复'] },
-  { id: 7, key: 'JBGS', name: '上海市科技攻关揭榜挂帅', level: '地方级', org: '上海市科委·空天海洋处', dept: '科研项目处', flow: ['榜单梳理', '榜单发布', '榜单答疑', '申请书评审并批复立项', '合同签订', '中期评审', '单位验收评审', '科委验收'], declare: ['榜单答疑'], filing: ['申请书评审'] },
-  { id: 8, key: 'SHKC', name: '上海市科技创新行动计划', level: '地方级', org: '上海市科委·空天海洋处', dept: '科研项目处', flow: ['建议书申报', '建议书评审', '项目立项', '合同签订', '阶段性检查', '单位验收评审', '综合绩效评价'], declare: ['建议书', '建议书评审'], filing: ['立项通知'] },
-  { id: 9, key: 'YYGD', name: '预研三年滚动计划', level: '公司级', org: '科技部·科研项目处', dept: '科研项目处', flow: ['建议书申报', '建议书评审', '项目立项', '任务书提交', '任务书确认并签订合同', '阶段性检查', '单位级验收评审', '公司级验收评审'], declare: ['建议书', '建议书评审'], filing: ['立项通知'] },
-  { id: 10, key: 'ZDKC', name: '重大科技创新专项', level: '公司级', org: '科技部·科研项目处', dept: '科研项目处', flow: ['建议书申报', '专项论证', '项目立项', '任务书签订', '阶段性检查', '单位级验收评审', '公司级验收评审'], declare: ['建议书', '专项论证意见'], filing: ['立项通知'] },
-  { id: 11, key: 'XJQX', name: '新疆大飞机气象创新中心', level: '公司级', org: '科技部·科研项目处', dept: '科研项目处', flow: ['申请书提交', '申请书评审', '技术委员会/主任委员会/理事会审议', '项目立项', '任务书提交', '任务书确认和合同签订', '阶段性检查', '单位验收评审'], declare: ['申请书', '申请书评审', '三会审议纪要'], filing: ['立项通知'] },
-  { id: 12, key: 'KJZ', name: '科技周', level: '公司级', org: '科技部·科技发展处', dept: '科技发展处', flow: ['发布拟立项项目清单', '各单位立项', '实施', '验收'], declare: ['合作需求', '需求对接总结', '技术发展战略委员会审议'], filing: ['拟立项通知', '立项文件'] },
-  { id: 13, key: 'DFY', name: '大飞机研究院', level: '公司级', org: '科技部·科技发展处', dept: '科技发展处', flow: ['项目建议书编制', '项目建议书评审', '形成拟立项清单', '理事会审议', '立项', '项目实施', '项目验收'], declare: ['项目申请书', '学术委员会审议'], filing: ['立项通知'] },
-  { id: 14, key: 'CLLM', name: '大飞机先进材料创新联盟', level: '公司级', org: '科技部·技术基础处', dept: '技术基础处', flow: ['项目申报', '申请书评审', '联盟专委会审议', '联盟理事会审议', '立项建议报批', '发布立项通知', '合同书签署', '项目实施', '项目承担单位验收评审'], declare: ['项目申请书'], filing: ['立项建议清单及联盟专委会、理事会审议意见'] },
-  { id: 15, key: 'BOEING', name: '"中国商飞-波音"可持续航空技术研究中心项目', level: '公司级', org: '科技部·科研项目处', dept: '科研项目处', flow: ['波音指导委员会立项', '项目合同签订', '向公司报备', '项目实施', '项目承担单位验收', '与总部签订拨款合同', '拨款'], declare: ['波音指导委员会会议纪要'], filing: ['三方合同'] },
-];
-// 渠道差异化：报备类审签链 / 科技周长链 / 各渠道评估检查内容
+/** 项目类型(D) → 稳定编码（保留旧 key 便于演示项目映射） */
+const TYPE_KEYS = {
+  MJKY: 'MJKY',
+  '国家科技重大专项--04专项': 'ZX04',
+  1025: 'XX25',
+  下一代国家重点研发计划: 'ZDYF',
+  大飞机基础研究联合基金: 'NSFC',
+  新材料2030专项: 'NSFC_2030',
+  FGW第一批GXJC项目: 'FGW',
+  上海市科技攻关揭榜挂帅: 'JBGS',
+  '上海市科委、经信委项目': 'SHKC',
+  预研三年: 'YYGD',
+  重大科技创新: 'ZDKC',
+  新疆气象中心项目: 'XJQX',
+  波音合作: 'BOEING',
+  实验室: 'LAB',
+  科技委技术发展课题: 'KJW',
+  KT: 'KT',
+  XP: 'XP',
+  高质量专项: 'HQZX',
+  科技周: 'KJZ',
+  '大飞机研究院-南航': 'DFY_NH',
+  '大飞机研究院-西工': 'DFY_XG',
+  '大飞机研究院-同济': 'DFY_TJ',
+  '大飞机研究院-上海交大': 'DFY_SJ',
+  '大飞机研究院-北航': 'DFY_BH',
+  '大飞机研究院-重庆大学': 'DFY_CQ',
+  '大飞机研究院-香港理工': 'DFY_POLYU',
+  '大飞机研究院-中国民航大学': 'DFY_MH',
+  大飞机先进材料创新联盟: 'CLLM',
+};
+
+const FLOW_BY_KEY = {
+  MJKY: { flow: ['建议书申报', '立项批复', '任务书/可研报告申报', '任务书/可研批复', '中期评估', '单位、公司两级验收评审', '国家级验收'], declare: ['建议书', '建议书意见'], filing: ['立项批复'] },
+  ZX04: { flow: ['建议书申报', '立项批复', '合同书签署', '中期评估', '单位、公司两级验收评审', '国家级验收'], declare: ['建议书', '建议书意见'], filing: ['立项批复'] },
+  XX25: { flow: ['任务清单报送', '任务清单评估并下达', '签署任务书', '季度会/双月报/年度评估', '现场督导', '单位、公司两级验收评审', '验收评估'], declare: ['申报通知', '任务清单', '任务清单评估'], filing: [] },
+  ZDYF: { flow: ['申请书提交', '申请书评审', '任务书签署', '启动会', '中期评估', '单位、公司两级验收评审', '综合绩效评价'], declare: ['申请书', '申请书评审'], filing: [] },
+  NSFC: { flow: ['申请书提交', '申请书评审', '批准通知', '年度实施报告', '中期评估', '单位、公司两级验收评审', '国家级验收'], declare: ['申请书', '申请书评审'], filing: ['批准通知'] },
+  NSFC_2030: { flow: ['申请书提交', '申请书评审', '批准通知', '年度实施报告', '中期评估', '单位、公司两级验收评审', '国家级验收'], declare: ['申请书', '申请书评审'], filing: ['批准通知'] },
+  FGW: { flow: ['可研报告申报', '批复/投资补助下达', '实施', '中期评估', '单位、公司两级验收评审', '国家级验收'], declare: ['可研报告', '申报批复申请'], filing: ['投资补助批复'] },
+  JBGS: { flow: ['榜单梳理', '榜单发布', '榜单答疑', '申请书评审并批复立项', '合同签订', '中期评审', '单位验收评审', '科委验收'], declare: ['榜单答疑'], filing: ['申请书评审'] },
+  SHKC: { flow: ['建议书申报', '建议书评审', '项目立项', '合同签订', '阶段性检查', '单位验收评审', '综合绩效评价'], declare: ['建议书', '建议书评审'], filing: ['立项通知'] },
+  YYGD: { flow: ['建议书申报', '建议书评审', '项目立项', '任务书提交', '任务书确认并签订合同', '阶段性检查', '单位级验收评审', '公司级验收评审'], declare: ['建议书', '建议书评审'], filing: ['立项通知'] },
+  ZDKC: { flow: ['建议书申报', '专项论证', '项目立项', '任务书签订', '阶段性检查', '单位级验收评审', '公司级验收评审'], declare: ['建议书', '专项论证意见'], filing: ['立项通知'] },
+  XJQX: { flow: ['申请书提交', '申请书评审', '技术委员会/主任委员会/理事会审议', '项目立项', '任务书提交', '任务书确认和合同签订', '阶段性检查', '单位验收评审'], declare: ['申请书', '申请书评审', '三会审议纪要'], filing: ['立项通知'] },
+  BOEING: { flow: ['波音指导委员会立项', '项目合同签订', '向公司报备', '项目实施', '项目承担单位验收', '与总部签订拨款合同', '拨款'], declare: ['波音指导委员会会议纪要'], filing: ['三方合同'] },
+  LAB: { flow: ['建议书申报', '建议书评审', '项目立项', '任务书提交', '阶段性检查', '单位级验收评审', '公司级验收评审'], declare: ['建议书', '建议书评审'], filing: ['立项通知'] },
+  KJW: { flow: ['课题申报', '课题评审', '立项', '实施', '验收'], declare: ['课题申请书'], filing: ['立项通知'] },
+  KT: { flow: ['建议书申报', '建议书评审', '项目立项', '实施', '验收'], declare: ['建议书'], filing: ['立项通知'] },
+  XP: { flow: ['建议书申报', '建议书评审', '项目立项', '实施', '验收'], declare: ['建议书'], filing: ['立项通知'] },
+  HQZX: { flow: ['建议书申报', '专项论证', '项目立项', '任务书签订', '阶段性检查', '验收'], declare: ['建议书', '专项论证意见'], filing: ['立项通知'] },
+  KJZ: { flow: ['发布拟立项项目清单', '各单位立项', '实施', '验收'], declare: ['合作需求', '需求对接总结', '技术发展战略委员会审议'], filing: ['拟立项通知', '立项文件'] },
+  DFY: { flow: ['项目建议书编制', '项目建议书评审', '形成拟立项清单', '理事会审议', '立项', '项目实施', '项目验收'], declare: ['项目申请书', '学术委员会审议'], filing: ['立项通知'] },
+  CLLM: { flow: ['项目申报', '申请书评审', '联盟专委会审议', '联盟理事会审议', '立项建议报批', '发布立项通知', '合同书签署', '项目实施', '项目承担单位验收评审'], declare: ['项目申请书'], filing: ['立项建议清单及联盟专委会、理事会审议意见'] },
+};
+
 const ASSESS = {
   MJKY: ['中期评估'], ZX04: ['中期评估'], ZDYF: ['中期评估'],
-  XX25: ['季度会/双月报', '年度评估', '国资委现场督导'],
-  NSFC: ['年度实施报告', '中期评估'], FGW: ['中期评估'],
+  XX25: ['季度会/双月报', '年度评估', '现场督导'],
+  NSFC: ['年度实施报告', '中期评估'], NSFC_2030: ['年度实施报告', '中期评估'], FGW: ['中期评估'],
   JBGS: ['中期评审'], SHKC: ['阶段性检查'],
   YYGD: ['阶段性检查'], ZDKC: ['阶段性检查'], XJQX: ['阶段性检查'],
-  KJZ: [], DFY: ['中期检查（重大项目）'], CLLM: ['阶段性检查'], BOEING: ['阶段性检查'],
+  LAB: ['阶段性检查'], KJW: ['阶段性检查'], KT: ['阶段性检查'], XP: ['阶段性检查'], HQZX: ['阶段性检查'],
+  KJZ: [], CLLM: ['阶段性检查'], BOEING: ['阶段性检查'],
 };
 const CHAIN_OVERRIDE = {
   BOEING: ['项目负责人', '北研中心科技部主管', '北研中心科技部部长', '北研中心分管领导', '总部科技部主管（备案）'],
   KJZ: ['项目负责人', '三级专业总师', '二级专业总师', '单位科技部门负责人', '单位分管科技领导', '总部科技发展处', '一级总师', '总部科技管理部'],
 };
 const MODE_OVERRIDE = { BOEING: '报备' };
-for (const c of CHANNELS) {
-  c.assess = ASSESS[c.key] || [];
-  c.chain = CHAIN_OVERRIDE[c.key] || DECLARE_CHAIN;
-  c.mode = MODE_OVERRIDE[c.key] || '审批';
+const OFFICE_DEFAULT_FLOW = {
+  科研项目处: FLOW_BY_KEY.YYGD,
+  科技发展处: FLOW_BY_KEY.DFY,
+  技术基础处: FLOW_BY_KEY.CLLM,
+  装备二司: FLOW_BY_KEY.MJKY,
+  装备一司: FLOW_BY_KEY.ZX04,
+  高新技术司: FLOW_BY_KEY.XX25,
+  国自然: FLOW_BY_KEY.NSFC,
+  高技术司: FLOW_BY_KEY.FGW,
+  空天海洋处: FLOW_BY_KEY.JBGS,
+};
+
+function buildChannelsFromCascade() {
+  const cascade = getCascadeConfig();
+  return cascade.paths.map((p, i) => {
+    const key = TYPE_KEYS[p.projectType] || `T${i + 1}`;
+    const tmplKey = key.startsWith('DFY_') ? 'DFY' : key;
+    const tmpl = FLOW_BY_KEY[tmplKey] || OFFICE_DEFAULT_FLOW[p.orgOffice] || FLOW_BY_KEY.YYGD;
+    const dept = p.level === '公司级' ? p.orgOffice : '科研项目处';
+    return {
+      id: i + 1,
+      key,
+      name: p.projectType,
+      level: p.level,
+      source_channel: p.sourceChannel,
+      org_office: p.orgOffice,
+      org: p.orgOffice,
+      dept,
+      flow: tmpl.flow,
+      declare: tmpl.declare,
+      filing: tmpl.filing,
+      assess: ASSESS[key] || ASSESS[tmplKey] || ['阶段性检查'],
+      chain: CHAIN_OVERRIDE[key] || DECLARE_CHAIN,
+      mode: MODE_OVERRIDE[key] || '审批',
+    };
+  });
 }
+
+const CHANNELS = buildChannelsFromCascade();
 const chByKey = Object.fromEntries(CHANNELS.map((c) => [c.key, c]));
+if (!CHANNELS.length) throw new Error('级联配置未生成任何渠道叶子');
 
 const USERS = [
   { id: 'u_leader', name: '周明远', role: 'leader', scope: 'hq', unit_id: 7, title: '公司领导 / 科技管理数智大屏决策查看' },
@@ -137,7 +212,7 @@ const DEF = [
   ['民机噪声适航符合性预测技术', 'ZX04', '试飞中心', '申报中', 2800, 2026, 2028, 'blue', null, []],
   ['复合材料机翼损伤容限评估技术', 'ZDYF', '上飞院', '验收中', 8900, 2022, 2026, 'yellow', '林晚晴', [['西北工业大学', '损伤扩展试验'], ['基础能力中心', '试样制备与检测']]],
   ['大涵道比涡扇发动机短舱降噪技术', 'ZDYF', '上飞院', '实施中', 7400, 2024, 2027, 'blue', null, [['中国航发商发', '声衬联合设计']]],
-  ['民机颤振主动抑制技术研究', 'ZDYF', '上飞院', '实施中', 5200, 2024, 2027, 'yellow', null, [['南京航空航天大学', '气动伺服弹性建模']]],
+  ['民机颤振主动抑制技术研究', 'NSFC_2030', '上飞院', '实施中', 5200, 2024, 2027, 'yellow', null, [['南京航空航天大学', '气动伺服弹性建模']]],
   ['增材制造钛合金主承力框应用研究', 'XX25', '上飞公司', '实施中', 9600, 2024, 2027, 'blue', null, [['中国航空制造技术研究院', '工艺规范制定']]],
   ['智能蒙皮与形变感知技术', 'XX25', '上飞院', '立项中', 4800, 2026, 2029, 'blue', null, []],
   ['大型客机气动声学综合设计技术', 'XX25', '上飞院', '已验收', 15600, 2021, 2024, 'green', null, [['北京航空航天大学', '声源识别方法'], ['试飞中心', '飞行试验验证']]],
@@ -153,18 +228,18 @@ const DEF = [
   ['机翼自然层流减阻设计验证', 'YYGD', '上飞院', '实施中', 4600, 2023, 2026, 'red', '林晚晴', [['试飞中心', '飞行测量改装']]],
   ['起落架健康监测与预测性维护', 'YYGD', '客服公司', '验收中', 2900, 2023, 2026, 'yellow', null, [['苏州长风航空电子', '传感器组件']]],
   ['航电系统模型驱动开发方法', 'YYGD', '上飞院', '实施中', 3100, 2025, 2027, 'blue', null, []],
-  ['民机安全性评估数字化工具链', 'YYGD', '上飞院', '实施中', 2700, 2025, 2027, 'blue', null, []],
-  ['复材回收再利用技术研究', 'YYGD', '上飞院', '实施中', 1900, 2025, 2028, 'blue', '林晚晴', [['基础能力中心', '回收料性能评估']]],
-  ['高原机场起降性能拓展研究', 'YYGD', '试飞中心', '实施中', 2400, 2024, 2026, 'blue', null, []],
-  ['民机防除冰系统新构型研究', 'YYGD', '上飞院', '实施中', 3300, 2024, 2026, 'red', null, []],
+  ['民机安全性评估数字化工具链', 'LAB', '上飞院', '实施中', 2700, 2025, 2027, 'blue', null, []],
+  ['复材回收再利用技术研究', 'KT', '上飞院', '实施中', 1900, 2025, 2028, 'blue', '林晚晴', [['基础能力中心', '回收料性能评估']]],
+  ['高原机场起降性能拓展研究', 'XP', '试飞中心', '实施中', 2400, 2024, 2026, 'blue', null, []],
+  ['民机防除冰系统新构型研究', 'HQZX', '上飞院', '实施中', 3300, 2024, 2026, 'red', null, []],
   ['全机静力试验智能测控系统', 'ZDKC', '上飞公司', '实施中', 5400, 2024, 2027, 'blue', null, [['基础能力中心', '高精度加载设备']]],
   ['飞机总装脉动生产线仿真优化', 'ZDKC', '上飞公司', '实施中', 4100, 2024, 2026, 'yellow', null, []],
   ['高空长航时气象探测无人平台', 'XJQX', '北研中心', '实施中', 6200, 2024, 2027, 'red', null, [['新疆气象科学研究所', '探测载荷标定']]],
   ['气象大数据航路优化技术', 'XJQX', '客服公司', '实施中', 1600, 2025, 2027, 'yellow', null, []],
   ['智慧民机科普互动系统', 'KJZ', '客服公司', '已验收', 260, 2023, 2023, 'green', null, []],
   ['数字风洞云展示平台', 'KJZ', '上飞院', '立项中', 180, 2026, 2026, 'blue', null, []],
-  ['无人驾驶航空器适航标准预研', 'DFY', '北研中心', '实施中', 1400, 2025, 2027, 'blue', null, [['中国民航大学', '标准草案编制']]],
-  ['民机市场需求预测模型研究', 'DFY', '北研中心', '已验收', 900, 2023, 2025, 'green', null, []],
+  ['无人驾驶航空器适航标准预研', 'DFY_MH', '北研中心', '实施中', 1400, 2025, 2027, 'blue', null, [['中国民航大学', '标准草案编制']]],
+  ['民机市场需求预测模型研究', 'DFY_NH', '北研中心', '已验收', 900, 2023, 2025, 'green', null, []],
   ['高温树脂体系联合研发', 'CLLM', '基础能力中心', '实施中', 2800, 2024, 2027, 'yellow', null, [['中航复合材料有限责任公司', '树脂配方开发']]],
   ['拉挤成型复材长桁产业化技术', 'CLLM', '上飞公司', '申报中', 3200, 2026, 2028, 'blue', null, [['哈尔滨工业大学', '成型工艺仿真']]],
   ['钛合金紧固件国产替代验证', 'CLLM', '上飞公司', '实施中', 1700, 2024, 2026, 'blue', null, []],
@@ -221,13 +296,13 @@ for (const f of [DB_PATH, DB_PATH + '-journal', DB_PATH.replace('.db', '.db-wal'
   try { if (existsSync(f)) unlinkSync(f); } catch { /* 服务占用时忽略 */ }
 }
 const db = openDb();
-const TABLES = ['transition_records', 'transition_import_rows', 'transition_import_batches', 'transition_type_owners', 'units', 'channels', 'users', 'projects', 'milestones', 'plans', 'funds', 'funding_pool', 'funding_quota', 'funding_requests', 'deliverables', 'packages', 'collaborators', 'post_evals', 'approvals', 'changes', 'documents', 'alerts', 'audit', 'uploads', 'kv'];
+const TABLES = ['units', 'channels', 'users', 'projects', 'milestones', 'plans', 'funds', 'funding_pool', 'funding_quota', 'funding_requests', 'deliverables', 'packages', 'collaborators', 'post_evals', 'approvals', 'changes', 'documents', 'alerts', 'audit', 'uploads', 'kv'];
 for (const t of TABLES) db.exec(`DROP TABLE IF EXISTS ${t}`);
 createSchema(db);
 
 const ins = {
   unit: db.prepare('INSERT INTO units (id,name,short,kind) VALUES (?,?,?,?)'),
-  channel: db.prepare('INSERT INTO channels (id,key,name,level,org,dept,flow_json,declare_json,filing_json,approve_chain_json,declare_mode,assess_json,enabled) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)'),
+  channel: db.prepare('INSERT INTO channels (id,key,name,level,source_channel,org_office,org,dept,flow_json,declare_json,filing_json,approve_chain_json,declare_mode,assess_json,enabled) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)'),
   user: db.prepare("INSERT INTO users (id,name,role,scope,unit_id,title,status) VALUES (?,?,?,?,?,?,'在岗')"),
   project: db.prepare(`INSERT INTO projects (id,code,wbs,name,goal,year_goal,level,channel_id,lead_unit_id,partners_json,team_json,start,end,status,total_budget,transform_status,accepted_at,tags_json)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`),
@@ -250,7 +325,17 @@ const ins = {
 
 db.transaction(() => {
   for (const u of UNITS) ins.unit.run(u.id, u.name, u.short, u.kind || 'unit');
-  for (const c of CHANNELS) ins.channel.run(c.id, c.key, c.name, c.level, c.org, c.dept, JSON.stringify(c.flow), JSON.stringify(c.declare), JSON.stringify(c.filing), JSON.stringify(c.chain), c.mode, JSON.stringify(c.assess));
+  for (const c of CHANNELS) {
+    if (!chByKey[c.key]) throw new Error(`渠道缺失: ${c.key}`);
+    ins.channel.run(
+      c.id, c.key, c.name, c.level, c.source_channel, c.org_office, c.org, c.dept,
+      JSON.stringify(c.flow), JSON.stringify(c.declare), JSON.stringify(c.filing),
+      JSON.stringify(c.chain), c.mode, JSON.stringify(c.assess),
+    );
+  }
+  for (const d of DEF) {
+    if (!chByKey[d[1]]) throw new Error(`项目引用未知渠道 key: ${d[1]} (${d[0]})`);
+  }
   for (const u of USERS) ins.user.run(u.id, u.name, u.role, u.scope, u.unit_id, u.title);
 
   const GOALS = {
