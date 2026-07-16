@@ -1,0 +1,32 @@
+# 科研项目信息化管理平台 · 演示版
+# 用法：
+#   1) 可选：把 .env.example 复制为 .env 并填入 GLM_API_KEY（不填则 AI 识读为本地模拟解析）
+#   2) docker compose up -d --build
+#   3) 浏览器访问 http://<服务器IP>:8787
+# 重置演示数据：docker compose run --rm -e FORCE_SEED=1 srpm true 后重启，
+#   或 docker compose exec srpm node /app/server/src/seed.js
+services:
+  srpm:
+    build:
+      context: .
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+        APT_MIRROR: ${APT_MIRROR:-mirrors.aliyun.com}
+    image: srpm-platform:latest
+    container_name: srpm
+    ports:
+      - "${SRPM_PORT:-8787}:8787"
+    environment:
+      TZ: Asia/Shanghai
+      # AI 文档识读（智谱 GLM）。不配置则自动降级为本地规则模拟解析。
+      AI_PROVIDER: ${AI_PROVIDER:-openai}
+      AI_API_KEY: ${GLM_API_KEY:-}
+      AI_BASE_URL: ${AI_BASE_URL:-https://open.bigmodel.cn/api/paas/v4}
+      AI_MODEL: ${AI_MODEL:-glm-5.2}
+      # FORCE_SEED: "1"   # 打开后每次启动重置演示数据
+    volumes:
+      - srpm-data:/app/server/data
+    restart: unless-stopped
+
+volumes:
+  srpm-data:
