@@ -11,6 +11,7 @@ import { openDb } from './db.js';
 import { todayISO, statusColor, worstColor, evalGrade, daysLeft, addDays } from './domain.js';
 import { aiStatus, extractProjectInfo } from './ai.js';
 import { findCascadePath, getCascadeConfig, resolveOfficeByProjectType } from './cascadeConfig.js';
+import { getMajorConfig, majorPayload, validateMajorPair } from './majorConfig.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = join(__dirname, '..', 'data', 'uploads');
@@ -24,35 +25,36 @@ const J = (s, d = null) => { try { return s ? JSON.parse(s) : d; } catch { retur
 const TODAY = () => todayISO();
 const LEVELS = ['国家级', '地方级', '公司级'];
 
+/** 渠道 → 附件1 一级/二级专业（canonical，含编码前缀） */
 const V19_MAJOR_BY_CHANNEL = {
-  MJKY: ['总体与适航', '低碳动力'],
-  ZX04: ['机载系统', '国产化验证'],
-  ZDYF: ['气动结构', '关键技术'],
-  XX25: ['智能制造', '重大专项'],
-  NSFC: ['基础研究', '机理模型'],
-  NSFC_2030: ['新材料', '专项突破'],
-  FGW: ['数字能力', '基础设施'],
-  JBGS: ['地方攻关', '揭榜挂帅'],
-  SHKC: ['地方攻关', '创新行动'],
-  YYGD: ['预先研究', '滚动计划'],
-  ZDKC: ['重大创新', '专项突破'],
-  XJQX: ['气象创新', '平台能力'],
-  LAB: ['预先研究', '实验室'],
-  KJW: ['科技委课题', '技术发展'],
-  KT: ['预先研究', '专项'],
-  XP: ['预先研究', '专项'],
-  HQZX: ['高质量', '专项突破'],
-  KJZ: ['科技传播', '成果展示'],
-  DFY_NH: ['研究院专项', '校企合作'],
-  DFY_XG: ['研究院专项', '校企合作'],
-  DFY_TJ: ['研究院专项', '校企合作'],
-  DFY_SJ: ['研究院专项', '校企合作'],
-  DFY_BH: ['研究院专项', '校企合作'],
-  DFY_CQ: ['研究院专项', '校企合作'],
-  DFY_POLYU: ['研究院专项', '校企合作'],
-  DFY_MH: ['研究院专项', '标准预研'],
-  CLLM: ['材料联盟', '先进材料'],
-  BOEING: ['国际合作', '可持续航空'],
+  MJKY: ['10-总体气动', '1003-适航与四性'],
+  ZX04: ['30-系统', '3001-航电电气'],
+  ZDYF: ['10-总体气动', '1001-总体与气动'],
+  XX25: ['40-制造', '4005-增材制造'],
+  NSFC: ['80-通用基础', '8005-信息化'],
+  NSFC_2030: ['50-复合材料', '5001-复合材料设计'],
+  FGW: ['80-通用基础', '8005-信息化'],
+  JBGS: ['20-机体', '2003-结构'],
+  SHKC: ['30-系统', '3002-飞控'],
+  YYGD: ['10-总体气动', '1002-需求与验证'],
+  ZDKC: ['20-机体', '2002-强度'],
+  XJQX: ['80-通用基础', '8001-市场技术'],
+  LAB: ['60-飞行', '6001-试飞工程'],
+  KJW: ['80-通用基础', '8002-质量工程'],
+  KT: ['40-制造', '4001-系统工艺'],
+  XP: ['50-复合材料', '5002-复合材料与工艺'],
+  HQZX: ['30-系统', '3004-动力机APU'],
+  KJZ: ['70-运行支持', '7004-培训工程'],
+  DFY_NH: ['80-通用基础', '8006-工业工程'],
+  DFY_XG: ['80-通用基础', '8006-工业工程'],
+  DFY_TJ: ['80-通用基础', '8006-工业工程'],
+  DFY_SJ: ['80-通用基础', '8006-工业工程'],
+  DFY_BH: ['80-通用基础', '8006-工业工程'],
+  DFY_CQ: ['80-通用基础', '8006-工业工程'],
+  DFY_POLYU: ['80-通用基础', '8006-工业工程'],
+  DFY_MH: ['80-通用基础', '8004-标准化技术'],
+  CLLM: ['50-复合材料', '5002-复合材料与工艺'],
+  BOEING: ['10-总体气动', '1001-总体与气动'],
 };
 
 function mapChannelRow(c) {
@@ -86,6 +88,7 @@ function cascadePayload() {
     pathByType: cfg.pathByType,
     paths: cfg.paths,
     tree: cfg.tree,
+    majors: majorPayload(),
   };
 }
 
@@ -156,15 +159,22 @@ function fundSplit(total, level) {
 function v19LedgerFields(p, funds, delivered, delivTotal) {
   const channel = db.prepare('SELECT key,name,dept,org FROM channels WHERE id=?').get(p.channel_id) || {};
   const unit = db.prepare('SELECT short,name FROM units WHERE id=?').get(p.lead_unit_id) || {};
-  const major = V19_MAJOR_BY_CHANNEL[channel.key] || ['科研项目', p.level];
+  const mapped = V19_MAJOR_BY_CHANNEL[channel.key];
+  const fallback = getMajorConfig().major1[0]
+    ? [getMajorConfig().major1[0], (getMajorConfig().major2ByMajor1[getMajorConfig().major1[0]] || [])[0] || '']
+    : ['10-总体气动', '1001-总体与气动'];
+  const major = mapped || fallback;
+  const majorCheck = validateMajorPair(major[0], major[1]);
+  const major1 = majorCheck.ok ? majorCheck.major1 : major[0];
+  const major2 = majorCheck.ok ? majorCheck.major2 : major[1];
   const split = fundSplit(Number(p.total_budget) || 0, p.level);
   const spentAll = funds.reduce((s, f) => s + f.spent, 0);
   const execRate = p.total_budget ? Math.round((spentAll / p.total_budget) * 100) : 0;
   const pkgs = db.prepare('SELECT status,mode,form FROM packages WHERE project_id=?').all(p.id);
   const collaborators = db.prepare('SELECT total,blacklisted FROM collaborators WHERE project_id=?').all(p.id);
   return {
-    major1: major[0],
-    major2: major[1],
+    major1,
+    major2,
     launchMonth: p.start?.slice(0, 7) || '',
     endMonth: p.end?.slice(0, 7) || '',
     projectMonths: monthDiff(p.start, p.end),
@@ -199,19 +209,104 @@ function transformationTarget(k) {
 }
 
 function currentUser(req) {
-  const id = req.header('x-user') || 'u_hq';
-  return db.prepare('SELECT * FROM users WHERE id=?').get(id) || db.prepare("SELECT * FROM users WHERE id='u_hq'").get();
+  const id = String(req.header('x-user') || '').trim();
+  if (!id) return null;
+  const user = db.prepare('SELECT * FROM users WHERE id=?').get(id);
+  if (!user || user.status === '已离岗') return null;
+  return user;
 }
 
-// 岗位变动权限回收：已离岗账号阻断业务访问（bootstrap 放行以便登录页展示状态）
-r.use((req, res, next) => {
-  if (req.path === '/bootstrap') return next();
-  const id = req.header('x-user');
+function requireUser(req, res) {
+  const id = String(req.header('x-user') || '').trim();
   if (id) {
-    const u = db.prepare('SELECT status FROM users WHERE id=?').get(id);
-    if (u && u.status === '已离岗') return res.status(401).json({ error: '该账号已离岗，权限已自动回收（超级管理员 7 个工作日内完成注销/移交）' });
+    const raw = db.prepare('SELECT * FROM users WHERE id=?').get(id);
+    if (raw && raw.status === '已离岗') {
+      res.status(401).json({ error: '该账号已离岗，权限已自动回收（超级管理员 7 个工作日内完成注销/移交）' });
+      return null;
+    }
   }
+  const user = currentUser(req);
+  if (!user) {
+    res.status(401).json({ error: '未登录或账号无效，请重新登录' });
+    return null;
+  }
+  return user;
+}
+
+function assertWritable(user, res) {
+  if (user.role === 'leader') {
+    res.status(403).json({ error: '领导角色为只读查看权限，不可执行业务操作' });
+    return false;
+  }
+  return true;
+}
+
+function requireRoles(user, res, roles, msg = '当前角色无权执行此操作') {
+  if (!roles.includes(user.role)) {
+    res.status(403).json({ error: msg });
+    return false;
+  }
+  return true;
+}
+
+function canAccessProject(user, project) {
+  if (!user || !project) return false;
+  if (user.role === 'admin' || user.scope === 'hq') return true;
+  return scopeProjects(user, [project]).length > 0;
+}
+
+function canActApprovalStep(user, approval, step) {
+  if (!user || !step) return false;
+  if (user.role === 'admin') return true;
+  if (step.assignee && step.assignee === user.name) return true;
+  if (user.role === 'mgmt' && user.scope === 'hq') {
+    return /总部|科研项目处|拨付执行/.test(step.title || '');
+  }
+  if (user.role === 'mgmt' && user.scope === 'unit') {
+    if (approval.unit_id !== user.unit_id) return false;
+    return /单位|科技|财务|分管|负责人/.test(step.title || '') || step.assignee === user.name;
+  }
+  if (user.role === 'chief') return step.assignee === user.name || /总师/.test(step.title || '');
+  if (user.role === 'finance') return /财务/.test(step.title || '') && approval.unit_id === user.unit_id;
+  if (user.role === 'team') return step.assignee === user.name;
+  return false;
+}
+
+// 演示账号统一密码（姓名 / 用户ID 均可登录）
+const DEMO_PASSWORD = 'Srpm@2026';
+
+function canAccessPreResearch(user) {
+  if (!user) return false;
+  if (user.role === 'leader') return true;
+  if (user.role === 'mgmt' && user.scope === 'hq') return true;
+  if (user.role === 'admin') return true;
+  return false;
+}
+
+const PUBLIC_API = new Set(['/bootstrap', '/login', '/cascade', '/ai/status']);
+
+// 业务接口强制登录；bootstrap / login / cascade 放行
+r.use((req, res, next) => {
+  if (PUBLIC_API.has(req.path)) return next();
+  const user = requireUser(req, res);
+  if (!user) return;
+  req.user = user;
   next();
+});
+
+/** 账号密码登录 */
+r.post('/login', (req, res) => {
+  const username = String(req.body?.username || '').trim();
+  const password = String(req.body?.password || '');
+  if (!username || !password) return res.status(400).json({ error: '请输入账号和密码' });
+  if (password !== DEMO_PASSWORD) return res.status(401).json({ error: '账号或密码错误' });
+  const user = db.prepare('SELECT * FROM users WHERE id=? OR name=?').get(username, username);
+  if (!user) return res.status(401).json({ error: '账号或密码错误' });
+  if (user.status === '已离岗') return res.status(401).json({ error: '该账号已离岗，权限已自动回收' });
+  res.json({
+    ...user,
+    canPreResearch: canAccessPreResearch(user),
+  });
 });
 
 // ---------- 项目富化 ----------
@@ -248,7 +343,8 @@ function enrichProject(p, today) {
 }
 
 function scopeProjects(user, rows) {
-  if (user.scope === 'hq') return rows;
+  if (!user) return [];
+  if (user.role === 'admin' || user.scope === 'hq' || user.role === 'leader') return rows;
   if (user.role === 'chief') {
     return rows.filter((p) => { const t = J(p.team_json, {}); return t.chief1 === user.name || t.chief2 === user.name; });
   }
@@ -276,10 +372,11 @@ function channelMetaById() {
   return Object.fromEntries(db.prepare('SELECT * FROM channels').all().map((c) => [c.id, c]));
 }
 
-/** 按四级级联参数过滤项目列表（兼容旧 channel=id） */
+/** 按四级级联 + 附件1专业字典参数过滤项目列表（兼容旧 channel=id） */
 function applyCascadeProjectFilters(list, query) {
   const {
     level, channel, sourceChannel, orgOffice, projectType, unit, status, color, kw,
+    major1, major2,
   } = query || {};
   const meta = channelMetaById();
   let out = list;
@@ -298,6 +395,12 @@ function applyCascadeProjectFilters(list, query) {
   }
   if (channel) out = out.filter((p) => String(p.channel_id) === String(channel));
   if (unit) out = out.filter((p) => String(p.lead_unit_id) === String(unit));
+  if (major1) {
+    out = out.filter((p) => (p.v19?.major1 || p.major1 || '') === String(major1));
+  }
+  if (major2) {
+    out = out.filter((p) => (p.v19?.major2 || p.major2 || '') === String(major2));
+  }
   if (status) out = out.filter((p) => p.status === status);
   if (color) out = out.filter((p) => p.color === color);
   if (kw) out = out.filter((p) => p.name.includes(kw) || p.code.includes(kw));
@@ -315,10 +418,11 @@ r.get('/projects', (req, res) => {
 });
 
 r.get('/projects.xlsx', (req, res) => {
-  const user = currentUser(req);
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
   if (user.role === 'leader') return res.status(403).json({ error: '领导角色为只读查看权限，暂不开放全量导出' });
   const today = TODAY();
-  const list = db.prepare('SELECT * FROM projects ORDER BY id').all().map((p) => enrichProject(p, today));
+  const list = scopeProjects(user, db.prepare('SELECT * FROM projects ORDER BY id').all()).map((p) => enrichProject(p, today));
   const units = Object.fromEntries(db.prepare('SELECT id,short FROM units').all().map((u) => [u.id, u.short]));
   const chs = Object.fromEntries(db.prepare('SELECT id,name FROM channels').all().map((c) => [c.id, c.name]));
   const cmap = { red: '红·逾期', yellow: '黄·临期', blue: '蓝·推进', green: '绿·完成' };
@@ -346,10 +450,11 @@ r.get('/projects.xlsx', (req, res) => {
 });
 
 r.get('/projects.csv', (req, res) => {
-  const user = currentUser(req);
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
   if (user.role === 'leader') return res.status(403).json({ error: '领导角色为只读查看权限，暂不开放全量导出' });
   const today = TODAY();
-  const list = db.prepare('SELECT * FROM projects ORDER BY id').all().map((p) => enrichProject(p, today));
+  const list = scopeProjects(user, db.prepare('SELECT * FROM projects ORDER BY id').all()).map((p) => enrichProject(p, today));
   const units = Object.fromEntries(db.prepare('SELECT id,short FROM units').all().map((u) => [u.id, u.short]));
   const chs = Object.fromEntries(db.prepare('SELECT id,name FROM channels').all().map((c) => [c.id, c.name]));
   const head = '项目编号,名称,层级,渠道类别,牵头单位,开始时间,结束时间,项目状态,预警,总经费(万元),历年支出(万元),年度预算,年度支出,里程碑进度,项目负责人';
@@ -361,9 +466,12 @@ r.get('/projects.csv', (req, res) => {
 });
 
 r.get('/projects/:id', (req, res) => {
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
   const today = TODAY();
   const p = db.prepare('SELECT * FROM projects WHERE id=?').get(req.params.id);
   if (!p) return res.status(404).json({ error: 'not found' });
+  if (!canAccessProject(user, p)) return res.status(403).json({ error: '无权查看该项目' });
   const proj = enrichProject(p, today);
   const milestones = db.prepare('SELECT * FROM milestones WHERE project_id=? ORDER BY due').all(p.id)
     .map((m) => ({ ...m, color: statusColor(m.due, m.done_at, today), daysLeft: daysLeft(m.due, today) }));
@@ -380,15 +488,15 @@ r.get('/projects/:id', (req, res) => {
   const changes = db.prepare('SELECT * FROM changes WHERE project_id=? ORDER BY created_at DESC').all(p.id);
   const documents = db.prepare("SELECT * FROM documents WHERE project_id=? AND phase<>'后评价' ORDER BY uploaded_at").all(p.id);
   const postEval = null; // V19 本轮暂缓/删除后评价，接口保留字段但不再返回业务数据。
-  const channel = db.prepare('SELECT * FROM channels WHERE id=?').get(p.channel_id);
-  const unit = db.prepare('SELECT * FROM units WHERE id=?').get(p.lead_unit_id);
+  const channel = db.prepare('SELECT * FROM channels WHERE id=?').get(p.channel_id) || {};
+  const unit = db.prepare('SELECT * FROM units WHERE id=?').get(p.lead_unit_id) || {};
   res.json({
     ...proj,
-    channelName: channel.name,
+    channelName: channel.name || '',
     sourceChannel: channel.source_channel || '',
     orgOffice: channel.org_office || channel.org || '',
-    projectType: channel.name,
-    channelFlow: J(channel.flow_json, []), channelFiling: J(channel.filing_json, []), channelAssess: J(channel.assess_json, []), unitName: unit.name, unitShort: unit.short,
+    projectType: channel.name || '',
+    channelFlow: J(channel.flow_json, []), channelFiling: J(channel.filing_json, []), channelAssess: J(channel.assess_json, []), unitName: unit.name || '', unitShort: unit.short || '',
     milestones, plans, funds, deliverables, packages, collaborators, approvals, changes, documents,
     postEval,
   });
@@ -396,14 +504,39 @@ r.get('/projects/:id', (req, res) => {
 
 // ---------- 驾驶舱 ----------
 r.get('/dashboard', (req, res) => {
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  if (String(req.query.screen || '') === 'pre-research' && !canAccessPreResearch(user)) {
+    return res.status(403).json({ error: '当前角色无权访问科研预研信息管理大屏（仅领导 / 总部管理）' });
+  }
   const today = TODAY();
   const thisYear = Number(today.slice(0, 4));
-  const { unit, level, year, channel, sourceChannel, orgOffice, projectType } = req.query;
-  let projects = db.prepare('SELECT * FROM projects').all().map((p) => enrichProject(p, today));
-  projects = applyCascadeProjectFilters(projects, { unit, level, channel, sourceChannel, orgOffice, projectType });
-  if (year) projects = projects.filter((p) => Number(p.start.slice(0, 4)) <= Number(year) && Number(p.end.slice(0, 4)) >= Number(year));
+  const {
+    unit, level, year, channel, sourceChannel, orgOffice, projectType, major1, major2,
+  } = req.query;
+  let projects = scopeProjects(user, db.prepare('SELECT * FROM projects').all()).map((p) => enrichProject(p, today));
+  projects = applyCascadeProjectFilters(projects, {
+    unit, level, channel, sourceChannel, orgOffice, projectType, major1, major2,
+  });
+  if (year) {
+    const y = Number(year);
+    projects = projects.filter((p) => {
+      const s = p.start ? Number(String(p.start).slice(0, 4)) : null;
+      const e = p.end ? Number(String(p.end).slice(0, 4)) : null;
+      if (s == null || e == null || Number.isNaN(s) || Number.isNaN(e)) return false;
+      return s <= y && e >= y;
+    });
+  }
 
   const ids = new Set(projects.map((p) => p.id));
+  let blacklistScoped = db.prepare('SELECT c.project_id FROM collaborators c WHERE c.blacklisted=1').all()
+    .filter((c) => ids.has(c.project_id)).length;
+  let pendingScoped = db.prepare("SELECT project_id, unit_id FROM approvals WHERE status='审批中'").all()
+    .filter((a) => (a.project_id && ids.has(a.project_id)) || (user.scope === 'hq' || user.role === 'admin') || a.unit_id === user.unit_id).length;
+  if (user.scope === 'hq' || user.role === 'admin') {
+    blacklistScoped = db.prepare('SELECT COUNT(*) n FROM collaborators WHERE blacklisted=1').get().n;
+    pendingScoped = db.prepare("SELECT COUNT(*) n FROM approvals WHERE status='审批中'").get().n;
+  }
   const units = db.prepare("SELECT * FROM units WHERE kind='unit'").all();
   const channels = db.prepare('SELECT * FROM channels').all();
 
@@ -420,7 +553,6 @@ r.get('/dashboard', (req, res) => {
   const delAll = db.prepare('SELECT * FROM deliverables').all().filter((d) => ids.has(d.project_id));
   const pkgs = db.prepare('SELECT * FROM packages').all().filter((k) => ids.has(k.project_id));
   const plans = db.prepare('SELECT * FROM plans').all().filter((p) => ids.has(p.project_id));
-  const blacklist = db.prepare('SELECT COUNT(*) n FROM collaborators WHERE blacklisted=1').get().n;
   const totalBudgetRaw = projects.reduce((s, p) => s + p.total_budget, 0);
   const activeBudgetRaw = active.reduce((s, p) => s + p.total_budget, 0);
   const totalGrant = projects.reduce((s, p) => s + p.v19.centralGrant, 0);
@@ -441,8 +573,8 @@ r.get('/dashboard', (req, res) => {
     yellow: projects.filter((p) => p.color === 'yellow').length,
     deliverables: delAll.filter((d) => d.delivered_at).length,
     packagesDone: pkgs.filter((k) => k.status === '已完成').length,
-    blacklist,
-    pendingApprovals: db.prepare("SELECT COUNT(*) n FROM approvals WHERE status='审批中'").get().n,
+    blacklist: blacklistScoped,
+    pendingApprovals: pendingScoped,
   };
 
   const byLevel = ['国家级', '地方级', '公司级'].map((lv) => ({
@@ -589,9 +721,9 @@ r.get('/alerts', (req, res) => {
     }
   }
   rows.sort((a, b) => (a.level === b.level ? String(a.due).localeCompare(String(b.due)) : a.level === 'red' ? -1 : 1));
-  if (user.scope !== 'hq') {
+  if (user.scope !== 'hq' && user.role !== 'admin') {
     const visible = new Set(scopeProjects(user, db.prepare('SELECT * FROM projects').all()).map((p) => p.id));
-    rows = rows.filter((a) => !a.project_id || visible.has(a.project_id));
+    rows = rows.filter((a) => a.project_id && visible.has(a.project_id));
   }
   res.json(rows);
 });
@@ -611,7 +743,12 @@ r.get('/approvals', (req, res) => {
       if (a.status !== '审批中') return false;
       const step = a.steps[a.current_step];
       if (!step) return false;
+      if (user.role === 'admin') return true;
       if (user.role === 'mgmt' && user.scope === 'hq') return step.title.includes('总部') || step.title.includes('科研项目处') || step.title.includes('拨付执行');
+      if (user.role === 'mgmt' && user.scope === 'unit') {
+        if (a.unit_id !== user.unit_id) return false;
+        return step.assignee === user.name || /单位|科技|财务|分管|负责人/.test(step.title || '');
+      }
       if (user.role === 'chief') return step.assignee === user.name || step.title.includes('总师');
       if (user.role === 'finance') return step.title.includes('财务') && a.unit_id === user.unit_id;
       if (user.role === 'team') return step.assignee === user.name || a.initiator === user.name;
@@ -624,13 +761,16 @@ r.get('/approvals', (req, res) => {
 });
 
 r.post('/approvals/:id/act', (req, res) => {
-  const user = currentUser(req);
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  if (!assertWritable(user, res)) return;
   const { action, comment } = req.body || {};
   const a = db.prepare('SELECT * FROM approvals WHERE id=?').get(req.params.id);
   if (!a) return res.status(404).json({ error: 'not found' });
   if (a.status !== '审批中') return res.status(400).json({ error: '流程已办结' });
   const steps = J(a.steps_json, []);
   const idx = a.current_step;
+  if (!canActApprovalStep(user, a, steps[idx])) return res.status(403).json({ error: '当前节点不在您的审批权限内' });
   const now = TODAY();
   if (action === 'approve') {
     steps[idx] = { ...steps[idx], status: 'approved', at: now, comment: comment || '同意。', actor: user.name };
@@ -718,13 +858,16 @@ r.post('/approvals/:id/resubmit', (req, res) => {
 });
 
 r.post('/approvals/:id/delegate', (req, res) => {
-  const user = currentUser(req);
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  if (!assertWritable(user, res)) return;
   const { to } = req.body || {};
   const a = db.prepare('SELECT * FROM approvals WHERE id=?').get(req.params.id);
   if (!a) return res.status(404).json({ error: 'not found' });
   if (a.status !== '审批中') return res.status(400).json({ error: '仅在途流程可转办' });
   if (!to || !String(to).trim()) return res.status(400).json({ error: '请填写转办对象' });
   const steps = J(a.steps_json, []);
+  if (!canActApprovalStep(user, a, steps[a.current_step])) return res.status(403).json({ error: '仅当前节点处理人可转办' });
   const from = steps[a.current_step]?.assignee || '';
   steps[a.current_step] = { ...steps[a.current_step], assignee: String(to).trim(), delegatedFrom: from };
   db.prepare('UPDATE approvals SET steps_json=? WHERE id=?').run(JSON.stringify(steps), a.id);
@@ -754,7 +897,9 @@ r.post('/approvals/:id/attach', (req, res) => {
 
 // ---------- 申报 ----------
 r.post('/declarations', (req, res) => {
-  const user = currentUser(req);
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  if (!assertWritable(user, res)) return;
   const { name, channelId, goal, budget, start, end, partners, materials, uploadId, milestones, deliverables, yearGoal } = req.body || {};
   if (!name || !channelId) return res.status(400).json({ error: '缺少项目名称或渠道' });
   const ch = db.prepare('SELECT * FROM channels WHERE id=?').get(channelId);
@@ -1056,6 +1201,10 @@ function validateTransitionRow(input) {
     if (!hit) warnings.push('层级/渠道/司局/项目类型组合不在合法路径表内');
   } else if (row.projectType && !resolveOfficeByProjectType(row.projectType)) {
     warnings.push('项目类型未配置司局路径');
+  }
+  if (row.major1 || row.major2) {
+    const maj = validateMajorPair(row.major1, row.major2);
+    if (!maj.ok) warnings.push(maj.error);
   }
   return { ok: missing.length === 0 && warnings.length === 0, missing, warnings };
 }
@@ -1392,7 +1541,7 @@ function uniqueSheetName(name, used) {
   return next;
 }
 
-/** V19 二次反馈：表单过渡工具 */
+/** V19 二次反馈：表单维护 */
 r.get('/transition-tool', (req, res) => {
   const rows = getTransitionRows();
   const enriched = rows.map((x) => ({ ...x, validation: validateTransitionRow(x) }));
@@ -1438,7 +1587,7 @@ r.post('/transition-tool/records', (req, res) => {
   const idx = rows.findIndex((x) => x.id === id);
   if (idx >= 0) rows[idx] = next; else rows.push(next);
   setTransitionRows(rows);
-  audit(user.name, '表单过渡工具', '分表维护', `保存 ${next.projectType || '专项分表'}：${next.name || next.code}${next.orgOffice ? `（司局/处室 ${next.orgOffice}）` : ''}`);
+  audit(user.name, '表单维护', '分表维护', `保存 ${next.projectType || '专项分表'}：${next.name || next.code}${next.orgOffice ? `（司局/处室 ${next.orgOffice}）` : ''}`);
   res.json({ ok: true, row: { ...next, validation: validateTransitionRow(next) } });
 });
 
@@ -1446,7 +1595,7 @@ r.post('/transition-tool/import-demo', (req, res) => {
   const user = currentUser(req);
   const rows = defaultTransitionRows();
   setTransitionRows(rows);
-  audit(user.name, '表单过渡工具', '批量导入', `按样例表字段口径导入演示数据 ${rows.length} 行`);
+  audit(user.name, '表单维护', '批量导入', `按样例表字段口径导入演示数据 ${rows.length} 行`);
   res.json({ ok: true, imported: rows.length });
 });
 
@@ -1464,7 +1613,7 @@ r.post('/transition-tool/import-upload', (req, res) => {
   if (!parsed.rows.length) return res.status(400).json({ error: parsed.issues[0]?.issue || '未解析到有效项目记录' });
   const merged = mergeTransitionRows(getTransitionRows(), parsed.rows, user.name, mode);
   setTransitionRows(merged.rows);
-  audit(user.name, '表单过渡工具', mode === 'replace' ? '重新导入总表' : '批量上传分表', `${up.orig_name}：解析 ${parsed.rows.length} 行，新增 ${merged.report.added} 行，更新 ${merged.report.updated} 行，跳过 ${merged.report.skipped} 行`);
+  audit(user.name, '表单维护', mode === 'replace' ? '重新导入总表' : '批量上传分表', `${up.orig_name}：解析 ${parsed.rows.length} 行，新增 ${merged.report.added} 行，更新 ${merged.report.updated} 行，跳过 ${merged.report.skipped} 行`);
   res.json({ ok: true, file: up.orig_name, mode, issues: parsed.issues, ...merged.report });
 });
 
@@ -1658,9 +1807,14 @@ r.post('/changes', (req, res) => {
 
 // ---------- 财务 ----------
 r.get('/finance/:unitId', (req, res) => {
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
   const today = TODAY();
   const thisYear = Number(today.slice(0, 4));
   const uid = Number(req.params.unitId);
+  if (user.scope !== 'hq' && user.role !== 'admin' && user.unit_id !== uid) {
+    return res.status(403).json({ error: '无权查看其他单位经费台账' });
+  }
   const unit = db.prepare('SELECT * FROM units WHERE id=?').get(uid);
   const projects = db.prepare('SELECT * FROM projects WHERE lead_unit_id=?').all(uid).map((p) => enrichProject(p, today));
   const rows = projects.map((p) => {
@@ -1678,10 +1832,14 @@ r.get('/finance/:unitId', (req, res) => {
 
 /** 经费核销录入：追加付款凭证并更新支出，实时同步经费看板 */
 r.post('/finance/writeoff', (req, res) => {
-  const user = currentUser(req);
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  if (!assertWritable(user, res)) return;
+  if (!requireRoles(user, res, ['finance', 'mgmt', 'admin'], '仅财务或管理角色可核销经费')) return;
   const { projectId, year, amount, note } = req.body || {};
   const p = db.prepare('SELECT * FROM projects WHERE id=?').get(projectId);
   if (!p) return res.status(400).json({ error: '项目不存在' });
+  if (!canAccessProject(user, p)) return res.status(403).json({ error: '无权操作该项目经费' });
   const amt = Number(amount);
   if (!amt || amt <= 0) return res.status(400).json({ error: '请填写有效核销金额' });
   const y = Number(year) || Number(TODAY().slice(0, 4));
@@ -1699,10 +1857,14 @@ r.post('/finance/writeoff', (req, res) => {
 
 /** 年度预算填报（绑定里程碑节点） */
 r.post('/finance/budget', (req, res) => {
-  const user = currentUser(req);
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  if (!assertWritable(user, res)) return;
+  if (!requireRoles(user, res, ['finance', 'mgmt', 'admin', 'team'], '无权填报预算')) return;
   const { projectId, year, budget, milestone } = req.body || {};
   const p = db.prepare('SELECT * FROM projects WHERE id=?').get(projectId);
   if (!p) return res.status(400).json({ error: '项目不存在' });
+  if (!canAccessProject(user, p)) return res.status(403).json({ error: '无权操作该项目预算' });
   const b = Number(budget);
   if (b == null || b < 0) return res.status(400).json({ error: '请填写有效预算金额' });
   const y = Number(year) || Number(TODAY().slice(0, 4));
@@ -1714,10 +1876,17 @@ r.post('/finance/budget', (req, res) => {
 });
 
 r.get('/funding', (req, res) => {
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
   const thisYear = Number(TODAY().slice(0, 4));
-  const pool = db.prepare('SELECT * FROM funding_pool ORDER BY year DESC').all();
-  const quotas = db.prepare('SELECT q.*, u.short FROM funding_quota q JOIN units u ON u.id=q.unit_id WHERE q.year=?').all(thisYear);
-  const requests = db.prepare('SELECT r.*, u.short FROM funding_requests r JOIN units u ON u.id=r.unit_id ORDER BY r.created_at DESC').all();
+  let pool = db.prepare('SELECT * FROM funding_pool ORDER BY year DESC').all();
+  let quotas = db.prepare('SELECT q.*, u.short FROM funding_quota q JOIN units u ON u.id=q.unit_id WHERE q.year=?').all(thisYear);
+  let requests = db.prepare('SELECT r.*, u.short FROM funding_requests r JOIN units u ON u.id=r.unit_id ORDER BY r.created_at DESC').all();
+  if (user.scope !== 'hq' && user.role !== 'admin') {
+    pool = [];
+    quotas = quotas.filter((q) => q.unit_id === user.unit_id);
+    requests = requests.filter((r0) => r0.unit_id === user.unit_id);
+  }
   res.json({ pool, quotas, requests, year: thisYear });
 });
 
@@ -1732,7 +1901,12 @@ r.post('/funding/requests', (req, res) => {
 });
 
 r.post('/funding/requests/:id/act', (req, res) => {
-  const user = currentUser(req);
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  if (!assertWritable(user, res)) return;
+  if (!(user.role === 'admin' || (user.role === 'mgmt' && user.scope === 'hq'))) {
+    return res.status(403).json({ error: '仅总部管理可审批拨付申请' });
+  }
   const { action } = req.body || {};
   const q = db.prepare('SELECT * FROM funding_requests WHERE id=?').get(req.params.id);
   if (!q) return res.status(404).json({ error: 'not found' });
@@ -1756,7 +1930,12 @@ r.get('/sync/status', (req, res) => {
 });
 
 r.post('/sync/cmos', (req, res) => {
-  const user = currentUser(req);
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  if (!assertWritable(user, res)) return;
+  if (!(user.role === 'admin' || (user.role === 'mgmt' && user.scope === 'hq'))) {
+    return res.status(403).json({ error: '仅总部管理可执行CMOS同步' });
+  }
   // 从 CMOS 数据源拉取：新增已发布计划 + 回写完成状态
   const active = db.prepare("SELECT id, name FROM projects WHERE status IN ('实施中','验收中') ORDER BY RANDOM() LIMIT 2").all();
   const TITLES = ['提交专项计划月度执行报告', '完成阶段试验数据归档备案', '组织设计评审会并出具纪要', '完成供应链风险排查专项计划'];
@@ -1774,7 +1953,12 @@ r.post('/sync/cmos', (req, res) => {
 });
 
 r.post('/sync/funds', (req, res) => {
-  const user = currentUser(req);
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  if (!assertWritable(user, res)) return;
+  if (!(user.role === 'admin' || (user.role === 'mgmt' && user.scope === 'hq'))) {
+    return res.status(403).json({ error: '仅总部管理可执行经费同步' });
+  }
   const y = Number(TODAY().slice(0, 4));
   const rows = db.prepare('SELECT f.*, p.name pname FROM funds f JOIN projects p ON p.id=f.project_id WHERE f.year=? AND f.budget > f.spent ORDER BY RANDOM() LIMIT 3').all(y);
   let updated = 0;
@@ -1793,8 +1977,14 @@ r.post('/sync/funds', (req, res) => {
 
 // ---------- 评价 / 后评价 ----------
 r.get('/evaluations', (req, res) => {
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
   const today = TODAY();
+  const visible = (user.scope === 'hq' || user.role === 'admin')
+    ? null
+    : new Set(scopeProjects(user, db.prepare('SELECT * FROM projects').all()).map((p) => p.id));
   const cols = db.prepare('SELECT c.*, p.name pname, p.code pcode, p.accepted_at FROM collaborators c JOIN projects p ON p.id=c.project_id ORDER BY c.eval_date DESC').all()
+    .filter((c) => !visible || visible.has(c.project_id))
     .map((c) => {
       // 30 日评价倒计时：参研自项目验收办结、外协自合同验收（演示同锚点）
       const deadline = c.total == null && c.accepted_at ? addDays(c.accepted_at, 30) : null;
@@ -1805,7 +1995,9 @@ r.get('/evaluations', (req, res) => {
 });
 
 r.post('/collaborators/:id/evaluate', (req, res) => {
-  const user = currentUser(req);
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  if (!assertWritable(user, res)) return;
   const c = db.prepare('SELECT c.*, p.name pname FROM collaborators c JOIN projects p ON p.id=c.project_id WHERE c.id=?').get(req.params.id);
   if (!c) return res.status(404).json({ error: 'not found' });
   const s = req.body?.scores || {};
@@ -1895,6 +2087,9 @@ r.get('/documents/:id/file', (req, res) => {
 
 // ---------- 管理 ----------
 r.get('/admin', (req, res) => {
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  if (!requireRoles(user, res, ['admin'], '仅超级管理员可访问系统管理')) return;
   const channels = db.prepare('SELECT * FROM channels ORDER BY level, source_channel, org_office, name').all().map(mapChannelRow);
   const users = db.prepare('SELECT * FROM users').all();
   const auditRows = db.prepare('SELECT * FROM audit ORDER BY ts DESC LIMIT 100').all();
@@ -1903,7 +2098,9 @@ r.get('/admin', (req, res) => {
 
 /** 渠道字典维护：仅允许在合法路径表内新增叶子（编码全局唯一） */
 r.post('/admin/channels', (req, res) => {
-  const user = currentUser(req);
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  if (!requireRoles(user, res, ['admin'], '仅超级管理员可执行此操作')) return;
   const { key, name, level, source_channel, org_office, org, dept, flow, declare, filing } = req.body || {};
   const sourceChannel = source_channel || '';
   const orgOffice = org_office || org || '';
@@ -1933,7 +2130,9 @@ r.post('/admin/channels', (req, res) => {
 
 /** 渠道启用 / 终止 */
 r.post('/admin/channels/:id/toggle', (req, res) => {
-  const user = currentUser(req);
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  if (!requireRoles(user, res, ['admin'], '仅超级管理员可执行此操作')) return;
   const c = db.prepare('SELECT * FROM channels WHERE id=?').get(req.params.id);
   if (!c) return res.status(404).json({ error: 'not found' });
   db.prepare('UPDATE channels SET enabled=? WHERE id=?').run(c.enabled ? 0 : 1, c.id);
@@ -1943,7 +2142,9 @@ r.post('/admin/channels/:id/toggle', (req, res) => {
 
 /** 账号状态：离岗自动回收权限 */
 r.post('/admin/users/:id/status', (req, res) => {
-  const user = currentUser(req);
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  if (!requireRoles(user, res, ['admin'], '仅超级管理员可执行此操作')) return;
   const u = db.prepare('SELECT * FROM users WHERE id=?').get(req.params.id);
   if (!u) return res.status(404).json({ error: 'not found' });
   if (u.role === 'admin') return res.status(400).json({ error: '超级管理员账号不可停用' });

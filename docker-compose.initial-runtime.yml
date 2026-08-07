@@ -1,0 +1,19 @@
+services:
+  srpm:
+    build:
+      context: .
+      dockerfile: Dockerfile.initial-runtime
+    image: srpm-platform:initial-runtime
+    container_name: srpm-18087
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8787
+      NODE_ENV: production
+    ports:
+      - "18087:8787"
+    volumes:
+      - srpm-data:/app/server/data
+
+volumes:
+  srpm-data:

@@ -1,0 +1,34 @@
+ARG NPM_REGISTRY=https://registry.npmjs.org
+
+FROM node:22-bookworm-slim AS serverdeps
+ARG NPM_REGISTRY
+WORKDIR /build/server
+COPY server/package*.json ./
+RUN npm ci --omit=dev --no-audit --no-fund --registry=$NPM_REGISTRY
+
+FROM node:22-bookworm-slim
+ENV NODE_ENV=production \
+    TZ=Asia/Shanghai \
+    PORT=8787
+WORKDIR /app
+
+COPY --from=serverdeps /build/server/node_modules server/node_modules
+COPY server/package.json server/package.json
+COPY server/src server/src
+COPY server/config server/config
+COPY server/ai.config.example.json server/ai.config.example.json
+COPY web/dist web/dist
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
+    && mkdir -p /app/server/data/uploads \
+    && chown -R node:node /app
+
+USER node
+EXPOSE 8787
+VOLUME ["/app/server/data"]
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "fetch('http://localhost:'+(process.env.PORT||8787)+'/api/bootstrap').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+ENTRYPOINT ["docker-entrypoint.sh"]
