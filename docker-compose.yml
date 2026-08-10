@@ -1,0 +1,24 @@
+services:
+  srpm:
+    image: srpm-platform:latest
+    build: .
+    container_name: srpm-18087
+    restart: unless-stopped
+    ports:
+      - "18087:8787"
+    environment:
+      TZ: Asia/Shanghai
+      HOST: "0.0.0.0"
+      PORT: "8787"
+      NODE_ENV: production
+      AI_PROVIDER: ${AI_PROVIDER:-openai}
+      AI_BASE_URL: ${AI_BASE_URL:-}
+      AI_MODEL: ${AI_MODEL:-}
+      AI_API_KEY: ${AI_API_KEY:-}
+    volumes:
+      - platform_srpm-data:/app/server/data
+
+volumes:
+  platform_srpm-data:
+    external: true
+    name: platform_srpm-data

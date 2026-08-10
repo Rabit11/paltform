@@ -1,0 +1,11 @@
+﻿离线修复：echarts is not defined
+
+原因：pre-research.html 原先从 jsDelivr CDN 加载 ECharts，新服务器无外网导致失败。
+
+已改为本地：./assets/echarts.min.js
+
+【容器热修补】（已部署的 18087 容器）
+cd 本目录
+sudo docker cp ./pre-research.html srpm-18087:/app/web/dist/pre-research.html
+sudo docker cp ./assets/echarts.min.js srpm-18087:/app/web/dist/assets/echarts.min.js
+# 浏览器强制刷新 Ctrl+F5

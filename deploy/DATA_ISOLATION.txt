@@ -1,0 +1,18 @@
+科研项目信息化管理平台 18087 · 数据隔离
+
+【命名】
+- 镜像：srpm-platform:migration-legacy-20260807
+- 容器：srpm-18087
+- 数据卷：platform_srpm-data
+- 冷备目录：./backups
+- 业务导出：./data-exports
+
+【原则】
+- 程序（镜像）与业务数据（卷）分开
+- 更新镜像不要删卷
+- 禁止：docker volume rm platform_srpm-data（有数据时）
+- 禁止：docker-compose down -v
+
+【推荐安装方式】
+  sudo bash ./install-first-deploy.sh
+  （使用 docker-compose；若 compose 异常则用 install-manual.sh）

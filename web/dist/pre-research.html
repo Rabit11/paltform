@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>科研预研信息管理大屏</title>
+  <script src="./assets/echarts.min.js"></script>
+  <style>
+    :root {
+      --bg: #061428;
+      --panel: rgba(10, 36, 72, 0.82);
+      --line: rgba(64, 158, 255, 0.28);
+      --text: #d7e9ff;
+      --muted: #7fa6cf;
+      --accent: #22d3ee;
+      --blue: #3b82f6;
+      --violet: #8b7cf6;
+      --green: #34d399;
+      --yellow: #fbbf24;
+      --red: #f87171;
+      --gap: 10px;
+      --pad: 12px;
+      --title-size: 22px;
+      --kpi-val: 26px;
+      --card-hd: 36px;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      height: 100%; margin: 0;
+      background:
+        radial-gradient(1200px 600px at 50% -10%, #0b3a6e 0%, transparent 55%),
+        var(--bg);
+      color: var(--text);
+      font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+      overflow: hidden;
+    }
+    .wrap {
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: var(--gap);
+      padding: var(--pad);
+    }
+    .header {
+      display: flex; align-items: center; justify-content: space-between;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(18,70,130,.55), rgba(8,30,60,.7));
+      border-radius: 6px;
+      padding: 0 16px;
+      min-height: 56px;
+    }
+    .title { font-size: var(--title-size); letter-spacing: .18em; font-weight: 700; color: #f0f9ff; text-shadow: 0 0 18px rgba(34,211,238,.25); }
+    .sub { font-size: 12px; color: var(--muted); margin-top: 2px; letter-spacing: .08em; }
+    .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .mode-switch {
+      display: inline-flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden;
+    }
+    .mode-switch button {
+      height: 32px; padding: 0 12px; border: 0; background: transparent; color: var(--muted);
+      cursor: pointer; font-size: 12px;
+    }
+    .mode-switch button.active { background: rgba(34,211,238,.18); color: #fff; }
+    .btn {
+      height: 32px; padding: 0 12px; border-radius: 4px;
+      border: 1px solid var(--line); background: rgba(15, 50, 95, .7);
+      color: var(--text); cursor: pointer; font-size: 13px;
+    }
+    .btn:hover { border-color: var(--accent); color: #fff; }
+    .time { font-variant-numeric: tabular-nums; color: var(--accent); font-size: 14px; min-width: 168px; text-align: right; }
+    .body { min-height: 0; display: grid; gap: var(--gap); }
+    .col { min-height: 0; display: grid; gap: var(--gap); }
+    .card {
+      border: 1px solid var(--line); background: var(--panel);
+      border-radius: 6px; min-height: 0; display: flex; flex-direction: column; overflow: hidden;
+    }
+    .card-hd {
+      height: var(--card-hd); display: flex; align-items: center; justify-content: space-between;
+      padding: 0 12px; border-bottom: 1px solid rgba(64,158,255,.18);
+      font-size: 13px; color: #cfe7ff; flex-shrink: 0;
+    }
+    .card-hd::before {
+      content: ""; width: 3px; height: 12px; background: var(--accent);
+      margin-right: 8px; border-radius: 2px; flex-shrink: 0;
+    }
+    .card-hd span { display: flex; align-items: center; }
+    .card-bd { flex: 1; min-height: 0; padding: 8px; }
+    .kpis { display: grid; gap: 8px; }
+    .kpi {
+      border: 1px solid var(--line); border-radius: 6px;
+      background: rgba(8, 40, 80, .65); padding: 10px 12px;
+    }
+    .kpi .label { font-size: 12px; color: var(--muted); }
+    .kpi .val { margin-top: 4px; font-size: var(--kpi-val); font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
+    .kpi .unit { font-size: 12px; color: var(--accent); margin-left: 4px; font-weight: 500; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { padding: 6px 8px; border-bottom: 1px solid rgba(64,158,255,.12); text-align: left; white-space: nowrap; }
+    th { color: var(--muted); font-weight: 500; }
+    .risk { display: flex; flex-direction: column; gap: 6px; height: 100%; overflow: auto; }
+    .risk-item {
+      display: flex; gap: 8px; padding: 8px;
+      border: 1px solid rgba(64,158,255,.14); border-radius: 4px; background: rgba(5,24,48,.45);
+    }
+    .risk-item .name { font-size: 12.5px; }
+    .risk-item .meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; flex-shrink: 0; margin-top: 5px; }
+    .muted { color: var(--muted); }
+    .err { color: var(--red); padding: 20px; text-align: center; }
+    .hint { font-size: 11px; color: var(--muted); }
+
+    /* ========== 普通电脑 16:9 ========== */
+    body.mode-pc .body {
+      grid-template-columns: 1.1fr 1.35fr 1fr;
+    }
+    body.mode-pc .col-l { grid-template-rows: 1.1fr 1fr 1fr; }
+    body.mode-pc .col-c { grid-template-rows: auto 1fr 1fr; }
+    body.mode-pc .col-r { grid-template-rows: 1.2fr 1fr 1fr; }
+    body.mode-pc .kpis { grid-template-columns: repeat(4, 1fr); }
+    body.mode-pc .uw-only { display: none !important; }
+
+    /* ========== 央企超宽 32:9 / 21:9 ==========
+       参考：帆软/行业惯例 32:9 模板常用 3840×1080；
+       宽高比 ≥ 2.1 或宽度 ≥ 2560 启用；四栏分区，避免关键信息落在拼接缝。 */
+    body.mode-uw {
+      --gap: 12px;
+      --pad: 14px 18px;
+      --title-size: clamp(24px, 1.6vw, 34px);
+      --kpi-val: clamp(28px, 1.8vw, 40px);
+      --card-hd: 40px;
+    }
+    body.mode-uw .header { min-height: 64px; padding: 0 22px; }
+    body.mode-uw .body {
+      grid-template-columns: 0.95fr 0.95fr 1.35fr 0.95fr 0.95fr;
+    }
+    body.mode-uw .col-l { grid-template-rows: 1.25fr 1fr; }
+    body.mode-uw .col-ml { grid-template-rows: 1fr 1fr; }
+    body.mode-uw .col-c { grid-template-rows: auto 1.15fr 1fr; }
+    body.mode-uw .col-mr { grid-template-rows: 1.2fr 1fr; }
+    body.mode-uw .col-r { grid-template-rows: 1fr 1fr; }
+    body.mode-uw .kpis { grid-template-columns: repeat(6, 1fr); gap: 10px; }
+    body.mode-uw .pc-only-row { display: none !important; }
+    body.mode-uw table { font-size: 13px; }
+    body.mode-uw .card-hd { font-size: 14px; padding: 0 14px; }
+    body.mode-uw .risk-item .name { font-size: 13.5px; }
+
+    @media (max-width: 1280px) {
+      body.mode-pc .body { grid-template-columns: 1fr; overflow: auto; }
+      body.mode-pc .col { grid-template-rows: none !important; min-height: 280px; }
+      body.mode-pc { overflow: auto; }
+      body.mode-pc .wrap { height: auto; min-height: 100%; }
+    }
+  </style>
+</head>
+<body class="mode-pc">
+  <div class="wrap">
+    <header class="header">
+      <div>
+        <div class="title">科研预研信息管理大屏</div>
+        <div class="sub">SRPM · PRE-RESEARCH COMMAND SCREEN · <span id="modeLabel">普通屏 16:9</span></div>
+      </div>
+      <div class="actions">
+        <div class="mode-switch" title="展示模式">
+          <button type="button" id="btnPc" class="active">普通屏</button>
+          <button type="button" id="btnUw">超宽屏</button>
+          <button type="button" id="btnAuto">自适应</button>
+        </div>
+        <div class="time" id="clock">--</div>
+        <button class="btn" id="btnBack">返回平台</button>
+        <button class="btn" id="btnReload">刷新</button>
+      </div>
+    </header>
+    <main class="body" id="main">
+      <div class="err" id="bootMsg">正在加载预研态势数据…</div>
+    </main>
+  </div>
+  <script>
+    const COLORS = { red: '#f87171', yellow: '#fbbf24', blue: '#3b82f6', green: '#34d399', cyan: '#22d3ee', violet: '#8b7cf6' };
+    const userId = localStorage.getItem('srpm.user') || '';
+    const $ = (id) => document.getElementById(id);
+    const charts = [];
+    let modePref = localStorage.getItem('srpm.pr.mode') || 'auto'; // auto | pc | uw
+    let currentMode = 'pc';
+
+    function detectMode() {
+      const w = window.innerWidth;
+      const h = Math.max(window.innerHeight, 1);
+      const ratio = w / h;
+      // 央企超宽：21:9≈2.33、32:9≈3.56；宽度≥2560 亦视为指挥舱
+      if (ratio >= 2.1 || w >= 2560) return 'uw';
+      return 'pc';
+    }
+
+    function applyMode(force) {
+      const next = force || (modePref === 'auto' ? detectMode() : modePref);
+      currentMode = next === 'uw' ? 'uw' : 'pc';
+      document.body.classList.toggle('mode-pc', currentMode === 'pc');
+      document.body.classList.toggle('mode-uw', currentMode === 'uw');
+      $('modeLabel').textContent = currentMode === 'uw'
+        ? '超宽屏 32:9/21:9 指挥舱'
+        : '普通屏 16:9';
+      $('btnPc').classList.toggle('active', modePref === 'pc');
+      $('btnUw').classList.toggle('active', modePref === 'uw');
+      $('btnAuto').classList.toggle('active', modePref === 'auto');
+      requestAnimationFrame(() => charts.forEach((c) => c.resize()));
+    }
+
+    function setModePref(pref) {
+      modePref = pref;
+      localStorage.setItem('srpm.pr.mode', pref);
+      applyMode();
+      if (window.__lastDash) render(window.__lastDash.d, window.__lastDash.me);
+    }
+
+    function tick() {
+      const d = new Date();
+      const p = (n) => String(n).padStart(2, '0');
+      $('clock').textContent = `${d.getFullYear()}.${p(d.getMonth()+1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    }
+    setInterval(tick, 1000); tick();
+
+    $('btnBack').onclick = () => { location.href = '/cockpit'; };
+    $('btnReload').onclick = () => load();
+    $('btnPc').onclick = () => setModePref('pc');
+    $('btnUw').onclick = () => setModePref('uw');
+    $('btnAuto').onclick = () => setModePref('auto');
+    window.addEventListener('resize', () => {
+      if (modePref === 'auto') applyMode();
+      charts.forEach((c) => c.resize());
+    });
+
+    async function api(path) {
+      const res = await fetch('/api' + path, {
+        headers: { 'Content-Type': 'application/json', 'x-user': userId },
+      });
+      if (res.status === 401 || res.status === 403) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || '无权限访问，请使用领导或总部管理账号登录');
+      }
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || ('请求失败 ' + res.status));
+      }
+      return res.json();
+    }
+
+    function chart(el, option) {
+      if (!el) return null;
+      const inst = echarts.init(el, null, { renderer: 'canvas' });
+      inst.setOption(option);
+      charts.push(inst);
+      return inst;
+    }
+
+    function disposeCharts() {
+      while (charts.length) {
+        try { charts.pop().dispose(); } catch (_) {}
+      }
+    }
+
+    async function load() {
+      try {
+        if (!userId) throw new Error('未登录，请先返回登录页');
+        const me = await api('/bootstrap').then((b) => (b.users || []).find((u) => u.id === userId));
+        if (!me) throw new Error('用户不存在，请重新登录');
+        if (!(me.role === 'leader' || (me.role === 'mgmt' && me.scope === 'hq') || me.role === 'admin')) {
+          throw new Error('当前角色无权访问科研预研信息管理大屏（仅领导 / 总部管理）');
+        }
+        const d = await api('/dashboard?screen=pre-research');
+        window.__lastDash = { d, me };
+        applyMode();
+        render(d, me);
+      } catch (e) {
+        $('main').innerHTML = `<div class="err">${e.message || e}</div>`;
+      }
+    }
+
+    function barH(names, values, color) {
+      return {
+        grid: { left: 72, right: 24, top: 12, bottom: 8, containLabel: false },
+        tooltip: { trigger: 'axis' },
+        xAxis: { type: 'value', minInterval: 1, splitLine: { lineStyle: { color: 'rgba(64,158,255,.12)' } }, axisLabel: { color: '#7fa6cf', fontSize: 11 } },
+        yAxis: { type: 'category', inverse: true, data: names, axisLabel: { color: '#cfe7ff', fontSize: 11 }, axisTick: { show: false }, axisLine: { show: false } },
+        series: [{ type: 'bar', barWidth: 12, data: values, itemStyle: { color, borderRadius: [0, 3, 3, 0] } }],
+      };
+    }
+
+    function render(d, me) {
+      disposeCharts();
+      applyMode();
+      const bySource = {};
+      (d.byChannel || []).forEach((c) => {
+        const k = c.source_channel || '其他';
+        bySource[k] = (bySource[k] || 0) + c.count;
+      });
+      const sourceData = Object.entries(bySource).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
+      const units = (d.byUnit || []).filter((u) => u.count > 0);
+      const risks = d.risks || [];
+      const plan = d.planStats || { finishRate: 0, todo: 0 };
+      const exec = d.kpis?.totalExecRate ?? d.kpis?.execRate ?? 0;
+      const isUw = currentMode === 'uw';
+
+      const listCard = `
+        <div class="card">
+          <div class="card-hd"><span>预研项目清单</span><span class="muted">${me.name} · ${me.title || ''}</span></div>
+          <div class="card-bd" style="overflow:auto">
+            <table>
+              <thead><tr><th>来源</th><th>项目类型</th><th>数量</th><th>层级</th></tr></thead>
+              <tbody>
+                ${(d.byChannel || []).slice(0, isUw ? 16 : 12).map((r) =>
+                  `<tr><td>${r.source_channel || '—'}</td><td title="${r.channel}">${(r.channel || '').split('/').pop()}</td><td>${r.count}</td><td>${r.level || '—'}</td></tr>`
+                ).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>`;
+
+      const unitCountCard = `
+        <div class="card">
+          <div class="card-hd"><span>各单位项目数</span></div>
+          <div class="card-bd" id="cUnitCount"></div>
+        </div>`;
+
+      const unitFundCard = `
+        <div class="card">
+          <div class="card-hd"><span>各单位经费情况（万元）</span></div>
+          <div class="card-bd" id="cUnitFund"></div>
+        </div>`;
+
+      const kpiHtml = isUw ? `
+        <div class="kpis">
+          <div class="kpi"><div class="label">项目数</div><div class="val">${d.kpis.total}<span class="unit">项</span></div></div>
+          <div class="kpi"><div class="label">经费总规模</div><div class="val">${d.kpis.totalBudget}<span class="unit">亿</span></div></div>
+          <div class="kpi"><div class="label">成果包</div><div class="val">${d.transformSummary.total}<span class="unit">项</span></div></div>
+          <div class="kpi"><div class="label">来源渠道</div><div class="val">${sourceData.length}<span class="unit">个</span></div></div>
+          <div class="kpi"><div class="label">总执行率</div><div class="val">${exec}<span class="unit">%</span></div></div>
+          <div class="kpi"><div class="label">计划办结率</div><div class="val">${plan.finishRate || 0}<span class="unit">%</span></div></div>
+        </div>` : `
+        <div class="kpis">
+          <div class="kpi"><div class="label">项目数</div><div class="val">${d.kpis.total}<span class="unit">项</span></div></div>
+          <div class="kpi"><div class="label">经费总规模</div><div class="val">${d.kpis.totalBudget}<span class="unit">亿</span></div></div>
+          <div class="kpi"><div class="label">成果包</div><div class="val">${d.transformSummary.total}<span class="unit">项</span></div></div>
+          <div class="kpi"><div class="label">来源渠道</div><div class="val">${sourceData.length}<span class="unit">个</span></div></div>
+        </div>`;
+
+      const levelCard = `
+        <div class="card">
+          <div class="card-hd"><span>层级结构</span><div class="muted">项目数 / 经费</div></div>
+          <div class="card-bd" id="cLevel"></div>
+        </div>`;
+
+      const channelCard = `
+        <div class="card">
+          <div class="card-hd"><span>渠道结构</span><div class="muted">按来源渠道</div></div>
+          <div class="card-bd" id="cChannel"></div>
+        </div>`;
+
+      const riskCard = `
+        <div class="card">
+          <div class="card-hd"><span>风险预警榜</span><div class="muted">红/黄</div></div>
+          <div class="card-bd">
+            <div class="risk">
+              ${risks.slice(0, isUw ? 10 : 8).map((r) => `
+                <div class="risk-item">
+                  <span class="dot" style="background:${COLORS[r.color] || COLORS.yellow}"></span>
+                  <div>
+                    <div class="name">${r.project || '—'}</div>
+                    <div class="meta">${r.kind || ''} · ${r.title || ''} · ${r.days < 0 ? '超期 ' + (-r.days) + ' 天' : '剩余 ' + r.days + ' 天'}</div>
+                  </div>
+                </div>`).join('') || '<div class="muted" style="padding:12px">暂无红黄预警</div>'}
+            </div>
+          </div>
+        </div>`;
+
+      const delivCard = `
+        <div class="card">
+          <div class="card-hd"><span>交付物产出结构</span></div>
+          <div class="card-bd" id="cDeliv"></div>
+        </div>`;
+
+      const transformCard = `
+        <div class="card">
+          <div class="card-hd"><span>成果转化推进</span></div>
+          <div class="card-bd" id="cTransform"></div>
+        </div>`;
+
+      const statusCard = `
+        <div class="card uw-only">
+          <div class="card-hd"><span>项目状态分布</span><div class="muted">全生命周期</div></div>
+          <div class="card-bd" id="cStatus"></div>
+        </div>`;
+
+      const fundTrendCard = `
+        <div class="card uw-only">
+          <div class="card-hd"><span>年度经费预算与执行</span><div class="muted">万元</div></div>
+          <div class="card-bd" id="cFundTrend"></div>
+        </div>`;
+
+      if (isUw) {
+        $('main').innerHTML = `
+          <section class="col col-l">${listCard}${unitCountCard}</section>
+          <section class="col col-ml">${unitFundCard}${statusCard}</section>
+          <section class="col col-c">${kpiHtml}${levelCard}${channelCard}</section>
+          <section class="col col-mr">${riskCard}${delivCard}</section>
+          <section class="col col-r">${transformCard}${fundTrendCard}</section>`;
+      } else {
+        $('main').innerHTML = `
+          <section class="col col-l">${listCard}${unitCountCard}${unitFundCard}</section>
+          <section class="col col-c">${kpiHtml}${levelCard}${channelCard}</section>
+          <section class="col col-r">${riskCard}${delivCard}${transformCard}</section>`;
+      }
+
+      const unitNames = units.map((u) => u.unit);
+      chart($('cUnitCount'), barH(unitNames, units.map((u) => u.count), COLORS.cyan));
+      chart($('cUnitFund'), barH(unitNames, units.map((u) => u.budget), COLORS.blue));
+
+      chart($('cLevel'), {
+        grid: { left: 48, right: 56, top: 42, bottom: 28, containLabel: true },
+        legend: { top: 6, right: 8, textStyle: { color: '#7fa6cf', fontSize: 11 }, data: ['项目数', '经费(万元)'] },
+        tooltip: { trigger: 'axis' },
+        xAxis: { type: 'category', data: (d.byLevel || []).map((j) => j.level), axisLabel: { color: '#cfe7ff' }, axisLine: { lineStyle: { color: 'rgba(64,158,255,.3)' } } },
+        yAxis: [
+          { type: 'value', name: '项', minInterval: 1, nameTextStyle: { color: '#7fa6cf' }, axisLabel: { color: '#7fa6cf' }, splitLine: { lineStyle: { color: 'rgba(64,158,255,.12)', type: 'dashed' } } },
+          { type: 'value', name: '万元', nameTextStyle: { color: '#7fa6cf' }, axisLabel: { color: '#7fa6cf' }, splitLine: { show: false } },
+        ],
+        series: [
+          { name: '项目数', type: 'bar', barWidth: isUw ? 28 : 22, itemStyle: { color: COLORS.cyan, borderRadius: [3, 3, 0, 0] }, data: (d.byLevel || []).map((j) => j.count) },
+          { name: '经费(万元)', type: 'bar', yAxisIndex: 1, barWidth: isUw ? 28 : 22, itemStyle: { color: COLORS.violet, borderRadius: [3, 3, 0, 0] }, data: (d.byLevel || []).map((j) => j.budget) },
+        ],
+      });
+
+      chart($('cChannel'), {
+        tooltip: { trigger: 'item', formatter: '{b}：{c} 项（{d}%）' },
+        legend: { bottom: 0, left: 'center', textStyle: { color: '#7fa6cf', fontSize: 11 }, type: 'scroll' },
+        series: [{
+          type: 'pie', radius: isUw ? ['48%', '72%'] : ['42%', '68%'], center: ['50%', '44%'],
+          label: { color: '#cfe7ff', fontSize: 11 },
+          itemStyle: { borderColor: '#061428', borderWidth: 2 },
+          data: sourceData,
+          color: ['#22d3ee', '#3b82f6', '#8b7cf6', '#34d399', '#fbbf24', '#60a5fa'],
+        }],
+      });
+
+      const del = d.delivByType || [];
+      chart($('cDeliv'), {
+        grid: { left: 48, right: 16, top: 28, bottom: 28, containLabel: true },
+        legend: { top: 0, textStyle: { color: '#7fa6cf', fontSize: 11 } },
+        tooltip: { trigger: 'axis' },
+        xAxis: { type: 'category', data: del.map((x) => x.type), axisLabel: { color: '#7fa6cf', fontSize: 10, rotate: del.length > 5 ? 20 : 0 } },
+        yAxis: { type: 'value', minInterval: 1, axisLabel: { color: '#7fa6cf' }, splitLine: { lineStyle: { color: 'rgba(64,158,255,.12)' } } },
+        series: [
+          { name: '已交付', type: 'bar', stack: 'd', barWidth: 16, itemStyle: { color: COLORS.green }, data: del.map((x) => x.delivered) },
+          { name: '待交付', type: 'bar', stack: 'd', barWidth: 16, itemStyle: { color: 'rgba(148,163,184,.35)' }, data: del.map((x) => x.pending) },
+        ],
+      });
+
+      const tr = d.transform || [];
+      chart($('cTransform'), {
+        tooltip: { trigger: 'item' },
+        series: [{
+          type: 'funnel', left: '12%', width: '70%', top: 16, bottom: 16,
+          minSize: '20%', maxSize: '100%', sort: 'descending', gap: 4,
+          label: { color: '#cfe7ff', fontSize: 11 },
+          itemStyle: { borderColor: '#061428', borderWidth: 1 },
+          data: tr.map((x, i) => ({ name: x.stage, value: Math.max(x.count, 0.1), real: x.count })),
+          color: ['#1d4ed8', '#2563eb', '#22d3ee', '#34d399'],
+        }],
+      });
+
+      if (isUw) {
+        const st = d.statusDist || [];
+        chart($('cStatus'), {
+          tooltip: { trigger: 'item' },
+          series: [{
+            type: 'pie', radius: ['40%', '68%'], center: ['50%', '52%'],
+            roseType: 'radius',
+            label: { color: '#cfe7ff', fontSize: 11 },
+            data: st.map((x) => ({ name: x.status, value: x.count })),
+            color: ['#60a5fa', '#22d3ee', '#3b82f6', '#8b7cf6', '#34d399', '#f87171'],
+          }],
+        });
+        const ft = d.fundsTrend || [];
+        chart($('cFundTrend'), {
+          grid: { left: 48, right: 40, top: 36, bottom: 28, containLabel: true },
+          legend: { top: 4, textStyle: { color: '#7fa6cf', fontSize: 11 } },
+          tooltip: { trigger: 'axis' },
+          xAxis: { type: 'category', data: ft.map((x) => x.year), axisLabel: { color: '#cfe7ff' } },
+          yAxis: [
+            { type: 'value', name: '万元', axisLabel: { color: '#7fa6cf' }, splitLine: { lineStyle: { color: 'rgba(64,158,255,.12)' } } },
+            { type: 'value', name: '%', max: 100, axisLabel: { color: '#7fa6cf' }, splitLine: { show: false } },
+          ],
+          series: [
+            { name: '预算', type: 'bar', barWidth: 14, itemStyle: { color: COLORS.blue }, data: ft.map((x) => x.budget) },
+            { name: '支出', type: 'bar', barWidth: 14, itemStyle: { color: COLORS.cyan }, data: ft.map((x) => x.spent) },
+            {
+              name: '执行率', type: 'line', yAxisIndex: 1, smooth: true,
+              itemStyle: { color: COLORS.green },
+              data: ft.map((x) => (x.budget ? Math.round((x.spent / x.budget) * 100) : 0)),
+            },
+          ],
+        });
+      }
+    }
+
+    // URL ?mode=pc|uw|auto
+    const q = new URLSearchParams(location.search).get('mode');
+    if (q === 'pc' || q === 'uw' || q === 'auto') {
+      modePref = q;
+      localStorage.setItem('srpm.pr.mode', q);
+    }
+    applyMode();
+    load();
+  </script>
+</body>
+</html>

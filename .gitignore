@@ -1,0 +1,9 @@
+﻿node_modules/
+.deps/
+*.log
+.DS_Store
+Thumbs.db
+deploy/*.tar.gz
+*.tar.gz
+backups/
+data-exports/
