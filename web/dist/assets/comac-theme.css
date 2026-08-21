@@ -32,7 +32,7 @@ html, body, #root {
 }
 
 #root > div.h-full.flex > aside {
-  width: 228px !important;
+  width: 250px !important;
   background: #fff !important;
   border-right: 1px solid var(--comac-border) !important;
   color: var(--comac-text-1) !important;
@@ -63,7 +63,8 @@ html, body, #root {
   color: #fff !important;
   border-bottom: none !important;
   backdrop-filter: none !important;
-  min-height: 60px;
+  min-height: 64px;
+  height: 64px;
 }
 
 #root > div.h-full.flex header .text-faint,
@@ -74,6 +75,27 @@ html, body, #root {
 #root > div.h-full.flex header span,
 #root > div.h-full.flex header button {
   color: inherit;
+}
+
+/* 顶栏内预警通知等弹层：白底深字，避免继承标题栏白色 */
+#root > div.h-full.flex header .card {
+  color: var(--comac-text-1) !important;
+  background: var(--comac-card) !important;
+}
+#root > div.h-full.flex header .card span,
+#root > div.h-full.flex header .card button {
+  color: inherit;
+}
+#root > div.h-full.flex header .card .text-ink,
+#root > div.h-full.flex header .card .font-medium {
+  color: var(--comac-text-1) !important;
+}
+#root > div.h-full.flex header .card .text-faint,
+#root > div.h-full.flex header .card .text-dim {
+  color: var(--comac-text-3) !important;
+}
+#root > div.h-full.flex header .card .text-accent {
+  color: var(--comac-brand) !important;
 }
 
 #root > div.h-full.flex > div.grow {
@@ -220,6 +242,27 @@ label input[type="password"]:focus {
 
 a.text-accent {
   color: var(--comac-brand) !important;
+}
+
+/* ECharts 悬浮标签：对齐规范「次要按钮」浅色态 — 白底、浅商飞蓝描边、商飞蓝字 */
+.echarts-tooltip,
+div[class*="echarts-tooltip"] {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  border: 1px solid #91CAFF !important;
+  border-radius: 4px !important;
+  color: #0064EF !important;
+  font-size: 12px !important;
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif !important;
+  line-height: 1.6 !important;
+  box-shadow: none !important;
+  padding: 8px 12px !important;
+}
+.echarts-tooltip *,
+div[class*="echarts-tooltip"] * {
+  color: #0064EF !important;
+  font-size: 12px !important;
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif !important;
 }
 
 /* 内容区卡片间距 */

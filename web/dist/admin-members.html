@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>成员管理 · SRPM</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --card: #fff;
+      --line: #e5eaf2;
+      --text: #1f2a37;
+      --muted: #6b7a90;
+      --accent: #0064ef;
+      --red: #e11d48;
+      --green: #059669;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 16px;
+    }
+    body.embed { padding: 0; background: transparent; }
+    .wrap { max-width: 1180px; margin: 0 auto; }
+    .hd { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+    .hd h1 { margin: 0; font-size: 18px; }
+    .hd p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+    .btn {
+      height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line);
+      background: #fff; cursor: pointer; font-size: 13px; color: var(--text);
+    }
+    .btn:hover { border-color: var(--accent); color: var(--accent); }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.danger { color: var(--red); border-color: #fecdd3; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .card {
+      background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+    th { background: #f8fafc; color: var(--muted); font-weight: 600; font-size: 12px; }
+    .tag {
+      display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px;
+      background: #eff6ff; color: var(--accent);
+    }
+    .tag.red { background: #fff1f2; color: var(--red); }
+    .tag.green { background: #ecfdf5; color: var(--green); }
+    .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .msg { margin: 0 0 12px; padding: 10px 12px; border-radius: 8px; font-size: 13px; }
+    .msg.ok { background: #ecfdf5; color: var(--green); }
+    .msg.err { background: #fff1f2; color: var(--red); }
+    .mask {
+      position: fixed; inset: 0; background: rgba(15, 23, 42, .45);
+      display: none; align-items: center; justify-content: center; padding: 16px; z-index: 50;
+    }
+    .mask.show { display: flex; }
+    .dialog {
+      width: min(640px, 100%); background: #fff; border-radius: 8px; padding: 18px;
+      box-shadow: 0 8px 24px rgba(31,31,31,.12);
+    }
+    .dialog h2 { margin: 0 0 12px; font-size: 16px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+    input, select {
+      height: 32px; border: 1px solid var(--line); border-radius: 4px; padding: 0 10px;
+      font-size: 13px; color: var(--text); background: #fff;
+    }
+    select[multiple] { height: auto; min-height: 96px; padding: 6px 8px; }
+    .form-extra {
+      display: none; grid-column: 1 / -1; margin-top: 4px; padding: 12px;
+      background: #F5F7FA; border: 1px solid var(--line); border-radius: 4px;
+    }
+    .form-extra.show { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .form-extra h3 {
+      grid-column: 1 / -1; margin: 0 0 4px; font-size: 13px; color: #1F1F1F; font-weight: 600;
+    }
+    .req { color: #F5222D; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+    @media (max-width: 720px) {
+      .grid { grid-template-columns: 1fr; }
+      .hd { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hd">
+      <div>
+        <h1>成员管理</h1>
+        <p>工号为 6 位数字账号；新建时初始密码默认等于工号。可增删改成员并重置密码。</p>
+      </div>
+      <div class="actions">
+        <button class="btn" id="btnReload">刷新</button>
+        <button class="btn primary" id="btnCreate">新增成员</button>
+      </div>
+    </div>
+    <div id="msg"></div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>工号</th>
+            <th>姓名</th>
+            <th>角色</th>
+            <th>范围</th>
+            <th>单位</th>
+            <th>职务</th>
+            <th>表单维护</th>
+            <th>状态</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="tbody">
+          <tr><td colspan="9" style="color:#6b7a90;padding:24px;text-align:center">加载中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="mask" id="mask">
+    <div class="dialog">
+      <h2 id="dialogTitle">新增成员</h2>
+      <div class="grid">
+        <label>工号（6 位数字）
+          <input id="f_id" maxlength="6" placeholder="例如 100001" />
+        </label>
+        <label>姓名
+          <input id="f_name" placeholder="姓名" />
+        </label>
+        <label>角色
+          <select id="f_role">
+            <option value="team">项目团队</option>
+            <option value="contact">项目联系人</option>
+            <option value="mgmt">管理团队</option>
+            <option value="finance">财务</option>
+            <option value="chief">责任总师</option>
+            <option value="leader">领导</option>
+            <option value="admin">系统管理员</option>
+          </select>
+        </label>
+        <label>范围
+          <select id="f_scope">
+            <option value="self">个人</option>
+            <option value="unit">本单位</option>
+            <option value="hq">总部</option>
+            <option value="chief">总师</option>
+          </select>
+        </label>
+        <label>单位
+          <select id="f_unit"></select>
+        </label>
+        <label>状态
+          <select id="f_status">
+            <option value="在岗">在岗</option>
+            <option value="已离岗">已离岗</option>
+          </select>
+        </label>
+        <label style="grid-column: 1 / -1">职务/说明
+          <input id="f_title" placeholder="例如：项目联系人 / 单位科研项目主管" />
+        </label>
+        <div class="form-extra" id="formExtra">
+          <h3>表单维护权限（仅总部科技部）</h3>
+          <label>是否具有表单维护权限
+            <select id="f_form_access">
+              <option value="0">否</option>
+              <option value="1">是</option>
+            </select>
+          </label>
+          <label id="formScopeWrap">权限范围 <span class="req">*</span>
+            <select id="f_form_scope">
+              <option value="hq">总部（全部台账）</option>
+              <option value="unit">本单位</option>
+              <option value="channel">指定渠道（按渠道授权）</option>
+              <option value="type">项目类型主管（按类型授权）</option>
+              <option value="self">仅本人</option>
+            </select>
+          </label>
+          <label id="formKeysWrap" style="grid-column: 1 / -1; display:none">授权项 <span class="req">*</span>
+            <select id="f_form_keys" multiple></select>
+          </label>
+        </div>
+      </div>
+      <div class="hint" id="dialogHint">新建账号初始密码 = 工号</div>
+      <div class="dialog-actions">
+        <button class="btn" id="btnCancel">取消</button>
+        <button class="btn primary" id="btnSave">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const ROLE_LABEL = { team:'项目团队', contact:'项目联系人', mgmt:'管理团队', finance:'财务', chief:'责任总师', leader:'领导', admin:'系统管理员' };
+    const SCOPE_LABEL = { self:'个人', unit:'本单位', hq:'总部', chief:'总师' };
+    const FORM_SCOPE_LABEL = {
+      hq: '总部（全部台账）',
+      unit: '本单位',
+      channel: '指定渠道',
+      type: '按类型授权',
+      self: '仅本人',
+    };
+    const token = localStorage.getItem('srpm.user') || '';
+    const qs = new URLSearchParams(location.search);
+    if (qs.get('embed') === '1') document.body.classList.add('embed');
+
+    let units = [];
+    let channels = [];
+    let editingId = null;
+
+    function showMsg(text, ok=true) {
+      const el = document.getElementById('msg');
+      el.className = 'msg ' + (ok ? 'ok' : 'err');
+      el.textContent = text;
+      if (!text) el.className = '';
+    }
+
+    async function api(path, opts={}) {
+      const res = await fetch('/api' + path, {
+        ...opts,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session': token,
+          ...(opts.headers || {}),
+        },
+        body: opts.body ? JSON.stringify(opts.body) : undefined,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || ('请求失败 ' + res.status));
+      return data;
+    }
+
+    function unitName(id) {
+      const u = units.find((x) => String(x.id) === String(id));
+      return u ? (u.short || u.name) : (id ? String(id) : '—');
+    }
+
+    function isHqTechUnit(id) {
+      const u = units.find((x) => String(x.id) === String(id));
+      return /总部科技/.test(`${u?.short || ''}${u?.name || ''}`);
+    }
+
+    function parseKeys(raw) {
+      if (Array.isArray(raw)) return raw;
+      try { const v = JSON.parse(raw || '[]'); return Array.isArray(v) ? v : []; } catch { return []; }
+    }
+
+    function unique(list) {
+      return [...new Set(list.filter(Boolean))];
+    }
+
+    function fillUnits(selected) {
+      const sel = document.getElementById('f_unit');
+      sel.innerHTML = '<option value="">（无）</option>' + units.map((u) =>
+        `<option value="${u.id}">${u.short || u.name}</option>`
+      ).join('');
+      if (selected != null && selected !== '') sel.value = String(selected);
+    }
+
+    function fillFormKeys(scope, selected) {
+      const sel = document.getElementById('f_form_keys');
+      const chosen = new Set((selected || []).map(String));
+      let opts = [];
+      if (scope === 'channel') {
+        opts = unique(channels.map((c) => c.source_channel || c.sourceChannel)).sort((a, b) => a.localeCompare(b, 'zh-CN'));
+      } else if (scope === 'type') {
+        opts = unique(channels.map((c) => c.name)).sort((a, b) => a.localeCompare(b, 'zh-CN'));
+      }
+      sel.innerHTML = opts.map((v) => `<option value="${v.replace(/"/g,'&quot;')}" ${chosen.has(v) ? 'selected' : ''}>${v}</option>`).join('');
+    }
+
+    function syncFormExtra(row) {
+      const extra = document.getElementById('formExtra');
+      const unitId = document.getElementById('f_unit').value;
+      const show = isHqTechUnit(unitId);
+      extra.classList.toggle('show', show);
+      if (!show) {
+        document.getElementById('f_form_access').value = '0';
+        document.getElementById('f_form_scope').value = 'hq';
+        document.getElementById('formKeysWrap').style.display = 'none';
+        return;
+      }
+      if (row) {
+        document.getElementById('f_form_access').value = Number(row.form_access) === 1 ? '1' : '0';
+        document.getElementById('f_form_scope').value = row.form_scope || 'hq';
+      }
+      syncFormScope(row);
+    }
+
+    function syncFormScope(row) {
+      const on = document.getElementById('f_form_access').value === '1';
+      document.getElementById('formScopeWrap').style.display = on ? '' : 'none';
+      const scope = document.getElementById('f_form_scope').value;
+      const needKeys = on && (scope === 'channel' || scope === 'type');
+      document.getElementById('formKeysWrap').style.display = needKeys ? '' : 'none';
+      if (needKeys) fillFormKeys(scope, row ? parseKeys(row.form_scope_keys) : selectedFormKeys());
+    }
+
+    function selectedFormKeys() {
+      return [...document.getElementById('f_form_keys').selectedOptions].map((o) => o.value);
+    }
+
+    function formLabel(u) {
+      if (u.role === 'admin') return '系统管理员（全部）';
+      if (Number(u.form_access) !== 1) return '无';
+      return FORM_SCOPE_LABEL[u.form_scope] || '是';
+    }
+
+    function openDialog(row) {
+      editingId = row ? row.id : null;
+      document.getElementById('dialogTitle').textContent = row ? '编辑成员' : '新增成员';
+      document.getElementById('dialogHint').textContent = row
+        ? '保存后不会改动密码；如需改密请点「重置密码」'
+        : '新建账号初始密码默认等于工号（6 位）';
+      document.getElementById('f_id').value = row ? (row.emp_no || row.id) : '';
+      document.getElementById('f_id').disabled = !!row;
+      document.getElementById('f_name').value = row?.name || '';
+      document.getElementById('f_role').value = row?.role || 'team';
+      document.getElementById('f_scope').value = row?.scope || 'self';
+      document.getElementById('f_status').value = row?.status || '在岗';
+      document.getElementById('f_title').value = row?.title || '';
+      syncContactRoleDefaults(!row);
+      fillUnits(row?.unit_id);
+      document.getElementById('f_form_access').value = Number(row?.form_access) === 1 ? '1' : '0';
+      document.getElementById('f_form_scope').value = row?.form_scope || 'hq';
+      syncFormExtra(row);
+      document.getElementById('mask').classList.add('show');
+    }
+
+    function closeDialog() {
+      document.getElementById('mask').classList.remove('show');
+      editingId = null;
+    }
+
+    async function load() {
+      if (!token) {
+        showMsg('未登录或登录已失效，请先以系统管理员登录平台', false);
+        return;
+      }
+      try {
+        const boot = await api('/bootstrap');
+        units = (boot.units || []).filter((u) => u.kind === 'unit' || u.kind === 'hq');
+        channels = boot.channels || [];
+        const data = await api('/admin/users');
+        const rows = data.users || [];
+        const tb = document.getElementById('tbody');
+        if (!rows.length) {
+          tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#6b7a90;padding:24px">暂无成员</td></tr>';
+          return;
+        }
+        tb.innerHTML = rows.map((u) => {
+          const emp = u.emp_no || u.id;
+          return `
+          <tr>
+            <td><code>${emp}</code></td>
+            <td>${u.name || ''}</td>
+            <td><span class="tag">${ROLE_LABEL[u.role] || u.role}</span></td>
+            <td>${SCOPE_LABEL[u.scope] || u.scope || ''}</td>
+            <td>${unitName(u.unit_id)}</td>
+            <td>${u.title || '—'}</td>
+            <td>${formLabel(u)}</td>
+            <td><span class="tag ${u.status === '在岗' ? 'green' : 'red'}">${u.status || ''}</span></td>
+            <td>
+              <div class="actions">
+                <button class="btn" data-act="edit" data-id="${u.id}" data-emp="${emp}">编辑</button>
+                <button class="btn" data-act="reset" data-id="${u.id}" data-emp="${emp}">重置密码</button>
+                <button class="btn danger" data-act="del" data-id="${u.id}" data-emp="${emp}">删除</button>
+              </div>
+            </td>
+          </tr>`;
+        }).join('');
+        showMsg('');
+      } catch (e) {
+        showMsg(e.message || String(e), false);
+      }
+    }
+
+    function syncContactRoleDefaults(isNew) {
+      const role = document.getElementById('f_role').value;
+      if (role === 'contact') {
+        if (!document.getElementById('f_scope').value) document.getElementById('f_scope').value = 'self';
+        if (isNew && !document.getElementById('f_title').value.trim()) {
+          document.getElementById('f_title').value = '项目联系人';
+        }
+        document.getElementById('dialogHint').textContent = '项目联系人：发起审批、上传审批材料；默认仅看本人关联项目。';
+      }
+    }
+
+    document.getElementById('f_role').onchange = () => syncContactRoleDefaults(true);
+    document.getElementById('btnReload').onclick = load;
+    document.getElementById('btnCreate').onclick = () => openDialog(null);
+    document.getElementById('btnCancel').onclick = closeDialog;
+    document.getElementById('f_unit').onchange = () => syncFormExtra();
+    document.getElementById('f_form_access').onchange = () => syncFormScope();
+    document.getElementById('f_form_scope').onchange = () => syncFormScope();
+    document.getElementById('mask').addEventListener('click', (e) => {
+      if (e.target.id === 'mask') closeDialog();
+    });
+
+    document.getElementById('btnSave').onclick = async () => {
+      try {
+        const formAccess = document.getElementById('f_form_access').value === '1';
+        const formScope = document.getElementById('f_form_scope').value;
+        const payload = {
+          id: document.getElementById('f_id').value.trim(),
+          name: document.getElementById('f_name').value.trim(),
+          role: document.getElementById('f_role').value,
+          scope: document.getElementById('f_scope').value,
+          unit_id: document.getElementById('f_unit').value ? Number(document.getElementById('f_unit').value) : null,
+          title: document.getElementById('f_title').value.trim(),
+          status: document.getElementById('f_status').value,
+          form_access: formAccess,
+          form_scope: formScope,
+          form_scope_keys: selectedFormKeys(),
+        };
+        if (isHqTechUnit(payload.unit_id) && formAccess && (formScope === 'channel' || formScope === 'type') && !payload.form_scope_keys.length) {
+          throw new Error(formScope === 'channel' ? '请选择授权渠道' : '请选择授权项目类型');
+        }
+        if (editingId) {
+          await api('/admin/users/' + encodeURIComponent(editingId), { method: 'PUT', body: payload });
+          showMsg('成员已更新');
+        } else {
+          await api('/admin/users', { method: 'POST', body: payload });
+          showMsg(`成员已创建；初始密码为工号 ${payload.id}`);
+        }
+        closeDialog();
+        await load();
+      } catch (e) {
+        showMsg(e.message || String(e), false);
+      }
+    };
+
+    document.getElementById('tbody').addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-act]');
+      if (!btn) return;
+      const id = btn.getAttribute('data-id');
+      const emp = btn.getAttribute('data-emp') || id;
+      const act = btn.getAttribute('data-act');
+      try {
+        if (act === 'edit') {
+          const data = await api('/admin/users');
+          const row = (data.users || []).find((u) => u.id === id);
+          if (!row) throw new Error('成员不存在');
+          openDialog(row);
+          return;
+        }
+        if (act === 'reset') {
+          const custom = prompt(`重置密码\n工号：${emp}\n留空则重置为工号本身；也可输入新密码：`, emp);
+          if (custom === null) return;
+          const body = custom.trim() ? { password: custom.trim() } : {};
+          const r = await api('/admin/users/' + encodeURIComponent(id) + '/reset-password', { method: 'POST', body });
+          showMsg(r.message || `已重置密码为：${r.password || emp}`);
+          return;
+        }
+        if (act === 'del') {
+          if (!confirm(`确认删除成员 ${emp}（${id}）？此操作不可恢复。`)) return;
+          await api('/admin/users/' + encodeURIComponent(id), { method: 'DELETE' });
+          showMsg('成员已删除');
+          await load();
+        }
+      } catch (err) {
+        showMsg(err.message || String(err), false);
+      }
+    });
+
+    load();
+  </script>
+</body>
+</html>

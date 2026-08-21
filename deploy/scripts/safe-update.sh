@@ -61,7 +61,7 @@ done
 echo "======== 校验数据仍在 ========"
 docker exec "$NAME" node -e '
 const Database=require("better-sqlite3");
-const db=new Database("/app/server/data/platform.db",{readonly:true});
+const db=new Database("/app/server/data/srpm.db",{readonly:true});
 console.log("integrity="+db.pragma("integrity_check",{simple:true}));
 for (const t of ["users","projects","approvals","documents"]) {
   try { console.log(t+"="+db.prepare("select count(*) n from "+t).get().n); } catch(e) { console.log(t+"=n/a"); }

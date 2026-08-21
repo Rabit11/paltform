@@ -5,12 +5,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>科研项目信息化管理平台</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%230048A0'/%3E%3Cpath d='M16 6 L18 14 L26 16 L18 18 L16 26 L14 18 L6 16 L14 14 Z' fill='%23FFFFFF'/%3E%3C/svg%3E" />
-    <script type="module" crossorigin src="/assets/index-Cv0F1LpL.js"></script>
+    <script type="module" crossorigin src="/assets/index-StageFill01.js?v=20260821back3"></script>
     <link rel="stylesheet" crossorigin href="/assets/index-D5tHqw2B.css">
-    <link rel="stylesheet" href="/assets/comac-theme.css">
+    <link rel="stylesheet" href="/assets/comac-theme.css?v=20260821tt">
+  
+    <!-- WF_OVERLAY_KILL_V3 -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <style id="wf-overlay-kill">
+      #wf-approval-tools,#wf-milestone,#wf-milestone-close,#wf-assess,#wf-change,#wf-budget,#wf-writeoff,#wf-evaluation,#wf-sync-truth,#wf-governance,
+      section.wf-card,.wf-card,.wf-toast{display:none!important}
+    </style>
+    <script>
+      (function(){
+        function kill(){
+          document.querySelectorAll("#wf-approval-tools,#wf-milestone,#wf-milestone-close,#wf-assess,#wf-change,#wf-budget,#wf-writeoff,#wf-evaluation,#wf-sync-truth,#wf-governance,section.wf-card,.wf-card").forEach(function(el){
+            if (el.closest('.lc-bar,.lc-panel,.lc-hint,.lc-drawer-mask')) return;
+            el.remove();
+          });
+        }
+        kill();
+        new MutationObserver(kill).observe(document.documentElement,{childList:true,subtree:true});
+      })();
+    </script>
+
   </head>
   <body>
     <div id="root"></div>
-
+      <script defer src="/assets/lifecycle-ui.js?v=2"></script>
+      <script defer src="/assets/form-access-nav.js?v=1"></script>
   </body>
 </html>

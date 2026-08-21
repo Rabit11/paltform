@@ -62,9 +62,9 @@ if [ -f "$DATA_TAR" ]; then
     -c 'set -e
         mkdir -p /data/uploads /tmp/restore
         tar xzf /in/pack.tar.gz -C /tmp/restore
-        test -f /tmp/restore/platform.db
-        rm -f /data/platform.db /data/platform.db-wal /data/platform.db-shm
-        cp -a /tmp/restore/platform.db /data/platform.db
+        test -f /tmp/restore/srpm.db
+        rm -f /data/srpm.db /data/srpm.db-wal /data/srpm.db-shm
+        cp -a /tmp/restore/srpm.db /data/srpm.db
         if [ -d /tmp/restore/uploads ]; then
           rm -rf /data/uploads
           mkdir -p /data/uploads

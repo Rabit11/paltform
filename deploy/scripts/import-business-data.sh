@@ -1,7 +1,7 @@
 #!/bin/bash
 # 导入业务数据 — 覆盖数据卷内容
 # 用法：./scripts/import-business-data.sh <business-data_xxx.tar.gz>
-# 警告：会替换卷内现有 platform.db / uploads，请先 export 再操作
+# 警告：会替换卷内现有 srpm.db / uploads，请先 export 再操作
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -47,11 +47,11 @@ docker run --rm --entrypoint sh \
   -v "$PACK":/in/pack.tar.gz:ro \
   "$IMAGE" \
   -c 'set -e
-      rm -rf /data/platform.db /data/platform.db-wal /data/platform.db-shm
+      rm -rf /data/srpm.db /data/srpm.db-wal /data/srpm.db-shm
       mkdir -p /data/uploads /tmp/restore
       tar xzf /in/pack.tar.gz -C /tmp/restore
-      test -f /tmp/restore/platform.db
-      cp -a /tmp/restore/platform.db /data/platform.db
+      test -f /tmp/restore/srpm.db
+      cp -a /tmp/restore/srpm.db /data/srpm.db
       if [ -d /tmp/restore/uploads ]; then
         rm -rf /data/uploads
         mkdir -p /data/uploads
@@ -77,7 +77,7 @@ done
 
 docker exec "$NAME" node -e '
 const Database=require("better-sqlite3");
-const db=new Database("/app/server/data/platform.db",{readonly:true});
+const db=new Database("/app/server/data/srpm.db",{readonly:true});
 console.log("integrity="+db.pragma("integrity_check",{simple:true}));
 for (const t of ["users","projects","approvals","documents"]) {
   try { console.log(t+"="+db.prepare("select count(*) n from "+t).get().n); } catch(e) { console.log(t+"=n/a"); }

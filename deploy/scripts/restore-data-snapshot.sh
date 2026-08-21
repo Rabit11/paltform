@@ -1,5 +1,5 @@
 #!/bin/bash
-# 将 data-exports 或快照中的 platform.db / tar.gz 写入 Docker volume（覆盖）
+# 将 data-exports 或快照中的 srpm.db / tar.gz 写入 Docker volume（覆盖）
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PACK="${1:-}"
@@ -8,7 +8,7 @@ IMAGE="${APP_IMAGE:-srpm-platform:migration-legacy-20260807}"
 NAME="${CONTAINER_NAME:-srpm-18087}"
 
 if [ -z "$PACK" ]; then
-  echo "用法: $0 <business-data_xxx.tar.gz|platform.db>"
+  echo "用法: $0 <business-data_xxx.tar.gz|srpm.db>"
   exit 1
 fi
 if [ ! -f "$PACK" ]; then
@@ -31,10 +31,10 @@ if [[ "$PACK" == *.tar.gz ]]; then
 else
   docker run --rm --entrypoint sh \
     -v "$VOL":/data \
-    -v "$(cd "$(dirname "$PACK")" && pwd)/$(basename "$PACK")":/in/platform.db:ro \
+    -v "$(cd "$(dirname "$PACK")" && pwd)/$(basename "$PACK")":/in/srpm.db:ro \
     "$IMAGE" \
-    -c 'rm -f /data/platform.db /data/platform.db-wal /data/platform.db-shm
-        cp /in/platform.db /data/platform.db
+    -c 'rm -f /data/srpm.db /data/srpm.db-wal /data/srpm.db-shm
+        cp /in/srpm.db /data/srpm.db
         mkdir -p /data/uploads
         chown -R 1000:1000 /data 2>/dev/null || true
         ls -la /data'

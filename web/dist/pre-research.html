@@ -107,6 +107,22 @@
     .err { color: var(--red); padding: 20px; text-align: center; }
     .hint { font-size: 11px; color: var(--muted); }
 
+    .echarts-tooltip,
+    div[class*="echarts-tooltip"] {
+      background: rgba(8, 30, 60, 0.94) !important;
+      border: 1px solid rgba(64, 158, 255, 0.28) !important;
+      border-radius: 4px !important;
+      color: #f0f9ff !important;
+      font-size: 12px !important;
+      font-family: "Microsoft YaHei", "PingFang SC", sans-serif !important;
+      line-height: 1.6 !important;
+    }
+    .echarts-tooltip *,
+    div[class*="echarts-tooltip"] * {
+      color: #f0f9ff !important;
+      font-size: 12px !important;
+    }
+
     /* ========== 普通电脑 16:9 ========== */
     body.mode-pc .body {
       grid-template-columns: 1.1fr 1.35fr 1fr;
@@ -174,7 +190,7 @@
   </div>
   <script>
     const COLORS = { red: '#f87171', yellow: '#fbbf24', blue: '#3b82f6', green: '#34d399', cyan: '#22d3ee', violet: '#8b7cf6' };
-    const userId = localStorage.getItem('srpm.user') || '';
+    const sessionToken = localStorage.getItem('srpm.user') || '';
     const $ = (id) => document.getElementById(id);
     const charts = [];
     let modePref = localStorage.getItem('srpm.pr.mode') || 'auto'; // auto | pc | uw
@@ -207,7 +223,11 @@
       modePref = pref;
       localStorage.setItem('srpm.pr.mode', pref);
       applyMode();
-      if (window.__lastDash) render(window.__lastDash.d, window.__lastDash.me);
+      if (window.__lastDash) {
+        try { render(window.__lastDash.d, window.__lastDash.me); } catch (err) {
+          $('main').innerHTML = `<div class="err">大屏渲染失败：${(err && err.message) || err}</div>`;
+        }
+      }
     }
 
     function tick() {
@@ -217,7 +237,10 @@
     }
     setInterval(tick, 1000); tick();
 
-    $('btnBack').onclick = () => { location.href = '/cockpit'; };
+    $('btnBack').onclick = () => {
+      // 只离开大屏，回到可视化驾驶舱；不调用 /logout、不清理 srpm.user
+      location.href = '/cockpit';
+    };
     $('btnReload').onclick = () => load();
     $('btnPc').onclick = () => setModePref('pc');
     $('btnUw').onclick = () => setModePref('uw');
@@ -229,7 +252,7 @@
 
     async function api(path) {
       const res = await fetch('/api' + path, {
-        headers: { 'Content-Type': 'application/json', 'x-user': userId },
+        headers: { 'Content-Type': 'application/json', 'x-session': sessionToken },
       });
       if (res.status === 401 || res.status === 403) {
         const j = await res.json().catch(() => ({}));
@@ -244,10 +267,24 @@
 
     function chart(el, option) {
       if (!el) return null;
-      const inst = echarts.init(el, null, { renderer: 'canvas' });
-      inst.setOption(option);
-      charts.push(inst);
-      return inst;
+      if (typeof echarts === 'undefined') {
+        el.innerHTML = '<div class="muted" style="padding:12px">图表组件未加载，请强制刷新（Ctrl+F5）</div>';
+        return null;
+      }
+      try {
+        const inst = echarts.init(el, null, { renderer: 'canvas' });
+        inst.setOption(option);
+        charts.push(inst);
+        return inst;
+      } catch (err) {
+        el.innerHTML = '<div class="muted" style="padding:12px">图表渲染失败</div>';
+        return null;
+      }
+    }
+
+    function emptyHint(el, text) {
+      if (!el) return;
+      el.innerHTML = `<div class="muted" style="padding:12px">${text}</div>`;
     }
 
     function disposeCharts() {
@@ -258,16 +295,18 @@
 
     async function load() {
       try {
-        if (!userId) throw new Error('未登录，请先返回登录页');
-        const me = await api('/bootstrap').then((b) => (b.users || []).find((u) => u.id === userId));
-        if (!me) throw new Error('用户不存在，请重新登录');
+        if (!sessionToken) throw new Error('未登录，请先返回登录页');
+        const me = await api('/session');
+        if (!me || !(me.id || me.emp_no)) throw new Error('登录已失效，请重新登录');
         if (!(me.role === 'leader' || (me.role === 'mgmt' && me.scope === 'hq') || me.role === 'admin')) {
           throw new Error('当前角色无权访问科研预研信息管理大屏（仅领导 / 总部管理）');
         }
         const d = await api('/dashboard?screen=pre-research');
         window.__lastDash = { d, me };
         applyMode();
-        render(d, me);
+        try { render(d, me); } catch (err) {
+          $('main').innerHTML = `<div class="err">大屏渲染失败：${(err && err.message) || err}</div>`;
+        }
       } catch (e) {
         $('main').innerHTML = `<div class="err">${e.message || e}</div>`;
       }
@@ -294,8 +333,10 @@
       const sourceData = Object.entries(bySource).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
       const units = (d.byUnit || []).filter((u) => u.count > 0);
       const risks = d.risks || [];
+      const kpis = d.kpis || {};
+      const transformSummary = d.transformSummary || { total: 0 };
       const plan = d.planStats || { finishRate: 0, todo: 0 };
-      const exec = d.kpis?.totalExecRate ?? d.kpis?.execRate ?? 0;
+      const exec = kpis.totalExecRate ?? kpis.execRate ?? 0;
       const isUw = currentMode === 'uw';
 
       const listCard = `
@@ -327,17 +368,17 @@
 
       const kpiHtml = isUw ? `
         <div class="kpis">
-          <div class="kpi"><div class="label">项目数</div><div class="val">${d.kpis.total}<span class="unit">项</span></div></div>
-          <div class="kpi"><div class="label">经费总规模</div><div class="val">${d.kpis.totalBudget}<span class="unit">亿</span></div></div>
-          <div class="kpi"><div class="label">成果包</div><div class="val">${d.transformSummary.total}<span class="unit">项</span></div></div>
+          <div class="kpi"><div class="label">项目数</div><div class="val">${kpis.total || 0}<span class="unit">项</span></div></div>
+          <div class="kpi"><div class="label">经费总规模</div><div class="val">${kpis.totalBudget || 0}<span class="unit">亿</span></div></div>
+          <div class="kpi"><div class="label">成果包</div><div class="val">${transformSummary.total || 0}<span class="unit">项</span></div></div>
           <div class="kpi"><div class="label">来源渠道</div><div class="val">${sourceData.length}<span class="unit">个</span></div></div>
           <div class="kpi"><div class="label">总执行率</div><div class="val">${exec}<span class="unit">%</span></div></div>
           <div class="kpi"><div class="label">计划办结率</div><div class="val">${plan.finishRate || 0}<span class="unit">%</span></div></div>
         </div>` : `
         <div class="kpis">
-          <div class="kpi"><div class="label">项目数</div><div class="val">${d.kpis.total}<span class="unit">项</span></div></div>
-          <div class="kpi"><div class="label">经费总规模</div><div class="val">${d.kpis.totalBudget}<span class="unit">亿</span></div></div>
-          <div class="kpi"><div class="label">成果包</div><div class="val">${d.transformSummary.total}<span class="unit">项</span></div></div>
+          <div class="kpi"><div class="label">项目数</div><div class="val">${kpis.total || 0}<span class="unit">项</span></div></div>
+          <div class="kpi"><div class="label">经费总规模</div><div class="val">${kpis.totalBudget || 0}<span class="unit">亿</span></div></div>
+          <div class="kpi"><div class="label">成果包</div><div class="val">${transformSummary.total || 0}<span class="unit">项</span></div></div>
           <div class="kpi"><div class="label">来源渠道</div><div class="val">${sourceData.length}<span class="unit">个</span></div></div>
         </div>`;
 
@@ -409,8 +450,13 @@
       }
 
       const unitNames = units.map((u) => u.unit);
-      chart($('cUnitCount'), barH(unitNames, units.map((u) => u.count), COLORS.cyan));
-      chart($('cUnitFund'), barH(unitNames, units.map((u) => u.budget), COLORS.blue));
+      if (unitNames.length) {
+        chart($('cUnitCount'), barH(unitNames, units.map((u) => u.count), COLORS.cyan));
+        chart($('cUnitFund'), barH(unitNames, units.map((u) => u.budget), COLORS.blue));
+      } else {
+        emptyHint($('cUnitCount'), '暂无单位数据');
+        emptyHint($('cUnitFund'), '暂无经费数据');
+      }
 
       chart($('cLevel'), {
         grid: { left: 48, right: 56, top: 42, bottom: 28, containLabel: true },
@@ -427,7 +473,8 @@
         ],
       });
 
-      chart($('cChannel'), {
+      if (!sourceData.length) emptyHint($('cChannel'), '暂无渠道数据');
+      else chart($('cChannel'), {
         tooltip: { trigger: 'item', formatter: '{b}：{c} 项（{d}%）' },
         legend: { bottom: 0, left: 'center', textStyle: { color: '#7fa6cf', fontSize: 11 }, type: 'scroll' },
         series: [{
@@ -439,8 +486,9 @@
         }],
       });
 
-      const del = d.delivByType || [];
-      chart($('cDeliv'), {
+      const del = (d.delivByType || []).filter((x) => (x.delivered || 0) + (x.pending || 0) > 0);
+      if (!del.length) emptyHint($('cDeliv'), '暂无交付物明细');
+      else chart($('cDeliv'), {
         grid: { left: 48, right: 16, top: 28, bottom: 28, containLabel: true },
         legend: { top: 0, textStyle: { color: '#7fa6cf', fontSize: 11 } },
         tooltip: { trigger: 'axis' },

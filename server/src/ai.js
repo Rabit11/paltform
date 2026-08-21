@@ -162,6 +162,13 @@ async function callOpenAI(cfg, { text, channels }) {
     const m = raw.match(/\{[\s\S]*\}/);
     if (!m) throw new Error('模型未返回 JSON 结果');
     return { fields: JSON.parse(m[0]), usage: data.usage };
+  } catch (e) {
+    if (e?.name === 'AbortError') throw new Error('AI 识读超时，请稍后重试或缩小文档');
+    const cause = e?.cause?.code || e?.cause?.message || e?.code || '';
+    if (/fetch failed|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|network/i.test(String(e?.message) + String(cause))) {
+      throw new Error(`无法连接 AI 网关 ${cfg.baseUrl}（${cause || e.message}）。请确认服务器可访问该地址后再试`);
+    }
+    throw e;
   } finally { clearTimeout(timer); }
 }
 
@@ -231,8 +238,15 @@ function normalizeFields(f) {
 export async function extractProjectInfo({ text, pdfBase64, channels }) {
   const cfg = aiConfig();
   let r;
-  if (cfg.provider === 'anthropic') r = { ...(await callAnthropic(cfg, { text, pdfBase64, channels })), provider: 'anthropic', model: cfg.model };
-  else if (cfg.provider === 'openai') r = { ...(await callOpenAI(cfg, { text, channels })), provider: 'openai', model: cfg.model };
-  else r = { ...mockExtract({ text, channels }), provider: 'mock', model: '本地规则模拟' };
+  if (cfg.provider === 'anthropic') {
+    r = { ...(await callAnthropic(cfg, { text, pdfBase64, channels })), provider: 'anthropic', model: cfg.model };
+  } else if (cfg.provider === 'openai') {
+    r = { ...(await callOpenAI(cfg, { text, channels })), provider: 'openai', model: cfg.model };
+  } else if (cfg.apiKey) {
+    // 已配置密钥但 provider 异常时，禁止静默降级为本地规则模拟
+    throw new Error(`AI 已配置但 provider=${cfg.provider || '空'} 不受支持，请设为 openai 或 anthropic`);
+  } else {
+    r = { ...mockExtract({ text, channels }), provider: 'mock', model: '本地规则模拟' };
+  }
   return { ...r, fields: normalizeFields(r.fields) };
 }

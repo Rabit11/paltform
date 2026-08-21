@@ -25,7 +25,7 @@ fi
 echo "[export] online backup via running container..."
 docker exec "$NAME" node --input-type=module -e "
   import Database from 'better-sqlite3';
-  const db=new Database('/app/server/data/platform.db',{readonly:true});
+  const db=new Database('/app/server/data/srpm.db',{readonly:true});
   await db.backup('/app/server/data/$TEMP');
   db.close();
   const check=new Database('/app/server/data/$TEMP',{readonly:true});
@@ -45,7 +45,7 @@ docker run --rm --entrypoint sh \
   -c 'set -e
       test -f "/data/${TEMP}"
       mkdir -p /tmp/snap
-      cp -a "/data/${TEMP}" /tmp/snap/platform.db
+      cp -a "/data/${TEMP}" /tmp/snap/srpm.db
       if [ -d /data/uploads ]; then cp -a /data/uploads /tmp/snap/uploads; fi
       cd /tmp/snap && tar czf "/out/${PACK_NAME}" .
       ls -lh "/out/${PACK_NAME}"
@@ -63,7 +63,7 @@ MANIFEST="$OUT_DIR/business-data_${STAMP}.manifest.txt"
   echo "created=$(date -Iseconds 2>/dev/null || date)"
   docker exec "$NAME" node -e '
 const Database=require("better-sqlite3");
-const db=new Database("/app/server/data/platform.db",{readonly:true});
+const db=new Database("/app/server/data/srpm.db",{readonly:true});
 console.log("users="+db.prepare("select count(*) c from users").get().c);
 console.log("projects="+db.prepare("select count(*) c from projects").get().c);
 try { console.log("approvals="+db.prepare("select count(*) c from approvals").get().c); } catch { console.log("approvals=0"); }

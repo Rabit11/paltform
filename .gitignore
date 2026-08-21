@@ -7,3 +7,8 @@ deploy/*.tar.gz
 *.tar.gz
 backups/
 data-exports/
+server/data/
+*.db
+ai.config.json
+*.bak*
+*.bak-*

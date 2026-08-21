@@ -7,7 +7,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '..', 'data');
 mkdirSync(DATA_DIR, { recursive: true });
 
-export const DB_PATH = join(DATA_DIR, 'platform.db');
+const DB_FILE = process.env.SRPM_DB_FILE || 'srpm.db';
+export const DB_PATH = join(DATA_DIR, DB_FILE);
 
 export function openDb() {
   const db = new Database(DB_PATH);
@@ -79,6 +80,17 @@ export function createSchema(db) {
     tags_json TEXT NOT NULL DEFAULT '[]'
   );
 
+  CREATE TABLE IF NOT EXISTS project_finance_profile (
+    project_id INTEGER PRIMARY KEY,
+    central_grant REAL NOT NULL DEFAULT 0,
+    internal_grant REAL NOT NULL DEFAULT 0,
+    self_fund REAL NOT NULL DEFAULT 0,
+    internal_self_fund REAL NOT NULL DEFAULT 0,
+    source TEXT NOT NULL DEFAULT '审批填报',
+    approved_at TEXT,
+    approved_by TEXT
+  );
+
   CREATE TABLE IF NOT EXISTS milestones (
     id INTEGER PRIMARY KEY,
     project_id INTEGER NOT NULL,
@@ -133,6 +145,33 @@ export function createSchema(db) {
     status TEXT NOT NULL DEFAULT '待审批',  -- 待审批|已拨付|已驳回
     created_at TEXT NOT NULL,
     decided_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS project_decisions (
+    id INTEGER PRIMARY KEY,
+    project_id INTEGER NOT NULL,
+    decision TEXT NOT NULL,             -- 已立项|不立项
+    reason TEXT,
+    decided_at TEXT NOT NULL,
+    decided_by TEXT NOT NULL,
+    upload_id INTEGER
+  );
+
+  CREATE TABLE IF NOT EXISTS external_contracts (
+    id INTEGER PRIMARY KEY,
+    project_id INTEGER NOT NULL,
+    collaborator_id INTEGER,
+    contract_no TEXT UNIQUE NOT NULL,
+    supplier_name TEXT NOT NULL,
+    amount REAL NOT NULL DEFAULT 0,
+    start_date TEXT,
+    end_date TEXT,
+    acceptance_date TEXT,
+    status TEXT NOT NULL DEFAULT '履行中',
+    payment_nodes_json TEXT NOT NULL DEFAULT '[]',
+    invoice_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    created_by TEXT NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS deliverables (
@@ -246,6 +285,30 @@ export function createSchema(db) {
     channels TEXT NOT NULL DEFAULT '站内,邮箱,蓝信',
     recipients TEXT NOT NULL DEFAULT '项目团队、对应管理团队',
     read INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS notification_outbox (
+    id INTEGER PRIMARY KEY,
+    alert_id INTEGER,
+    channel TEXT NOT NULL,              -- 站内|邮箱|蓝信
+    recipient TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    status TEXT NOT NULL,               -- 已送达|待配置|待发送|失败
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    sent_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS data_quality_issues (
+    id INTEGER PRIMARY KEY,
+    project_id INTEGER NOT NULL,
+    issue_code TEXT NOT NULL,
+    detail TEXT,
+    status TEXT NOT NULL DEFAULT '待治理',
+    detected_at TEXT NOT NULL,
+    resolved_at TEXT,
+    UNIQUE(project_id, issue_code)
   );
 
   CREATE TABLE IF NOT EXISTS audit (

@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>渠道目录 · SRPM</title>
+  <style>
+    :root {
+      --bg: #F5F7FA;
+      --card: #fff;
+      --line: #E8E8E8;
+      --text: #262626;
+      --muted: #8C8C8C;
+      --accent: #0064EF;
+      --title: #0048A0;
+      --red: #F5222D;
+      --head: rgba(0, 78, 162, 0.035);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 16px;
+    }
+    body.embed { padding: 0; background: transparent; }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .hd {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; padding: 14px 16px 0;
+    }
+    .hd h1 { margin: 0; font-size: 16px; color: var(--text); font-weight: 600; }
+    .count { font-size: 12px; color: var(--muted); }
+    .toolbar {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) 150px 150px auto;
+      gap: 8px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    .search { position: relative; }
+    .search input { padding-left: 32px; width: 100%; }
+    .search svg {
+      position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+      color: var(--muted);
+    }
+    input, select {
+      height: 32px; border: 1px solid var(--line); border-radius: 4px;
+      padding: 0 10px; font-size: 13px; color: var(--text); background: #fff;
+    }
+    .btn {
+      height: 32px; padding: 0 12px; border-radius: 4px; border: 1px solid var(--line);
+      background: #fff; cursor: pointer; font-size: 13px; color: var(--text);
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+    .btn:hover { border-color: var(--accent); color: var(--accent); }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.danger { color: var(--red); border-color: #FFCCC7; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .level-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--head); padding: 8px 20px;
+      border-top: 1px solid var(--line);
+    }
+    .level-bar:first-child { border-top: 0; }
+    .level-bar b { color: var(--accent); font-size: 14px; }
+    .pill {
+      display: inline-flex; align-items: center; height: 22px; padding: 0 8px;
+      border-radius: 999px; font-size: 12px; background: #F5F5F5; color: var(--muted);
+    }
+    .tag {
+      display: inline-flex; align-items: center; height: 22px; padding: 0 8px;
+      border-radius: 4px; font-size: 12px; background: #F0F5FF; color: var(--accent);
+    }
+    .tag.ext { background: #F9F0FF; color: #722ED1; }
+    .row {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 12px; padding: 12px 20px; border-top: 1px solid var(--line);
+    }
+    .row-main { min-width: 0; flex: 1; }
+    .name-btn {
+      display: flex; align-items: center; gap: 8px;
+      background: none; border: 0; padding: 0; cursor: pointer; text-align: left;
+      color: var(--text); font-size: 14px; font-weight: 600;
+    }
+    .caret { color: var(--muted); width: 16px; }
+    .meta { margin: 6px 0 0 24px; font-size: 12px; color: var(--muted); }
+    .ops { display: flex; flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
+    .types {
+      margin: 8px 0 0 24px; padding-left: 12px;
+      border-left: 2px solid rgba(0, 78, 162, .18);
+      display: flex; flex-wrap: wrap; gap: 6px;
+    }
+    .chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      border: 1px solid var(--line); border-radius: 4px;
+      padding: 2px 8px; font-size: 12px; color: #595959;
+    }
+    .chip button {
+      border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0 2px;
+    }
+    .chip button:hover { color: var(--red); }
+    .empty { padding: 32px; text-align: center; color: var(--muted); font-size: 13px; }
+    .msg { margin: 0 16px 12px; padding: 8px 12px; border-radius: 4px; font-size: 13px; }
+    .msg.ok { background: #F6FFED; color: #389E0D; }
+    .msg.err { background: #FFF1F0; color: var(--red); }
+    .mask {
+      position: fixed; inset: 0; background: rgba(31, 31, 31, .45);
+      display: none; align-items: center; justify-content: center; padding: 16px; z-index: 50;
+    }
+    .mask.show { display: flex; }
+    .dialog {
+      width: min(560px, 100%); background: #fff; border-radius: 8px; padding: 18px;
+      box-shadow: 0 8px 24px rgba(31,31,31,.12);
+    }
+    .dialog h2 { margin: 0 0 8px; font-size: 16px; }
+    .hint { font-size: 12px; color: var(--muted); margin: 0 0 12px; line-height: 1.6; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+    label.full { grid-column: 1 / -1; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+    @media (max-width: 800px) {
+      .toolbar { grid-template-columns: 1fr 1fr; }
+      .grid { grid-template-columns: 1fr; }
+      .row { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="hd">
+        <h1>渠道目录</h1>
+        <div class="count" id="count">当前显示 0 个渠道</div>
+      </div>
+      <div id="msg"></div>
+      <div class="toolbar">
+        <div class="search">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3-3"/></svg>
+          <input id="q" placeholder="搜索渠道、层级或项目类型" />
+        </div>
+        <select id="level"><option value="all">全部层级</option></select>
+        <select id="origin">
+          <option value="all">全部来源</option>
+          <option value="template">科学模板</option>
+          <option value="extension">扩展维护</option>
+        </select>
+        <button class="btn primary" id="btnAdd">新增渠道</button>
+      </div>
+      <div id="list"><div class="empty">加载中…</div></div>
+    </div>
+  </div>
+
+  <div class="mask" id="maskEdit">
+    <div class="dialog">
+      <h2 id="editTitle">新增渠道</h2>
+      <p class="hint">保存后同步到级联（层级 → 渠道 → 司局 → 项目类型），表单筛选立即生效。</p>
+      <div class="grid">
+        <label>所属层级
+          <select id="e_level"></select>
+        </label>
+        <label>渠道名称
+          <input id="e_name" placeholder="例如：省科技厅" />
+        </label>
+        <label class="full">司局/处室
+          <input id="e_office" placeholder="例如：装备二司 / 相关处室" />
+        </label>
+        <label class="full">项目类型（可选，顿号/逗号分隔）
+          <input id="e_types" placeholder="例如：重大专项、基础研究" />
+        </label>
+      </div>
+      <div class="dialog-actions">
+        <button class="btn" id="btnEditCancel">取消</button>
+        <button class="btn primary" id="btnEditSave">确认新增</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="mask" id="maskType">
+    <div class="dialog">
+      <h2 id="typeTitle">维护项目类型</h2>
+      <p class="hint">当前已关联类型如下；下方可追加新类型（支持顿号/逗号一次多个）。</p>
+      <div id="typeChips" class="types" style="margin:0 0 12px;padding:10px;border:1px solid var(--line);border-radius:4px;min-height:72px;max-height:200px;overflow:auto"></div>
+      <label>追加项目类型
+        <input id="t_types" placeholder="输入后点确认追加" />
+      </label>
+      <div class="dialog-actions">
+        <button class="btn" id="btnTypeCancel">关闭</button>
+        <button class="btn primary" id="btnTypeSave">确认追加</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const LEVELS = ['国家级', '地方级', '公司级'];
+    const token = localStorage.getItem('srpm.user') || sessionStorage.getItem('srpm.user') || '';
+    if (new URLSearchParams(location.search).get('embed') === '1') document.body.classList.add('embed');
+
+    const state = { dict: null, q: '', level: 'all', origin: 'all', open: new Set(), editing: null, typing: null, busy: false };
+
+    function showMsg(text, ok = true) {
+      const el = document.getElementById('msg');
+      if (!text) { el.className = ''; el.textContent = ''; return; }
+      el.className = 'msg ' + (ok ? 'ok' : 'err');
+      el.textContent = text;
+    }
+
+    async function api(path, opts = {}) {
+      const res = await fetch('/api' + path, {
+        ...opts,
+        headers: { 'Content-Type': 'application/json', 'x-session': token, ...(opts.headers || {}) },
+        body: opts.body ? JSON.stringify(opts.body) : undefined,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || '请求失败');
+      return data;
+    }
+
+    function filteredGroups() {
+      const q = state.q.trim().toLowerCase();
+      const groups = (state.dict?.groups || []).map((g) => {
+        const channels = (g.channels || []).filter((c) => {
+          if (state.level !== 'all' && c.level !== state.level) return false;
+          if (state.origin !== 'all' && c.origin !== state.origin) return false;
+          if (!q) return true;
+          const blob = [c.name, c.level, c.orgOffice, ...(c.projectTypes || [])].join(' ').toLowerCase();
+          return blob.includes(q);
+        });
+        return { ...g, channels };
+      }).filter((g) => g.channels.length || (!q && state.level === 'all' && state.origin === 'all'));
+      return groups.filter((g) => g.channels.length);
+    }
+
+    function esc(s) {
+      return String(s || '').replace(/[&<>"']/g, (ch) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch]));
+    }
+
+    function render() {
+      const groups = filteredGroups();
+      const n = groups.reduce((s, g) => s + g.channels.length, 0);
+      document.getElementById('count').textContent = `当前显示 ${n} 个渠道`;
+      const box = document.getElementById('list');
+      if (!groups.length) {
+        box.innerHTML = '<div class="empty">没有匹配的渠道</div>';
+        return;
+      }
+      box.innerHTML = groups.map((g) => `
+        <div class="level-bar"><b>${esc(g.level)}</b><span class="pill">${g.channels.length} 个渠道</span></div>
+        ${g.channels.map((c) => {
+          const key = c.level + ':' + c.name;
+          const open = state.open.has(key);
+          const types = c.projectTypes || [];
+          return `<article class="row">
+            <div class="row-main">
+              <button class="name-btn" data-act="toggle" data-key="${esc(key)}">
+                <span class="caret">${open ? '▾' : '▸'}</span>
+                <span>${esc(c.name)}</span>
+                <span class="tag ${c.origin === 'template' ? '' : 'ext'}">${c.origin === 'template' ? '科学模板' : '扩展维护'}</span>
+              </button>
+              <div class="meta">司局/处室: ${esc(c.orgOffice || '相关处室')} · ${types.length ? `已关联 ${types.length} 个项目类型` : '暂未关联项目类型'}</div>
+              ${open ? `<div class="types">${types.length ? types.map((t) => `<span class="chip">${esc(t)}<button data-act="del-type" data-level="${esc(c.level)}" data-name="${esc(c.name)}" data-type="${esc(t)}" title="删除">×</button></span>`).join('') : '<span style="font-size:12px;color:#8C8C8C">暂无项目类型，可点击“维护类型”补充。</span>'}</div>` : ''}
+            </div>
+            <div class="ops">
+              <button class="btn" data-act="edit" data-level="${esc(c.level)}" data-name="${esc(c.name)}">编辑</button>
+              <button class="btn" data-act="types" data-level="${esc(c.level)}" data-name="${esc(c.name)}">+ 维护类型</button>
+              <button class="btn danger" data-act="del" data-level="${esc(c.level)}" data-name="${esc(c.name)}">删除</button>
+            </div>
+          </article>`;
+        }).join('')}
+      `).join('');
+    }
+
+    function findChannel(level, name) {
+      return (state.dict?.channels || []).find((c) => c.level === level && c.name === name);
+    }
+
+    function openEdit(ch) {
+      state.editing = ch;
+      document.getElementById('editTitle').textContent = ch ? `编辑渠道 · ${ch.name}` : '新增渠道';
+      document.getElementById('btnEditSave').textContent = ch ? '保存修改' : '确认新增';
+      document.getElementById('e_level').value = ch?.level || '国家级';
+      document.getElementById('e_name').value = ch?.name || '';
+      document.getElementById('e_office').value = ch?.orgOffice || '相关处室';
+      document.getElementById('e_types').value = ch ? '' : '';
+      document.getElementById('e_types').closest('label').style.display = ch ? 'none' : '';
+      document.getElementById('maskEdit').classList.add('show');
+    }
+
+    function openTypes(ch) {
+      state.typing = ch;
+      document.getElementById('typeTitle').textContent = `维护项目类型 · ${ch.name}`;
+      document.getElementById('t_types').value = '';
+      const types = ch.projectTypes || [];
+      document.getElementById('typeChips').innerHTML = types.length
+        ? types.map((t) => `<span class="chip">${esc(t)}<button data-act="del-type" data-level="${esc(ch.level)}" data-name="${esc(ch.name)}" data-type="${esc(t)}">×</button></span>`).join('')
+        : '<span style="font-size:12px;color:#8C8C8C">暂无项目类型</span>';
+      document.getElementById('maskType').classList.add('show');
+    }
+
+    async function reload() {
+      const data = await api('/admin');
+      state.dict = data.channelDictionary;
+      const sel = document.getElementById('level');
+      const cur = sel.value || 'all';
+      sel.innerHTML = '<option value="all">全部层级</option>' + LEVELS.map((lv) => `<option value="${lv}">${lv}</option>`).join('');
+      sel.value = cur;
+      const eLevel = document.getElementById('e_level');
+      eLevel.innerHTML = LEVELS.map((lv) => `<option value="${lv}">${lv}</option>`).join('');
+      render();
+    }
+
+    async function withBusy(fn) {
+      if (state.busy) return;
+      state.busy = true;
+      try { await fn(); }
+      catch (e) { showMsg(e.message, false); }
+      finally { state.busy = false; }
+    }
+
+    document.getElementById('q').addEventListener('input', (e) => { state.q = e.target.value; render(); });
+    document.getElementById('level').addEventListener('change', (e) => { state.level = e.target.value; render(); });
+    document.getElementById('origin').addEventListener('change', (e) => { state.origin = e.target.value; render(); });
+    document.getElementById('btnAdd').onclick = () => openEdit(null);
+    document.getElementById('btnEditCancel').onclick = () => document.getElementById('maskEdit').classList.remove('show');
+    document.getElementById('btnTypeCancel').onclick = () => document.getElementById('maskType').classList.remove('show');
+
+    document.getElementById('btnEditSave').onclick = () => withBusy(async () => {
+      const body = {
+        name: document.getElementById('e_name').value,
+        level: document.getElementById('e_level').value,
+        orgOffice: document.getElementById('e_office').value,
+        projectTypes: document.getElementById('e_types').value,
+      };
+      let data;
+      if (state.editing) {
+        data = await api('/admin/dict/channels', { method: 'PUT', body: { ...body, currentName: state.editing.name, currentLevel: state.editing.level } });
+        showMsg(`已更新渠道「${body.name}」`);
+      } else {
+        data = await api('/admin/dict/channels', { method: 'POST', body });
+        showMsg(`已新增渠道「${body.name}」`);
+      }
+      state.dict = data.channelDictionary;
+      document.getElementById('maskEdit').classList.remove('show');
+      render();
+    });
+
+    document.getElementById('btnTypeSave').onclick = () => withBusy(async () => {
+      if (!state.typing) return;
+      const projectTypes = document.getElementById('t_types').value.trim();
+      if (!projectTypes) { showMsg('请填写项目类型', false); return; }
+      const data = await api('/admin/dict/channels/types', { method: 'POST', body: { name: state.typing.name, level: state.typing.level, projectTypes } });
+      state.dict = data.channelDictionary;
+      showMsg(`已更新「${state.typing.name}」的项目类型`);
+      const fresh = findChannel(state.typing.level, state.typing.name);
+      if (fresh) openTypes(fresh);
+      render();
+    });
+
+    document.getElementById('list').addEventListener('click', onAct);
+    document.getElementById('typeChips').addEventListener('click', onAct);
+
+    function onAct(ev) {
+      const btn = ev.target.closest('[data-act]');
+      if (!btn) return;
+      const act = btn.dataset.act;
+      if (act === 'toggle') {
+        const key = btn.dataset.key;
+        if (state.open.has(key)) state.open.delete(key); else state.open.add(key);
+        render();
+        return;
+      }
+      const ch = findChannel(btn.dataset.level, btn.dataset.name);
+      if (!ch) return;
+      if (act === 'edit') openEdit(ch);
+      if (act === 'types') openTypes(ch);
+      if (act === 'del') withBusy(async () => {
+        if (!confirm(`确认删除渠道「${ch.name}」？该操作不可恢复。`)) return;
+        const data = await api('/admin/dict/channels/remove', { method: 'POST', body: { name: ch.name, level: ch.level } });
+        state.dict = data.channelDictionary;
+        showMsg(`已删除渠道「${ch.name}」`);
+        document.getElementById('maskType').classList.remove('show');
+        render();
+      });
+      if (act === 'del-type') withBusy(async () => {
+        const type = btn.dataset.type;
+        if (!confirm(`确认从「${ch.name}」删除项目类型「${type}」？`)) return;
+        const data = await api('/admin/dict/channels/types/remove', { method: 'POST', body: { name: ch.name, level: ch.level, projectType: type } });
+        state.dict = data.channelDictionary;
+        showMsg(`已删除项目类型「${type}」`);
+        const fresh = findChannel(ch.level, ch.name);
+        if (document.getElementById('maskType').classList.contains('show') && fresh) openTypes(fresh);
+        render();
+      });
+    }
+
+    reload().catch((e) => showMsg(e.message, false));
+  </script>
+</body>
+</html>
