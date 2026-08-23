@@ -236,7 +236,8 @@ function v19LedgerFields(p, funds, delivered, delivTotal) {
   const fallback = getMajorConfig().major1[0]
     ? [getMajorConfig().major1[0], (getMajorConfig().major2ByMajor1[getMajorConfig().major1[0]] || [])[0] || '']
     : ['10-总体气动', '1001-总体与气动'];
-  const major = mapped || fallback;
+  const storedMaj = validateMajorPair(p.major1, p.major2);
+  const major = storedMaj.ok ? [storedMaj.major1, storedMaj.major2] : (mapped || fallback);
   const majorCheck = validateMajorPair(major[0], major[1]);
   const major1 = majorCheck.ok ? majorCheck.major1 : major[0];
   const major2 = majorCheck.ok ? majorCheck.major2 : major[1];
@@ -252,9 +253,9 @@ function v19LedgerFields(p, funds, delivered, delivTotal) {
     endMonth: p.end?.slice(0, 7) || '',
     projectMonths: monthDiff(p.start, p.end),
     managerUnit: channel.dept || '科研项目处',
-    demandUnit: p.level === '公司级' ? '公司总部科技管理部' : channel.org || '上级主管部门',
+    demandUnit: p.demand_unit || (p.level === '公司级' ? '公司总部科技管理部' : channel.org || '上级主管部门'),
     responsibleUnit: unit.name || '',
-    leadWork: `${unit.short || '牵头单位'}牵头；${(p.goal || '').slice(0, 44)}${p.goal && p.goal.length > 44 ? '…' : ''}`,
+    leadWork: p.lead_work || `${unit.short || '牵头单位'}牵头；${(p.goal || '').slice(0, 44)}${p.goal && p.goal.length > 44 ? '…' : ''}`,
     plannedPartners: J(p.partners_json, []).map((x) => x.name).join('、'),
     centralGrant: Number(profile.central_grant || 0),
     selfFund: Number(profile.self_fund || 0),
@@ -553,25 +554,14 @@ function requireRoles(user, res, roles, msg = '当前角色无权执行此操作
 
 function canAccessProject(user, project) {
   if (!user || !project) return false;
-  if (user.role === 'admin' || user.scope === 'hq') return true;
   return scopeProjects(user, [project]).length > 0;
 }
 
 function canActApprovalStep(user, approval, step) {
   if (!user || !step) return false;
   if (user.role === 'admin') return true;
-  if (step.assignee) return step.assignee === user.name || (step.assigneeId && String(step.assigneeId) === String(user.emp_no || user.id));
-  if (user.role === 'mgmt' && user.scope === 'hq') {
-    return /总部|科研项目处|拨付执行|财务|法务|合规/.test(step.title || '');
-  }
-  if (user.role === 'mgmt' && user.scope === 'unit') {
-    if (approval.unit_id !== user.unit_id) return false;
-    return /单位|科技|财务|分管|负责人/.test(step.title || '') || step.assignee === user.name;
-  }
-  if (user.role === 'chief') return step.assignee === user.name || /总师/.test(step.title || '');
-  if (user.role === 'finance') return /财务/.test(step.title || '') && approval.unit_id === user.unit_id;
-  if (isTechTeamRole(user.role)) return step.assignee === user.name;
-  return false;
+  if (!step.assignee && !step.assigneeId) return false;
+  return step.assignee === user.name || (step.assigneeId && String(step.assigneeId) === String(user.emp_no || user.id));
 }
 
 function canAccessPreResearch(user) {
@@ -581,6 +571,367 @@ function canAccessPreResearch(user) {
   if (user.role === 'admin') return true;
   return false;
 }
+
+/** 平台身份（登录）≠ 项目岗位。同一人可在不同项目担任不同岗位，权限按本项目 team_json 岗位取并集。 */
+const PROJECT_DUTY_DEFS = [
+  { key: 'contact', label: '项目联系人', group: '项目团队' },
+  { key: 'owner', label: '项目负责人', group: '项目团队' },
+  { key: 'tech', label: '技术负责人', group: '项目团队' },
+  { key: 'pm', label: '项目主管', group: '项目团队' },
+  { key: 'chief1', label: '一级总师', group: '技术把关' },
+  { key: 'chief2', label: '二级总师', group: '技术把关' },
+  { key: 'hqHead', label: '总部处室处长', group: '管理' },
+  { key: 'hqStaff', label: '总部处室主管', group: '管理' },
+  { key: 'unitDeptHead', label: '单位科技部长', group: '管理' },
+  { key: 'unitStaff', label: '单位科技主管', group: '管理' },
+  { key: 'finHq', label: '总部财务主管', group: '财务' },
+  { key: 'finHead', label: '单位财务部长', group: '财务' },
+  { key: 'finStaff', label: '单位财务主管', group: '财务' },
+];
+
+/** 能进入该项目的人始终可见，岗位矩阵不得关闭（与项目详情页签/概览字段一一对应） */
+const PROJECT_VIEW_ALWAYS = {
+  tabs: [
+    { key: 'overview', label: '概览' },
+    { key: 'milestones', label: '里程碑' },
+    { key: 'plans', label: '计划' },
+    { key: 'funds', label: '经费' },
+    { key: 'deliverables', label: '交付物' },
+    { key: 'collab', label: '协作评价' },
+    { key: 'transform', label: '成果转化' },
+    { key: 'records', label: '审批与归档' },
+  ],
+  overviewFields: ['项目目标', '年度目标', '项目渠道', '渠道流程', '成果转化状态', '协作单位'],
+};
+
+const PROJECT_PERM_DEFS = [
+  { code: 'baseinfo_edit', group: '概览', label: '完善基本信息' },
+  { code: 'milestone_plan', group: '里程碑', label: '编制里程碑计划' },
+  { code: 'milestone_close', group: '里程碑', label: '里程碑销项' },
+  { code: 'plan_manage', group: '计划', label: '计划填报/办结' },
+  { code: 'funds_submit', group: '经费', label: '经费提报' },
+  { code: 'deliverable_manage', group: '交付物', label: '交付物维护/交付' },
+  { code: 'eval_collaborator', group: '协作评价', label: '协作单位评价' },
+  { code: 'transform_update', group: '成果转化', label: '更新成果转化' },
+  { code: 'declare_submit', group: '审批与归档', label: '发起申报' },
+  { code: 'filing_upload', group: '审批与归档', label: '上传立项备案材料' },
+  { code: 'initiate_approval', group: '审批与归档', label: '发起审批并上传材料' },
+  { code: 'assess_submit', group: '审批与归档', label: '评估检查填报' },
+  { code: 'change_submit', group: '审批与归档', label: '项目/数据变更' },
+  { code: 'contract_register', group: '审批与归档', label: '外协合同登记' },
+  { code: 'accept_apply', group: '审批与归档', label: '发起验收申请' },
+  { code: 'members_edit', group: '审批与归档', label: '指定/转办项目岗位' },
+];
+
+const DEFAULT_DUTY_PERMS = {
+  contact: ['declare_submit', 'filing_upload', 'initiate_approval', 'transform_update', 'members_edit'],
+  owner: ['baseinfo_edit', 'assess_submit', 'change_submit', 'accept_apply', 'transform_update', 'initiate_approval', 'eval_collaborator', 'members_edit'],
+  tech: ['milestone_plan', 'milestone_close', 'deliverable_manage', 'initiate_approval'],
+  pm: ['baseinfo_edit', 'plan_manage', 'contract_register', 'initiate_approval'],
+  chief1: [],
+  chief2: [],
+  hqHead: [],
+  hqStaff: [],
+  unitDeptHead: ['members_edit'],
+  unitStaff: ['members_edit'],
+  finHq: ['funds_submit'],
+  finHead: ['funds_submit'],
+  finStaff: ['funds_submit'],
+};
+
+const RBAC_DUTY_KV = 'rbac.dutyPerms.v1';
+
+function dutyLabelOf(key) {
+  return PROJECT_DUTY_DEFS.find((d) => d.key === key)?.label || key;
+}
+
+function emptyPermMap() {
+  return Object.fromEntries(PROJECT_PERM_DEFS.map((p) => [p.code, false]));
+}
+
+function sameProjectPerson(slot, user) {
+  const s = String(slot || '').trim();
+  if (!s || !user) return false;
+  if (s === user.name) return true;
+  const emp = String(user.emp_no || user.id || '').trim();
+  if (emp && (s === emp || s.includes(`（${emp}）`) || s.includes(`(${emp})`))) return true;
+  return false;
+}
+
+function projectDutiesOf(user, project) {
+  if (!user || !project) return [];
+  const pid = Number(project.id);
+  if (Number.isFinite(pid) && pid > 0) {
+    const emp = String(user.emp_no || user.id || '');
+    const rows = db.prepare('SELECT slot FROM project_members WHERE project_id=? AND (emp_no=? OR emp_no=? OR name=?)').all(pid, emp, String(user.id || ''), user.name);
+    if (rows.length) return [...new Set(rows.map((r) => r.slot))];
+  }
+  const team = project.team_json != null ? J(project.team_json, {}) : (project.team || {});
+  return PROJECT_DUTY_DEFS.map((d) => d.key).filter((key) => sameProjectPerson(team[key], user));
+}
+
+function loadDutyPermMatrix() {
+  const raw = J(db.prepare('SELECT value FROM kv WHERE key=?').get(RBAC_DUTY_KV)?.value, null);
+  const out = {};
+  for (const d of PROJECT_DUTY_DEFS) {
+    const fallback = DEFAULT_DUTY_PERMS[d.key] || [];
+    const saved = raw && Array.isArray(raw[d.key]) ? raw[d.key] : fallback;
+    out[d.key] = saved.filter((code) => PROJECT_PERM_DEFS.some((p) => p.code === code));
+  }
+  return out;
+}
+
+function permsForDuties(duties) {
+  const matrix = loadDutyPermMatrix();
+  const set = new Set();
+  for (const d of duties || []) (matrix[d] || []).forEach((code) => set.add(code));
+  return set;
+}
+
+function projectAuthPayload(user, project, opts = {}) {
+  const readonly = Boolean(opts.readonly || project?.ledgerSource || project?.readonly);
+  if (!user || !project || readonly) {
+    return { myDuties: [], myDutyLabels: [], myPerms: emptyPermMap(), viewAlways: PROJECT_VIEW_ALWAYS };
+  }
+  const duties = projectDutiesOf(user, project);
+  const set = permsForDuties(duties);
+  if (user.role === 'admin') PROJECT_PERM_DEFS.forEach((p) => set.add(p.code));
+  return {
+    myDuties: duties,
+    myDutyLabels: duties.map(dutyLabelOf),
+    myPerms: Object.fromEntries(PROJECT_PERM_DEFS.map((p) => [p.code, set.has(p.code)])),
+    viewAlways: PROJECT_VIEW_ALWAYS,
+  };
+}
+
+function requireProjectPerm(user, res, project, perm, msg) {
+  if (!assertWritable(user, res)) return false;
+  if (!project) {
+    res.status(404).json({ error: 'not found' });
+    return false;
+  }
+  if (user.role === 'admin') return true;
+  const auth = projectAuthPayload(user, project);
+  if (auth.myPerms[perm]) return true;
+  const jobs = auth.myDutyLabels.length ? `本项目岗位：${auth.myDutyLabels.join('、')}` : '您未担任本项目岗位';
+  res.status(403).json({ error: `${msg || '当前项目岗位无权执行此操作'}（${jobs}）` });
+  return false;
+}
+
+function listUserProjectDuties(user) {
+  if (!user) return [];
+  return db.prepare('SELECT id,code,name,status,team_json FROM projects ORDER BY id').all()
+    .map((p) => {
+      const duties = projectDutiesOf(user, p);
+      if (!duties.length) return null;
+      return { projectId: p.id, code: p.code, name: p.name, status: p.status, duties, labels: duties.map(dutyLabelOf) };
+    })
+    .filter(Boolean);
+}
+
+function ensureProjectMembersTable() {
+  db.exec(`CREATE TABLE IF NOT EXISTS project_members (
+    project_id INTEGER NOT NULL,
+    slot TEXT NOT NULL,
+    emp_no TEXT NOT NULL,
+    name TEXT NOT NULL,
+    assigned_at TEXT,
+    assigned_by TEXT,
+    PRIMARY KEY (project_id, slot)
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_project_members_emp ON project_members(emp_no)');
+}
+
+function resolvePerson(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return null;
+  const m = s.match(/(\d{6})/);
+  if (m) {
+    const u = db.prepare("SELECT * FROM users WHERE (emp_no=? OR id=?) AND status='在岗'").get(m[1], m[1]);
+    if (u) return u;
+  }
+  return db.prepare("SELECT * FROM users WHERE name=? AND status='在岗'").get(s) || null;
+}
+
+function assignedTeamOf(projectId) {
+  const rows = db.prepare('SELECT slot, emp_no, name FROM project_members WHERE project_id=?').all(Number(projectId));
+  const team = {};
+  for (const r of rows) team[r.slot] = r.name;
+  if (rows.length) return team;
+  const p = db.prepare('SELECT team_json FROM projects WHERE id=?').get(Number(projectId));
+  return J(p?.team_json, {});
+}
+
+function writeProjectMembers(projectId, teamObj, actorName) {
+  const pid = Number(projectId);
+  const ins = db.prepare('INSERT OR REPLACE INTO project_members (project_id,slot,emp_no,name,assigned_at,assigned_by) VALUES (?,?,?,?,?,?)');
+  const del = db.prepare('DELETE FROM project_members WHERE project_id=? AND slot=?');
+  const next = {};
+  for (const d of PROJECT_DUTY_DEFS) {
+    const raw = teamObj ? teamObj[d.key] : '';
+    const u = resolvePerson(raw);
+    if (!u) {
+      del.run(pid, d.key);
+      continue;
+    }
+    ins.run(pid, d.key, u.emp_no || u.id, u.name, TODAY(), actorName || '');
+    next[d.key] = u.name;
+  }
+  db.prepare('UPDATE projects SET team_json=? WHERE id=?').run(JSON.stringify(next), pid);
+  return next;
+}
+
+function seedProjectMembersFromTeamJson() {
+  const projects = db.prepare('SELECT id, team_json FROM projects').all();
+  const ins = db.prepare('INSERT OR IGNORE INTO project_members (project_id,slot,emp_no,name,assigned_at,assigned_by) VALUES (?,?,?,?,?,?)');
+  const tx = db.transaction(() => {
+    for (const p of projects) {
+      const exists = db.prepare('SELECT 1 FROM project_members WHERE project_id=? LIMIT 1').get(p.id);
+      if (exists) continue;
+      const team = J(p.team_json, {});
+      for (const d of PROJECT_DUTY_DEFS) {
+        const u = resolvePerson(team[d.key]);
+        if (!u) continue;
+        ins.run(p.id, d.key, u.emp_no || u.id, u.name, TODAY(), 'migrate');
+      }
+    }
+  });
+  tx();
+}
+
+function slotForStepTitle(title) {
+  const t = String(title || '');
+  if (/联系人|团队填|团队提交|团队编制|项目组填|上传|发起|项目团队填写/.test(t)) return 'contact';
+  if (/项目负责人/.test(t)) return 'owner';
+  if (/技术负责人/.test(t)) return 'tech';
+  if (/项目主管/.test(t)) return 'pm';
+  if (/一级总师/.test(t)) return 'chief1';
+  if (/二级|三级.*总师|责任总师|学术委员会|专委会/.test(t)) return 'chief2';
+  if (/理事会|技术发展战略委员会/.test(t)) return 'chief1';
+  if (/总部.*财务/.test(t)) return 'finHq';
+  if (/单位财务.*负责人|财务部门审核|单位财务部/.test(t)) return 'finHead';
+  if (/单位财务/.test(t)) return 'finStaff';
+  if (/单位分管|承担部门负责人|单位科技.*负责人|单位科技部审核|单位科技管理部/.test(t)) return 'unitDeptHead';
+  if (/二级单位.*管理|二级单位.*主管|单位管理|单位审查|单位内部|单位科技/.test(t)) return 'unitDeptHead';
+  if (/总部|科研项目处|科技发展处|科技管理部|上报GXB|归档回执/.test(t)) return 'hqHead';
+  if (/法务|合规/.test(t)) return 'unitDeptHead';
+  return '';
+}
+
+function reassignOpenSteps(projectId, slot, person) {
+  if (!person || !slot) return 0;
+  const rows = db.prepare("SELECT * FROM approvals WHERE project_id=? AND status='审批中'").all(Number(projectId));
+  let n = 0;
+  for (const a of rows) {
+    const steps = J(a.steps_json, []);
+    let changed = false;
+    for (let i = 0; i < steps.length; i += 1) {
+      if (steps[i].status === 'approved' || steps[i].status === 'rejected') continue;
+      if (slotForStepTitle(steps[i].title) !== slot) continue;
+      steps[i] = { ...steps[i], assignee: person.name, assigneeId: person.emp_no || person.id };
+      changed = true;
+      n += 1;
+    }
+    if (changed) db.prepare('UPDATE approvals SET steps_json=? WHERE id=?').run(JSON.stringify(steps), a.id);
+  }
+  return n;
+}
+
+function canEditProjectMembers(user, project) {
+  if (!user || !project) return false;
+  if (user.role === 'admin') return true;
+  if (user.role === 'mgmt' && (user.scope === 'hq' || (user.scope === 'unit' && user.unit_id === project.lead_unit_id))) return true;
+  return projectAuthPayload(user, project).myPerms.members_edit === true;
+}
+
+function isCurrentStepAssignee(user, step) {
+  if (!user || !step) return false;
+  if (step.assignee === user.name) return true;
+  return Boolean(step.assigneeId && String(step.assigneeId) === String(user.emp_no || user.id));
+}
+
+function participatedApproval(user, a) {
+  if (!user || !a) return false;
+  const steps = Array.isArray(a.steps) ? a.steps : J(a.steps_json, []);
+  const emp = String(user.emp_no || user.id || '');
+  return steps.some((s) => s.assignee === user.name || s.actor === user.name || (s.assigneeId && String(s.assigneeId) === emp));
+}
+
+function canSeeApproval(user, a) {
+  if (!user || !a) return false;
+  if (user.role === 'admin' || user.role === 'leader' || (user.role === 'mgmt' && user.scope === 'hq')) return true;
+  if (a.initiator === user.name) return true;
+  if (user.scope === 'unit' && a.unit_id === user.unit_id) return true;
+  if (participatedApproval(user, a)) return true;
+  if (a.project_id) {
+    const p = db.prepare('SELECT * FROM projects WHERE id=?').get(a.project_id);
+    if (p && canAccessProject(user, p)) return true;
+  }
+  return false;
+}
+
+function withApprovalAuth(user, a) {
+  const mapped = a && Array.isArray(a.steps) ? a : mapApproval(a);
+  const step = mapped.steps?.[mapped.current_step];
+  return { ...mapped, canAct: mapped.status === '审批中' && canActApprovalStep(user, mapped, step) };
+}
+
+const ROLE_DEPT = {
+  team: '项目团队', contact: '项目团队', mgmt: '管理团队',
+  finance: '财务', chief: '责任总师', leader: '领导', admin: '系统管理员',
+};
+
+function mapRosterPerson(u) {
+  const title = String(u.title || '');
+  const parts = title.split(/\s*\/\s*/).map((s) => s.trim()).filter(Boolean);
+  const dept = parts[0] || ROLE_DEPT[u.role] || '';
+  const unitName = u.unit_name || u.unitName || '';
+  const unitShort = u.unit_short || u.unitShort || '';
+  return {
+    id: u.id,
+    empNo: u.emp_no,
+    name: u.name,
+    role: u.role,
+    title,
+    dept,
+    duty: parts[1] || title || dept,
+    unitId: u.unit_id,
+    unitName,
+    unitShort,
+    scope: u.scope,
+    label: u.emp_no ? `${u.name}（${u.emp_no}）` : u.name,
+  };
+}
+
+function rosterPeople() {
+  return db.prepare(`
+    SELECT u.id, u.emp_no, u.name, u.role, u.title, u.unit_id, u.scope,
+           un.name AS unit_name, un.short AS unit_short
+    FROM users u
+    LEFT JOIN units un ON un.id = u.unit_id
+    WHERE u.status='在岗'
+    ORDER BY u.emp_no
+  `).all().map(mapRosterPerson);
+}
+
+const MACRO_OWNER_SLOT = {
+  declare: 'contact', filing: 'contact', baseinfo: 'pm', milestone: 'tech',
+  plan: 'pm', finance: 'finStaff', assess: 'owner', change: 'owner',
+  accept: 'owner', transform: 'owner',
+};
+
+ensureProjectMembersTable();
+seedProjectMembersFromTeamJson();
+
+function ensureProjectDeclareColumns() {
+  const cols = new Set(db.prepare('PRAGMA table_info(projects)').all().map((c) => c.name));
+  const add = (name, ddl) => { if (!cols.has(name)) db.exec(`ALTER TABLE projects ADD COLUMN ${ddl}`); };
+  add('major1', 'major1 TEXT');
+  add('major2', 'major2 TEXT');
+  add('demand_unit', 'demand_unit TEXT');
+  add('lead_work', 'lead_work TEXT');
+}
+ensureProjectDeclareColumns();
 
 const PUBLIC_API = new Set(['/bootstrap', '/login', '/cascade', '/ai/status']);
 
@@ -638,7 +989,12 @@ r.post('/login', (req, res) => {
 r.get('/session', (req, res) => {
   const user = req.user || requireUser(req, res);
   if (!user) return;
-  res.json({ ...publicUser(user), canPreResearch: canAccessPreResearch(user), ...formAccessMeta(user) });
+  res.json({
+    ...publicUser(user),
+    canPreResearch: canAccessPreResearch(user),
+    ...formAccessMeta(user),
+    projectDutyHint: '平台身份决定登录入口与组织范围；项目内操作按「本项目岗位」授权，同一人在不同项目可有不同权限。',
+  });
 });
 
 r.post('/logout', (req, res) => {
@@ -667,13 +1023,16 @@ function enrichProject(p, today) {
   const delivTotal = db.prepare('SELECT COUNT(*) n FROM deliverables WHERE project_id=?').get(p.id).n;
   const doneMs = ms.filter((m) => m.done_at).length;
   const v19 = v19LedgerFields(p, funds, delivered, delivTotal);
-  const team = completeDisplayTeam(J(p.team_json, {}), p.lead_unit_id);
+  const rawTeam = assignedTeamOf(p.id);
+  const team = {};
+  for (const d of PROJECT_DUTY_DEFS) team[d.key] = rawTeam[d.key] || '';
   return {
     ...p,
     partners: J(p.partners_json, []),
     team,
     teamMembers: teamMembersPayload(team),
     tags: J(p.tags_json, []),
+    ledgerSource: false,
     v19,
     color,
     msTotal: ms.length,
@@ -690,31 +1049,24 @@ function enrichProject(p, today) {
 
 function scopeProjects(user, rows) {
   if (!user) return [];
-  if (user.role === 'admin' || user.scope === 'hq' || user.role === 'leader') return rows;
-  if (user.role === 'chief') {
-    return rows.filter((p) => { const t = J(p.team_json, {}); return t.chief1 === user.name || t.chief2 === user.name; });
+  if (user.role === 'admin' || user.role === 'leader') return rows;
+  if (user.role === 'mgmt' && user.scope === 'hq') return rows;
+  const emp = String(user.emp_no || user.id || '');
+  const memberIds = new Set(
+    db.prepare('SELECT project_id FROM project_members WHERE emp_no=? OR emp_no=? OR name=?').all(emp, String(user.id || ''), user.name).map((r) => r.project_id),
+  );
+  if ((user.role === 'mgmt' || user.role === 'finance') && user.scope === 'unit') {
+    return rows.filter((p) => p.lead_unit_id === user.unit_id || memberIds.has(p.id));
   }
-  if (user.scope === 'unit') return rows.filter((p) => p.lead_unit_id === user.unit_id);
-  // team / 项目联系人: 本人关联项目
-  return rows.filter((p) => {
-    const t = J(p.team_json, {});
-    return [t.contact, t.owner, t.tech, t.pm].includes(user.name);
-  });
+  return rows.filter((p) => memberIds.has(p.id));
 }
 
 // ---------- 基础 ----------
 r.get('/bootstrap', (req, res) => {
   const units = db.prepare('SELECT * FROM units').all();
   const channels = db.prepare('SELECT * FROM channels').all().map(mapChannelRow);
-  // 登录页仅公开六个固定演示角色，不公开完整成员清单；登录后仍返回权限范围内的成员资料。
-  const signedIn = currentUser(req);
-  const demoEmpNos = ['100002', '100003', '100012', '100007', '100009', '100001'];
-  const users = signedIn
-    ? db.prepare('SELECT * FROM users').all().map(publicUser)
-    : db.prepare(`SELECT id,emp_no,name,role,scope,unit_id,title,status
-        FROM users WHERE emp_no IN (${demoEmpNos.map(() => '?').join(',')})`)
-      .all(...demoEmpNos)
-      .sort((a, b) => demoEmpNos.indexOf(a.emp_no) - demoEmpNos.indexOf(b.emp_no));
+  // 未登录返回演示账号名单，供登录页折叠入口；不含密码。
+  const users = db.prepare('SELECT * FROM users WHERE status=? ORDER BY emp_no').all('在岗').map(publicUser);
   res.json({ today: TODAY(), units, channels, users, cascade: cascadePayload() });
 });
 
@@ -927,8 +1279,8 @@ function completeDisplayTeam(team, unitId) {
 function teamMembersPayload(team) {
   return TEAM_DISPLAY_SLOTS.map(([key, label]) => {
     const name = team?.[key] || '';
-    const u = userByName(name);
-    return { key, label, name, empNo: u?.emp_no || '', title: u?.title || '' };
+    const u = name ? userByName(name) : null;
+    return { key, label, name, empNo: u?.emp_no || '', title: u?.title || '', vacant: !name };
   });
 }
 
@@ -962,8 +1314,9 @@ function projectFromTransitionRow(row, today) {
     lead_unit_id: resolveUnitIdByName(row.responsibleUnit),
     channel_id: resolveChannelIdByLedger(row),
     goal: row.remarks || transitionTransformSummary(row),
-    year_goal: '',
+    year_goal: cellText(row.yearGoal || row.year_goal) || '',
     partners: [],
+    transform_status: transitionTransformSummary(row),
     team,
     teamMembers: teamMembersPayload(team),
     tags: ['表单台账'],
@@ -1018,13 +1371,26 @@ function scopeLedgerRows(user, rows) {
 }
 
 function listDisplayProjects(user, today, query = {}) {
+  const realRows = scopeProjects(user, db.prepare('SELECT * FROM projects ORDER BY id DESC').all())
+    .map((p) => enrichProject(p, today));
   const ledger = getTransitionRows();
-  if (ledger.length) {
-    const list = scopeLedgerRows(user, ledger).map((row) => projectFromTransitionRow(row, today));
-    return { list: applyCascadeProjectFilters(list, query), source: 'form-ledger' };
+  if (!ledger.length) {
+    return { list: applyCascadeProjectFilters(realRows, query), source: 'projects' };
   }
-  const rows = scopeProjects(user, db.prepare('SELECT * FROM projects ORDER BY id').all());
-  return { list: applyCascadeProjectFilters(rows.map((p) => enrichProject(p, today)), query), source: 'projects' };
+  const occupied = new Set();
+  for (const p of realRows) {
+    occupied.add(String(p.id));
+    if (p.code) occupied.add(String(p.code));
+  }
+  const extra = scopeLedgerRows(user, ledger)
+    .map((row) => projectFromTransitionRow(row, today))
+    .filter((row) => {
+      const keys = [row.id, row.code].map((x) => String(x || '')).filter(Boolean);
+      return !keys.some((k) => occupied.has(k));
+    });
+  const list = applyCascadeProjectFilters([...realRows, ...extra], query);
+  const source = realRows.length && extra.length ? 'mixed' : (realRows.length ? 'projects' : 'form-ledger');
+  return { list, source };
 }
 
 // ---------- 项目台账 ----------
@@ -1083,14 +1449,59 @@ r.get('/projects.csv', (req, res) => {
   res.send('﻿' + head + '\n' + lines.join('\n'));
 });
 
+function findLedgerRowByParam(id) {
+  const rows = getTransitionRows();
+  const exact = rows.find((x) => String(x.id) === String(id));
+  if (exact) return exact;
+  if (db.prepare('SELECT id FROM projects WHERE id=?').get(id)) return null;
+  return rows.find((x) => String(x.serial) === String(id) || String(x.code) === String(id)) || null;
+}
+
 r.get('/projects/:id', (req, res) => {
   const user = req.user || requireUser(req, res);
   if (!user) return;
   const today = TODAY();
-  const ledgerRow = getTransitionRows().find((x) => String(x.id) === String(req.params.id) || String(x.serial) === String(req.params.id) || String(x.code) === String(req.params.id));
+  const p = db.prepare('SELECT * FROM projects WHERE id=?').get(req.params.id);
+  if (p) {
+    if (!canAccessProject(user, p)) return res.status(403).json({ error: '无权查看该项目' });
+    const proj = enrichProject(p, today);
+    const milestones = db.prepare('SELECT * FROM milestones WHERE project_id=? ORDER BY due').all(p.id)
+      .map((m) => ({ ...m, color: statusColor(m.due, m.done_at, today), daysLeft: daysLeft(m.due, today) }));
+    const plans = db.prepare('SELECT * FROM plans WHERE project_id=? ORDER BY due').all(p.id)
+      .map((x) => ({ ...x, color: statusColor(x.due, x.done_at, today) }));
+    const funds = db.prepare('SELECT * FROM funds WHERE project_id=? ORDER BY year').all(p.id)
+      .map((f) => ({ ...f, writeoffs: J(f.writeoffs_json, []) }));
+    const deliverables = db.prepare('SELECT * FROM deliverables WHERE project_id=?').all(p.id)
+      .map((x) => ({ ...x, color: statusColor(x.due, x.delivered_at, today) }));
+    const packages = db.prepare('SELECT * FROM packages WHERE project_id=?').all(p.id)
+      .map((k) => ({ ...k, color: k.status === '已完成' ? 'green' : statusColor(k.plan_date, k.actual_date, today), deliverableCount: db.prepare('SELECT COUNT(*) n FROM deliverables WHERE package_id=?').get(k.id).n }));
+    const collaborators = db.prepare('SELECT * FROM collaborators WHERE project_id=?').all(p.id).map((c) => ({ ...c, scores: J(c.scores_json) }));
+    const approvals = db.prepare('SELECT * FROM approvals WHERE project_id=? ORDER BY created_at DESC').all(p.id).map((a) => ({ ...a, steps: J(a.steps_json, []), payload: J(a.payload_json, {}) }));
+    const changes = db.prepare('SELECT * FROM changes WHERE project_id=? ORDER BY created_at DESC').all(p.id);
+    const documents = db.prepare("SELECT * FROM documents WHERE project_id=? AND phase<>'后评价' ORDER BY uploaded_at").all(p.id);
+    const postEval = null;
+    const channel = db.prepare('SELECT * FROM channels WHERE id=?').get(p.channel_id) || {};
+    const unit = db.prepare('SELECT * FROM units WHERE id=?').get(p.lead_unit_id) || {};
+    const lifecycle = buildLifecycleStages(p);
+    return res.json({
+      ...proj,
+      channelName: channel.name || '',
+      sourceChannel: channel.source_channel || '',
+      orgOffice: channel.org_office || channel.org || '',
+      projectType: channel.name || '',
+      channelFlow: J(channel.flow_json, []), channelFiling: J(channel.filing_json, []), channelAssess: J(channel.assess_json, []), unitName: unit.name || '', unitShort: unit.short || '',
+      milestones, plans, funds, deliverables, packages, collaborators, approvals, changes, documents,
+      postEval,
+      lifecycleStages: lifecycle,
+      membersEditable: canEditProjectMembers(user, p),
+      ...projectAuthPayload(user, p),
+    });
+  }
+  const ledgerRow = findLedgerRowByParam(req.params.id);
   if (ledgerRow) {
     const proj = projectFromTransitionRow(ledgerRow, today);
     const unit = proj.lead_unit_id ? db.prepare('SELECT * FROM units WHERE id=?').get(proj.lead_unit_id) : null;
+    const channel = proj.channel_id ? db.prepare('SELECT * FROM channels WHERE id=?').get(proj.channel_id) : {};
     const synthetic = {
       id: proj.id,
       lead_unit_id: proj.lead_unit_id,
@@ -1104,7 +1515,9 @@ r.get('/projects/:id', (req, res) => {
       sourceChannel: proj.sourceChannel,
       orgOffice: proj.orgOffice,
       projectType: proj.projectType,
-      channelFlow: [], channelFiling: [], channelAssess: [],
+      channelFlow: J(channel.flow_json, []),
+      channelFiling: J(channel.filing_json, []),
+      channelAssess: J(channel.assess_json, []),
       unitName: unit?.name || proj.v19.responsibleUnit || '',
       unitShort: unit?.short || proj.v19.responsibleUnit || '',
       milestones: [], plans: [], funds: [],
@@ -1114,40 +1527,176 @@ r.get('/projects/:id', (req, res) => {
       lifecycleStages: buildLifecycleStages(synthetic),
       readonly: true,
       ledgerHint: '本条来自表单维护台账，编辑请到「管控闭环 → 表单维护」',
+      ...projectAuthPayload(user, proj, { readonly: true }),
     });
   }
+  return res.status(404).json({ error: 'not found' });
+});
+
+function requireProjectRow(req, res, user) {
+  const p = db.prepare('SELECT * FROM projects WHERE id=?').get(req.params.id);
+  if (!p) {
+    res.status(404).json({ error: 'not found' });
+    return null;
+  }
+  if (!canAccessProject(user, p)) {
+    res.status(403).json({ error: '无权查看该项目' });
+    return null;
+  }
+  return p;
+}
+
+r.get('/roster', (req, res) => {
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  res.json({ people: rosterPeople(), duties: PROJECT_DUTY_DEFS });
+});
+
+r.get('/inbox', (req, res) => {
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  const items = [];
+  const approvals = db.prepare("SELECT * FROM approvals WHERE status='审批中' AND type<>'post_eval' ORDER BY created_at DESC").all();
+  for (const raw of approvals) {
+    const a = mapApproval(raw);
+    const step = a.steps[a.current_step];
+    if (!step) continue;
+    if (!(user.role === 'admin' || isCurrentStepAssignee(user, step))) continue;
+    items.push({
+      kind: 'approval',
+      id: `appr-${a.id}`,
+      approvalId: a.id,
+      projectId: a.project_id,
+      projectName: a.projectName || '',
+      projectCode: a.projectCode || '',
+      title: a.title,
+      stepTitle: step.title,
+      href: '/approvals',
+      slot: step.slot || slotForStepTitle(step.title) || '',
+    });
+  }
+  const seen = new Set(items.filter((it) => it.approvalId).map((it) => String(it.approvalId)));
+  const related = db.prepare("SELECT * FROM approvals WHERE type<>'post_eval' ORDER BY created_at DESC").all().map(mapApproval);
+  for (const a of related) {
+    if (seen.has(String(a.id))) continue;
+    if (!(participatedApproval(user, a) || a.initiator === user.name)) continue;
+    const steps = a.steps || [];
+    const done = steps.filter((s) => s.status === 'approved').length;
+    items.push({
+      kind: 'track',
+      id: `track-${a.id}`,
+      approvalId: a.id,
+      projectId: a.project_id,
+      projectName: a.projectName || '',
+      projectCode: a.projectCode || '',
+      title: a.title,
+      stepTitle: a.status === '审批中' ? `已办 · 当前 ${steps[a.current_step]?.title || ''}` : a.status,
+      href: '#',
+      progress: `${done}/${steps.length}`,
+    });
+    seen.add(String(a.id));
+    if (items.filter((it) => it.kind === 'track').length >= 8) break;
+  }
+  for (const p of scopeProjects(user, db.prepare('SELECT * FROM projects').all())) {
+    if (p.status === '已终止') continue;
+    const duties = projectDutiesOf(user, p);
+    if (!duties.length) continue;
+    const lc = buildLifecycleStages(p);
+    const hasApprovalInbox = items.some((it) => (it.kind === 'approval' || it.kind === 'track') && String(it.projectId) === String(p.id));
+    if (p.status === '申报中') {
+      const core = duties.filter((d) => ['contact', 'owner', 'tech'].includes(d));
+      if (!core.length || hasApprovalInbox) continue;
+      items.push({
+        kind: 'fill',
+        id: `assign-${p.id}`,
+        projectId: p.id,
+        projectName: p.name,
+        projectCode: p.code,
+        title: `「${p.name}」已指定您为${core.map(dutyLabelOf).join('、')}`,
+        stepTitle: '打开项目档案跟踪审签',
+        href: `/projects/${p.id}`,
+        slot: core[0],
+      });
+      continue;
+    }
+    if (lc.currentMacro === 'declare') continue;
+    if (lc.approval && lc.approval.current) continue;
+    const ownerKey = MACRO_OWNER_SLOT[lc.currentMacro] || 'owner';
+    if (!duties.includes(ownerKey)) continue;
+    const cur = (lc.macro || []).find((m) => m.id === lc.currentMacro);
+    items.push({
+      kind: 'fill',
+      id: `fill-${p.id}-${lc.currentMacro}`,
+      projectId: p.id,
+      projectName: p.name,
+      projectCode: p.code,
+      title: `${cur?.name || lc.currentMacro} 待填报`,
+      stepTitle: cur?.filler || dutyLabelOf(ownerKey),
+      href: `/projects/${p.id}`,
+      slot: ownerKey,
+      vacant: !cur?.owner?.name,
+    });
+  }
+  res.json({ items, count: items.length });
+});
+
+r.get('/projects/:id/members', (req, res) => {
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  const p = requireProjectRow(req, res, user);
+  if (!p) return;
+  const team = assignedTeamOf(p.id);
+  res.json({
+    team,
+    members: teamMembersPayload(team),
+    duties: PROJECT_DUTY_DEFS,
+    people: rosterPeople(),
+    editable: canEditProjectMembers(user, p),
+  });
+});
+
+r.put('/projects/:id/members', (req, res) => {
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  if (!assertWritable(user, res)) return;
   const p = db.prepare('SELECT * FROM projects WHERE id=?').get(req.params.id);
   if (!p) return res.status(404).json({ error: 'not found' });
-  if (!canAccessProject(user, p)) return res.status(403).json({ error: '无权查看该项目' });
-  const proj = enrichProject(p, today);
-  const milestones = db.prepare('SELECT * FROM milestones WHERE project_id=? ORDER BY due').all(p.id)
-    .map((m) => ({ ...m, color: statusColor(m.due, m.done_at, today), daysLeft: daysLeft(m.due, today) }));
-  const plans = db.prepare('SELECT * FROM plans WHERE project_id=? ORDER BY due').all(p.id)
-    .map((x) => ({ ...x, color: statusColor(x.due, x.done_at, today) }));
-  const funds = db.prepare('SELECT * FROM funds WHERE project_id=? ORDER BY year').all(p.id)
-    .map((f) => ({ ...f, writeoffs: J(f.writeoffs_json, []) }));
-  const deliverables = db.prepare('SELECT * FROM deliverables WHERE project_id=?').all(p.id)
-    .map((x) => ({ ...x, color: statusColor(x.due, x.delivered_at, today) }));
-  const packages = db.prepare('SELECT * FROM packages WHERE project_id=?').all(p.id)
-    .map((k) => ({ ...k, color: k.status === '已完成' ? 'green' : statusColor(k.plan_date, k.actual_date, today), deliverableCount: db.prepare('SELECT COUNT(*) n FROM deliverables WHERE package_id=?').get(k.id).n }));
-  const collaborators = db.prepare('SELECT * FROM collaborators WHERE project_id=?').all(p.id).map((c) => ({ ...c, scores: J(c.scores_json) }));
-  const approvals = db.prepare('SELECT * FROM approvals WHERE project_id=? ORDER BY created_at DESC').all(p.id).map((a) => ({ ...a, steps: J(a.steps_json, []), payload: J(a.payload_json, {}) }));
-  const changes = db.prepare('SELECT * FROM changes WHERE project_id=? ORDER BY created_at DESC').all(p.id);
-  const documents = db.prepare("SELECT * FROM documents WHERE project_id=? AND phase<>'后评价' ORDER BY uploaded_at").all(p.id);
-  const postEval = null; // V19 本轮暂缓/删除后评价，接口保留字段但不再返回业务数据。
-  const channel = db.prepare('SELECT * FROM channels WHERE id=?').get(p.channel_id) || {};
-  const unit = db.prepare('SELECT * FROM units WHERE id=?').get(p.lead_unit_id) || {};
-  const lifecycle = buildLifecycleStages(p);
+  if (!canEditProjectMembers(user, p)) return res.status(403).json({ error: '无权指定本项目岗位' });
+  const slots = req.body?.slots || req.body?.team || {};
+  const team = {};
+  for (const d of PROJECT_DUTY_DEFS) team[d.key] = slots[d.key] ?? '';
+  const next = writeProjectMembers(p.id, team, user.name);
+  let reassigned = 0;
+  for (const d of PROJECT_DUTY_DEFS) {
+    const person = resolvePerson(next[d.key]);
+    if (person) reassigned += reassignOpenSteps(p.id, d.key, person);
+  }
+  audit(user.name, '指定项目岗位', p.name, PROJECT_DUTY_DEFS.map((d) => `${d.label}=${next[d.key] || '待指定'}`).join('；'));
+  res.json({ ok: true, team: next, members: teamMembersPayload(next), reassigned });
+});
+
+r.post('/projects/:id/members/transfer', (req, res) => {
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  if (!assertWritable(user, res)) return;
+  const p = db.prepare('SELECT * FROM projects WHERE id=?').get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  if (!canEditProjectMembers(user, p)) return res.status(403).json({ error: '无权转办本项目岗位' });
+  const slot = String(req.body?.slot || '');
+  if (!PROJECT_DUTY_DEFS.some((d) => d.key === slot)) return res.status(400).json({ error: '无效岗位' });
+  const person = resolvePerson(req.body?.empNo || req.body?.emp_no || req.body?.name);
+  if (!person) return res.status(400).json({ error: '未找到在岗人员' });
+  const team = assignedTeamOf(p.id);
+  team[slot] = person.emp_no || person.name;
+  writeProjectMembers(p.id, team, user.name);
+  const n = reassignOpenSteps(p.id, slot, person);
+  audit(user.name, '岗位转办', p.name, `${dutyLabelOf(slot)} → ${person.name}（${person.emp_no || person.id}），已改派在途节点 ${n} 个`);
   res.json({
-    ...proj,
-    channelName: channel.name || '',
-    sourceChannel: channel.source_channel || '',
-    orgOffice: channel.org_office || channel.org || '',
-    projectType: channel.name || '',
-    channelFlow: J(channel.flow_json, []), channelFiling: J(channel.filing_json, []), channelAssess: J(channel.assess_json, []), unitName: unit.name || '', unitShort: unit.short || '',
-    milestones, plans, funds, deliverables, packages, collaborators, approvals, changes, documents,
-    postEval,
-    lifecycleStages: lifecycle,
+    ok: true,
+    slot,
+    person: { name: person.name, empNo: person.emp_no || person.id },
+    reassigned: n,
+    members: teamMembersPayload(assignedTeamOf(p.id)),
   });
 });
 
@@ -1161,7 +1710,7 @@ r.get('/projects/:id/lifecycle-stages', (req, res) => {
     if (!canAccessProject(user, p)) return res.status(403).json({ error: '无权查看该项目' });
     return res.json(buildLifecycleStages(p));
   }
-  const ledgerRow = getTransitionRows().find((x) => String(x.id) === String(req.params.id) || String(x.serial) === String(req.params.id) || String(x.code) === String(req.params.id));
+  const ledgerRow = findLedgerRowByParam(req.params.id);
   if (!ledgerRow) return res.status(404).json({ error: 'not found' });
   const proj = projectFromTransitionRow(ledgerRow, today);
   res.json(buildLifecycleStages({
@@ -1169,6 +1718,7 @@ r.get('/projects/:id/lifecycle-stages', (req, res) => {
     lead_unit_id: proj.lead_unit_id,
     channel_id: proj.channel_id,
     status: proj.status,
+    level: proj.level,
     team_json: JSON.stringify(proj.team || {}),
   }));
 });
@@ -1190,7 +1740,6 @@ r.get('/dashboard', (req, res) => {
     unit, level, channel, sourceChannel, orgOffice, projectType, major1, major2,
   });
   let projects = displayed.list;
-  const ledgerMode = displayed.source === 'form-ledger';
   if (year) {
     const y = Number(year);
     projects = projects.filter((p) => {
@@ -1200,8 +1749,10 @@ r.get('/dashboard', (req, res) => {
       return s <= y && e >= y;
     });
   }
+  const liveProjects = projects.filter((p) => !p.ledgerSource);
+  const ledgerMode = liveProjects.length === 0;
 
-  const ids = new Set(projects.map((p) => p.id));
+  const ids = new Set(liveProjects.map((p) => p.id));
   let blacklistScoped = 0;
   let pendingScoped = 0;
   if (!ledgerMode) {
@@ -1550,7 +2101,8 @@ function deptForStepTitle(title, unitName) {
 function buildLifecycleStages(p) {
   const unit = db.prepare('SELECT name,short FROM units WHERE id=?').get(p.lead_unit_id) || {};
   const unitName = unit.name || unit.short || '责任单位';
-  const team = completeDisplayTeam(J(p.team_json, {}), p.lead_unit_id);
+  const realRow = p?.id != null ? db.prepare('SELECT 1 FROM projects WHERE id=?').get(p.id) : null;
+  const team = realRow ? assignedTeamOf(p.id) : completeDisplayTeam(J(p.team_json, {}), p.lead_unit_id);
   const channel = db.prepare('SELECT * FROM channels WHERE id=?').get(p.channel_id) || {};
   const flow = J(channel.flow_json, []);
   const approvals = db.prepare('SELECT * FROM approvals WHERE project_id=? ORDER BY created_at DESC').all(p.id)
@@ -1629,9 +2181,11 @@ function buildLifecycleStages(p) {
   const enrichSteps = (steps, initiator) => (steps || []).map((s, i) => {
     const assigned = s.assignee || stepAssignee(p, s.title, initiator || '').assignee;
     const pe = person(assigned);
+    const slot = s.slot || slotForStepTitle(s.title) || '';
     return {
       index: i,
       title: s.title,
+      slot,
       dept: deptForStepTitle(s.title, unitName),
       owner: pe,
       status: s.status || 'pending',
@@ -1645,6 +2199,73 @@ function buildLifecycleStages(p) {
     ? enrichSteps(active.steps, active.initiator)
     : (latest ? enrichSteps(latest.steps, latest.initiator) : []);
 
+  const designedFlow = (titles, initiator) => {
+    const init = initiator || team.contact || team.owner || '';
+    return (titles || []).map((title, i) => {
+      const asg = i === 0
+        ? { assignee: init, slot: slotForStepTitle(title) || 'contact' }
+        : stepAssignee(p, title, init);
+      return {
+        index: i,
+        title,
+        slot: asg.slot || slotForStepTitle(title) || '',
+        dept: deptForStepTitle(title, unitName),
+        owner: person(asg.assignee || ''),
+        status: 'pending',
+        at: null,
+        comment: null,
+        actor: null,
+      };
+    });
+  };
+  const pickLive = (types) => {
+    const rows = approvals.filter((a) => types.includes(a.type));
+    return rows.find((a) => a.status === '审批中') || rows[0] || null;
+  };
+  const acceptTitles = (() => {
+    const t = ['项目团队提交验收申请', '二级单位管理团队初审'];
+    if (String(p.level || channel.level || '') === '国家级') t.push('责任总师技术复核');
+    t.push('总部管理团队终审');
+    return t;
+  })();
+  let visIdx = 0;
+  if (['待立项确认', '立项中'].includes(status) || currentMacro === 'filing') visIdx = 1;
+  else if (currentMacro === 'accept' || status === '验收中') visIdx = 3;
+  else if (currentMacro === 'transform' || status === '已验收') visIdx = 4;
+  else if (status === '实施中' || ['baseinfo', 'milestone', 'plan', 'finance', 'assess', 'change'].includes(currentMacro)) visIdx = 2;
+  else visIdx = 0;
+
+  const visual = [
+    { id: 'declare', name: '项目申报', ownerKey: 'contact', titles: effectiveDeclarationChain(channel), types: ['declaration'] },
+    { id: 'filing', name: '立项备案', ownerKey: 'contact', titles: ['项目团队上传立项材料', '单位科技管理部审核', '总部科研项目处备案'], types: ['filing'] },
+    { id: 'implement', name: '实施阶段', ownerKey: 'owner', titles: ['项目团队填写', '项目负责人审核', '项目主管', '技术负责人', '单位财务主管'], types: ['baseinfo', 'milestone_plan', 'milestone_close', 'plan_finish', 'funding', 'budget', 'assessment', 'change', 'data_change'] },
+    { id: 'accept', name: '项目验收', ownerKey: 'owner', titles: acceptTitles, types: ['acceptance'] },
+    { id: 'transform', name: '成果转化', ownerKey: 'owner', titles: ['项目团队填报转化信息', '二级单位管理团队审核', '总部管理团队备案'], types: ['package'] },
+  ].map((d, i) => {
+    const live = pickLive(d.types);
+    const flow = live ? enrichSteps(live.steps, live.initiator) : designedFlow(d.titles, team.contact || team.owner);
+    const ownerName = team[d.ownerKey] || team.contact || team.owner || '';
+    let st = 'pending';
+    if (i < visIdx) st = 'done';
+    if (i === visIdx) st = 'current';
+    const curNode = flow.find((n) => n.status === 'current') || null;
+    const pendingNode = flow.find((n) => n.status === 'pending' || n.status === 'current') || null;
+    let flowNode = null;
+    if (st === 'current') flowNode = curNode || pendingNode || flow[1] || flow[0] || null;
+    else if (st === 'pending') flowNode = flow[1] || flow[0] || null;
+    return {
+      id: d.id,
+      name: d.name,
+      ownerSlot: d.ownerKey,
+      ownerSlotLabel: dutyLabelOf(d.ownerKey),
+      owner: person(ownerName),
+      status: st,
+      flow,
+      liveApproval: live ? { id: live.id, title: live.title, status: live.status, type: live.type } : null,
+      flowTo: flowNode ? { title: flowNode.title, owner: flowNode.owner, slotLabel: flowNode.slot ? dutyLabelOf(flowNode.slot) : '' } : { title: '已办结', owner: null, slotLabel: '' },
+    };
+  });
+
   return {
     projectId: p.id,
     code: p.code,
@@ -1653,6 +2274,7 @@ function buildLifecycleStages(p) {
     unitName,
     currentMacro,
     macro,
+    visual,
     approval: active || latest ? {
       id: (active || latest).id,
       type: (active || latest).type,
@@ -1677,30 +2299,14 @@ function userByName(name) {
 }
 
 function stepAssignee(project, title, initiator) {
-  const team = J(project?.team_json, {});
-  let name = '';
-  if (/联系人|团队填|团队提交|团队编制|项目组填|上传|发起/.test(title)) name = team.contact || initiator;
-  else if (/项目负责人/.test(title)) name = team.owner;
-  else if (/技术负责人/.test(title)) name = team.tech;
-  else if (/项目主管/.test(title)) name = team.pm;
-  else if (/一级总师/.test(title)) name = team.chief1;
-  else if (/二级|三级.*总师|责任总师/.test(title)) name = team.chief2 || team.chief1;
-  else if (/学术委员会|专委会/.test(title)) name = team.chief2 || team.chief1;
-  else if (/理事会|技术发展战略委员会/.test(title)) name = team.chief1 || team.hqHead;
-  else if (/总部.*财务/.test(title)) name = team.finHq;
-  else if (/单位财务.*负责人|财务部门审核|单位财务部/.test(title)) name = team.finHead || team.finStaff;
-  else if (/单位财务/.test(title)) name = team.finStaff || team.finHead;
-  else if (/单位分管|承担部门负责人|单位科技.*负责人|单位科技部审核|单位科技管理部/.test(title)) name = team.unitDeptHead || team.unitStaff;
-  else if (/二级单位.*管理|二级单位.*主管|单位管理|单位审查|单位内部|单位科技/.test(title)) name = team.unitDeptHead || team.unitStaff;
-  else if (/总部|科研项目处|科技发展处|科技管理部|上报GXB|归档回执/.test(title)) name = team.hqHead || team.hqStaff;
-  else if (/法务|合规/.test(title)) name = team.unitDeptHead || team.hqHead;
-  let u = userByName(name);
-  if (!u && /总师|学术委员会|专委会|理事会/.test(title)) u = db.prepare("SELECT id,emp_no,name FROM users WHERE role='chief' AND status='在岗' ORDER BY id LIMIT 1").get();
-  if (!u && /财务/.test(title)) u = /总部/.test(title) ? db.prepare("SELECT id,emp_no,name FROM users WHERE role='mgmt' AND scope='hq' AND status='在岗' ORDER BY id LIMIT 1").get() : db.prepare("SELECT id,emp_no,name FROM users WHERE role='finance' AND unit_id=? AND status='在岗' ORDER BY id LIMIT 1").get(project?.lead_unit_id);
-  if (!u && /总部|科研项目处|科技发展处|科技管理部|上报GXB|归档回执/.test(title)) u = db.prepare("SELECT id,emp_no,name FROM users WHERE role='mgmt' AND scope='hq' AND status='在岗' ORDER BY id LIMIT 1").get();
-  if (!u && /单位|承担部门/.test(title)) u = db.prepare("SELECT id,emp_no,name FROM users WHERE role='mgmt' AND unit_id=? AND status='在岗' ORDER BY id LIMIT 1").get(project?.lead_unit_id);
-  if (!u && /项目负责人|联系人|团队|项目组/.test(title)) u = db.prepare("SELECT id,emp_no,name FROM users WHERE role IN ('team','contact') AND unit_id=? AND status='在岗' ORDER BY id LIMIT 1").get(project?.lead_unit_id);
-  return { assignee: u?.name || '', assigneeId: u?.emp_no || u?.id || '' };
+  const pid = project?.id || project?.project_id;
+  const team = pid ? assignedTeamOf(pid) : J(project?.team_json, {});
+  const slot = slotForStepTitle(title);
+  let name = slot ? (team[slot] || '') : '';
+  if (!name && slot === 'contact') name = initiator || '';
+  if (!name && /联系人|团队填|团队提交|项目组/.test(String(title || ''))) name = team.contact || initiator || '';
+  const u = resolvePerson(name);
+  return { assignee: u?.name || '', assigneeId: u?.emp_no || u?.id || '', slot: slot || undefined };
 }
 
 function approvalSteps(project, initiator, stepTitles) {
@@ -1724,30 +2330,34 @@ function effectiveDeclarationChain(ch) {
   return J(ch.approve_chain_json, []);
 }
 r.get('/approvals', (req, res) => {
-  const user = currentUser(req);
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
   let rows = db.prepare("SELECT * FROM approvals WHERE type<>'post_eval' ORDER BY created_at DESC").all().map(mapApproval);
-  const { mine, status } = req.query;
+  const { mine, status, projectId } = req.query;
   if (status) rows = rows.filter((a) => a.status === status);
+  if (projectId) rows = rows.filter((a) => String(a.project_id) === String(projectId));
   if (mine === '1') {
     rows = rows.filter((a) => {
       if (a.status !== '审批中') return false;
       const step = a.steps[a.current_step];
       if (!step) return false;
       if (user.role === 'admin') return true;
-      if (user.role === 'mgmt' && user.scope === 'hq') return step.title.includes('总部') || step.title.includes('科研项目处') || step.title.includes('拨付执行');
-      if (user.role === 'mgmt' && user.scope === 'unit') {
-        if (a.unit_id !== user.unit_id) return false;
-        return step.assignee === user.name || /单位|科技|财务|分管|负责人/.test(step.title || '');
-      }
-      if (user.role === 'chief') return step.assignee === user.name || step.title.includes('总师');
-      if (user.role === 'finance') return step.title.includes('财务') && a.unit_id === user.unit_id;
-      if (isTechTeamRole(user.role)) return step.assignee === user.name || a.initiator === user.name;
-      return false;
+      return isCurrentStepAssignee(user, step);
     });
-  } else if (user.scope !== 'hq' && user.role !== 'admin') {
-    rows = rows.filter((a) => a.unit_id === user.unit_id || a.initiator === user.name || a.steps.some((s) => s.assignee === user.name));
+  } else {
+    rows = rows.filter((a) => canSeeApproval(user, a));
   }
-  res.json(rows);
+  res.json(rows.map((a) => withApprovalAuth(user, a)));
+});
+
+r.get('/approvals/:id', (req, res) => {
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  const a = db.prepare('SELECT * FROM approvals WHERE id=?').get(req.params.id);
+  if (!a) return res.status(404).json({ error: 'not found' });
+  const mapped = mapApproval(a);
+  if (!canSeeApproval(user, mapped)) return res.status(403).json({ error: '无权查看该流程' });
+  res.json(withApprovalAuth(user, mapped));
 });
 
 r.post('/approvals/:id/act', (req, res) => {
@@ -1790,7 +2400,7 @@ r.post('/approvals/:id/act', (req, res) => {
   } else {
     return res.status(400).json({ error: 'bad action' });
   }
-  res.json(mapApproval(db.prepare('SELECT * FROM approvals WHERE id=?').get(a.id)));
+  res.json(withApprovalAuth(user, db.prepare('SELECT * FROM approvals WHERE id=?').get(a.id)));
 });
 
 
@@ -1799,8 +2409,8 @@ const STAGE_FIELD_META = [
   { code: 'code', label: '项目编号', stage: 'system', filler: '系统', required: false },
   { code: 'level', label: '级别', stage: 'declaration', filler: '项目团队', required: true },
   { code: 'channel', label: '项目渠道', stage: 'declaration', filler: '项目团队', required: true },
-  { code: 'major1', label: '一级专业', stage: 'declaration', filler: '项目团队', required: false },
-  { code: 'major2', label: '二级专业', stage: 'declaration', filler: '项目团队', required: false },
+  { code: 'major1', label: '一级专业', stage: 'declaration', filler: '项目团队', required: true },
+  { code: 'major2', label: '二级专业', stage: 'declaration', filler: '项目团队', required: true },
   { code: 'name', label: '项目名称', stage: 'declaration', filler: '项目团队', required: true },
   { code: 'goal', label: '项目目标', stage: 'declaration', filler: '项目团队', required: true },
   { code: 'start', label: '开始日期', stage: 'declaration', filler: '项目团队', required: true },
@@ -1850,7 +2460,7 @@ function applyApprovalEffect(a, user) {
     for (const key of allowed) if (f[key] != null) db.prepare(`UPDATE projects SET ${key}=? WHERE id=?`).run(f[key], a.project_id);
     if (f.yearGoal != null) db.prepare('UPDATE projects SET year_goal=? WHERE id=?').run(String(f.yearGoal).slice(0, 500), a.project_id);
     if (Array.isArray(f.partners)) db.prepare('UPDATE projects SET partners_json=? WHERE id=?').run(JSON.stringify(f.partners), a.project_id);
-    if (f.team && typeof f.team === 'object') db.prepare('UPDATE projects SET team_json=? WHERE id=?').run(JSON.stringify(f.team), a.project_id);
+    if (f.team && typeof f.team === 'object') writeProjectMembers(a.project_id, f.team, user.name);
     if (f.finance && typeof f.finance === 'object') {
       db.prepare(`INSERT INTO project_finance_profile (project_id,central_grant,internal_grant,self_fund,internal_self_fund,source,approved_at,approved_by)
         VALUES (?,?,?,?,?,'基本信息审批',?,?) ON CONFLICT(project_id) DO UPDATE SET central_grant=excluded.central_grant,internal_grant=excluded.internal_grant,self_fund=excluded.self_fund,internal_self_fund=excluded.internal_self_fund,source=excluded.source,approved_at=excluded.approved_at,approved_by=excluded.approved_by`)
@@ -2019,15 +2629,16 @@ r.post('/declarations', (req, res) => {
   const user = req.user || requireUser(req, res);
   if (!user) return;
   if (!assertWritable(user, res)) return;
-  const { name, channelId, goal, budget, start, end, partners, materials, materialUploads, uploadId, milestones, deliverables, yearGoal, team: submittedTeam = {}, major1, major2 } = req.body || {};
+  const { name, channelId, goal, budget, start, end, partners, materials, materialUploads, uploadId, milestones, deliverables, yearGoal, team: submittedTeam = {}, major1, major2, demandUnit, leadWork, leadUnitId, finance } = req.body || {};
   if (!name || !channelId) return res.status(400).json({ error: '缺少项目名称或渠道' });
   if (!String(goal || '').trim()) return res.status(400).json({ error: '立项申报须填写项目目标' });
   if (!start || !end) return res.status(400).json({ error: '立项申报须填写项目起止日期' });
   if (!(Number(budget) > 0)) return res.status(400).json({ error: '立项申报须填写总经费（万元）' });
-  if ((major1 || major2) && typeof validateMajorPair === 'function') {
-    const maj = validateMajorPair(major1, major2);
-    if (!maj.ok) return res.status(400).json({ error: maj.error || '一级/二级专业不匹配' });
-  }
+  const maj = validateMajorPair(major1, major2);
+  if (!maj.ok) return res.status(400).json({ error: maj.error || '立项申报须选择附件1口径的一级/二级专业' });
+  if (!String(leadWork || '').trim()) return res.status(400).json({ error: '立项申报须填写牵头单位主要工作内容' });
+  if (!resolvePerson(submittedTeam.owner)) return res.status(400).json({ error: '立项申报须指定项目负责人（在岗账号）' });
+  if (!resolvePerson(submittedTeam.tech)) return res.status(400).json({ error: '立项申报须指定技术负责人（在岗账号）' });
   const ch = db.prepare('SELECT * FROM channels WHERE id=?').get(channelId);
   if (!ch) return res.status(400).json({ error: '渠道不存在' });
   const requiredMats = materials || J(ch.declare_json, []);
@@ -2045,24 +2656,45 @@ r.post('/declarations', (req, res) => {
   const year = Number(TODAY().slice(0, 4));
   const n = db.prepare('SELECT COUNT(*) n FROM projects WHERE code LIKE ?').get(`KY-${year}-%`).n;
   const code = `KY-${year}-${String(n + 1).padStart(3, '0')}`;
-  // 技术团队岗位：项目联系人（发起审批/上传材料）+ 项目负责人 + 技术负责人 + 项目主管；允许早期兼任。
-  const team = { contact: user.name, owner: user.name, tech: user.name, pm: user.name, chief1: '陈铁军', chief2: '蔡文渊', hqHead: '王建国', hqStaff: '何雨桐', unitDeptHead: '方致远', unitStaff: '田念慈', finHq: '', finHead: '毕仲文', finStaff: '龚雪君', ...submittedTeam, owner: submittedTeam.owner || user.name, contact: submittedTeam.contact || user.name };
+  const chainDefaults = { pm: '吴思远', chief1: '陈铁军', chief2: '蔡文渊', hqHead: '王建国', hqStaff: '何雨桐', unitDeptHead: '方致远', unitStaff: '田念慈', finHq: '', finHead: '毕仲文', finStaff: '龚雪君' };
+  const ownerPerson = resolvePerson(submittedTeam.owner);
+  const techPerson = resolvePerson(submittedTeam.tech);
+  const team = {
+    ...chainDefaults,
+    ...submittedTeam,
+    contact: submittedTeam.contact || user.name,
+    owner: ownerPerson.name,
+    tech: techPerson.name,
+  };
+  for (const [k, v] of Object.entries(chainDefaults)) {
+    if (!String(team[k] || '').trim()) team[k] = v;
+  }
+  const partnerRows = (Array.isArray(partners) ? partners : []).map((x) => {
+    if (x && typeof x === 'object') return { name: String(x.name || '').trim(), work: String(x.work || '').trim() };
+    return { name: String(x || '').trim(), work: '' };
+  }).filter((x) => x.name);
+  const unitId = Number(leadUnitId) || resolveUnitIdByName(req.body?.responsibleUnit) || user.unit_id || 1;
   const info = db.prepare(`INSERT INTO projects (code,wbs,name,goal,level,channel_id,lead_unit_id,partners_json,team_json,start,end,status,total_budget,tags_json)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(code, null, name, goal || '', ch.level, ch.id, user.unit_id || 1, JSON.stringify((partners || []).map((x) => ({ name: x, work: '' }))), JSON.stringify(team), start || TODAY(), end || `${year + 2}-12-31`, '申报中', Number(budget) || 0, JSON.stringify([ch.name]));
+    .run(code, null, name, goal || '', ch.level, ch.id, unitId, JSON.stringify(partnerRows), JSON.stringify(team), start || TODAY(), end || `${year + 2}-12-31`, '申报中', Number(budget) || 0, JSON.stringify([ch.name]));
   const pid = info.lastInsertRowid;
+  db.prepare('UPDATE projects SET major1=?, major2=?, demand_unit=?, lead_work=? WHERE id=?')
+    .run(maj.major1, maj.major2, String(demandUnit || '').slice(0, 80), String(leadWork || '').slice(0, 500), pid);
+  const writtenTeam = writeProjectMembers(pid, team, user.name);
   let linkedMats = [];
   try {
     linkedMats = archiveMaterialUploads({
       pid, phase: '申报', requiredNames: requiredMats, materialUploads, userName: user.name,
     });
   } catch (e) {
+    db.prepare('DELETE FROM project_members WHERE project_id=?').run(pid);
     db.prepare('DELETE FROM projects WHERE id=?').run(pid);
     return res.status(e.status || 400).json({ error: String(e.message || e) });
   }
   const chain = effectiveDeclarationChain(ch);
-  const steps = approvalSteps({ ...ch, team_json: JSON.stringify(team) }, user.name, chain);
+  const steps = approvalSteps({ id: pid, lead_unit_id: user.unit_id || 1, team_json: JSON.stringify(writtenTeam) }, user.name, chain);
   try { assertApprovalAssignments(steps); } catch (e) {
+    db.prepare('DELETE FROM project_members WHERE project_id=?').run(pid);
     db.prepare('DELETE FROM projects WHERE id=?').run(pid);
     return res.status(e.status || 409).json({ error: e.message });
   }
@@ -2085,6 +2717,11 @@ r.post('/declarations', (req, res) => {
     }
   }
   if (yearGoal) db.prepare('UPDATE projects SET year_goal=? WHERE id=?').run(String(yearGoal).slice(0, 120), pid);
+  if (finance && typeof finance === 'object') {
+    db.prepare(`INSERT INTO project_finance_profile (project_id,central_grant,internal_grant,self_fund,internal_self_fund,source,approved_at,approved_by)
+      VALUES (?,?,?,?,?,'立项申报',?,?) ON CONFLICT(project_id) DO UPDATE SET central_grant=excluded.central_grant,internal_grant=excluded.internal_grant,self_fund=excluded.self_fund,internal_self_fund=excluded.internal_self_fund,source=excluded.source,approved_at=excluded.approved_at,approved_by=excluded.approved_by`)
+      .run(pid, Number(finance.centralGrant || 0), Number(finance.internalGrant || 0), Number(finance.selfFund || 0), Number(finance.internalSelfFund || 0), TODAY(), user.name);
+  }
   if (uploadId) {
     const already = linkedMats.some((x) => Number(x.uploadId) === Number(uploadId));
     const up = db.prepare('SELECT * FROM uploads WHERE id=?').get(uploadId);
@@ -2095,6 +2732,22 @@ r.post('/declarations', (req, res) => {
     }
   }
   audit(user.name, '发起申报', name, `渠道：${ch.name}，在线提交申报审签流程（材料 ${linkedMats.length} 份真文件归档${uploadId ? ' + AI 识读原件' : ''}）`);
+  const roleBits = [['contact', '项目联系人'], ['owner', '项目负责人'], ['tech', '技术负责人']]
+    .filter(([k]) => writtenTeam[k])
+    .map(([, lab]) => lab);
+  db.prepare('INSERT INTO alerts (project_id,kind,level,title,due,created_at,channels,recipients,read) VALUES (?,?,?,?,?,?,?,?,0)')
+    .run(
+      pid,
+      '岗位流转',
+      'blue',
+      `【申报流转】「${name}」已提交审签，已下发至${roleBits.join('、')}工作台`,
+      TODAY(),
+      TODAY(),
+      '站内,邮箱,蓝信',
+      [writtenTeam.contact, writtenTeam.owner, writtenTeam.tech].filter(Boolean).join('、'),
+    );
+  const alertRow = db.prepare('SELECT * FROM alerts WHERE project_id=? ORDER BY id DESC LIMIT 1').get(pid);
+  if (alertRow) queueAlertNotifications(alertRow);
   res.json({ ok: true, projectId: pid, code });
 });
 
@@ -2152,24 +2805,43 @@ r.post('/project-duplicates', (req, res) => {
   res.json({ checkedAt: new Date().toISOString(), matches, algorithm: '基础字段相似度（预留高级算法接口）' });
 });
 
-/** V19 新增：成果转化独立台账 */
+/** V19 新增：成果转化独立台账（有表单台账时从台账拆成果包，不再读演示 packages） */
 r.get('/transformations', (req, res) => {
   const user = currentUser(req);
   const today = TODAY();
   const { status, mode, unit, kw } = req.query;
-  let rows = db.prepare(`SELECT k.*, p.name pname, p.code pcode, p.level, p.status pstatus, u.short unitShort
-    FROM packages k JOIN projects p ON p.id=k.project_id JOIN units u ON u.id=k.unit_id ORDER BY k.plan_date`).all();
-  if (user.scope !== 'hq') {
-    const visible = new Set(scopeProjects(user, db.prepare('SELECT * FROM projects').all()).map((p) => p.id));
-    rows = rows.filter((k) => visible.has(k.project_id));
+  const displayed = listDisplayProjects(user, today);
+  const live = displayed.list.filter((p) => !p.ledgerSource);
+  const ledgers = displayed.list.filter((p) => p.ledgerSource);
+  let rows = [];
+  if (ledgers.length) {
+    rows = ledgers.flatMap((p) => (p.packages || []).map((k) => ({
+      ...k,
+      color: packageColor(k, today),
+      deliverableCount: 0,
+      deliverables: [],
+      target: transformationTarget(k),
+      unitShort: p.v19?.responsibleUnit || '',
+      pname: k.pname || p.name,
+      pcode: k.pcode || p.code,
+      level: p.level,
+      pstatus: p.status,
+    })));
   }
-  rows = rows.map((k) => ({
-    ...k,
-    color: packageColor(k, today),
-    deliverableCount: db.prepare('SELECT COUNT(*) n FROM deliverables WHERE package_id=?').get(k.id).n,
-    deliverables: db.prepare('SELECT name,type,delivered_at FROM deliverables WHERE package_id=?').all(k.id),
-    target: transformationTarget(k),
-  }));
+  if (live.length) {
+    const visible = new Set(live.map((p) => p.id));
+    const sqlRows = db.prepare(`SELECT k.*, p.name pname, p.code pcode, p.level, p.status pstatus, u.short unitShort
+      FROM packages k JOIN projects p ON p.id=k.project_id JOIN units u ON u.id=k.unit_id ORDER BY k.plan_date`).all()
+      .filter((k) => visible.has(k.project_id))
+      .map((k) => ({
+        ...k,
+        color: packageColor(k, today),
+        deliverableCount: db.prepare('SELECT COUNT(*) n FROM deliverables WHERE package_id=?').get(k.id).n,
+        deliverables: db.prepare('SELECT name,type,delivered_at FROM deliverables WHERE package_id=?').all(k.id),
+        target: transformationTarget(k),
+      }));
+    rows = rows.concat(sqlRows);
+  }
   if (status) rows = rows.filter((k) => k.status === status);
   if (mode) rows = rows.filter((k) => k.mode === mode);
   if (unit) rows = rows.filter((k) => String(k.unit_id) === String(unit));
@@ -2913,8 +3585,7 @@ r.post('/projects/:id/baseinfo', (req, res) => {
   const user = currentUser(req);
   const p = db.prepare('SELECT * FROM projects WHERE id=?').get(req.params.id);
   if (!p) return res.status(404).json({ error: 'not found' });
-  if (!requireRoles(user, res, ['team'], '项目基本信息必须由项目团队发起')) return;
-  if (!canAccessProject(user, p)) return res.status(403).json({ error: '无权操作该项目' });
+  if (!requireProjectPerm(user, res, p, 'baseinfo_edit', '完善基本信息须由本项目负责人或项目主管发起')) return;
   const fields = req.body?.fields || req.body || {};
   const team = fields.team || J(p.team_json, {});
   // 基本信息建档只硬性校验本流程实际需要的技术/管理责任人。财务责任人由预算、
@@ -2929,11 +3600,12 @@ r.post('/projects/:id/baseinfo', (req, res) => {
   for (const [key, label] of optionalPeople) {
     if (team[key] && !userByName(team[key])) return res.status(400).json({ error: `${label}「${team[key]}」未关联有效在岗账号及工号；可暂留空` });
   }
+  const writtenTeam = writeProjectMembers(p.id, team, user.name);
   try {
     newApproval({
-      type: 'baseinfo', title: `「${p.name}」项目基本信息补充建档`, project: { ...p, team_json: JSON.stringify(team) }, initiator: user.name,
+      type: 'baseinfo', title: `「${p.name}」项目基本信息补充建档`, project: { ...p, team_json: JSON.stringify(writtenTeam) }, initiator: user.name,
       stepTitles: ['项目团队填写', '项目负责人审核', '单位科技管理部审核', '单位分管领导复核', '总部科研项目处'],
-      payload: { fields: { ...fields, team } },
+      payload: { fields: { ...fields, team: writtenTeam } },
     });
   } catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
   audit(user.name, '基本信息填报', p.name, '按 V19 实施阶段补全团队等字段，提交单位内部审签');
@@ -2946,7 +3618,7 @@ r.get('/meta/stage-fields', (_req, res) => {
   try { majors = majorPayload(); } catch (_) {}
   res.json({
     stages: [
-      { id: 'declaration', name: '立项·申报', filler: '项目联系人', note: '级别/渠道/名称/目标/周期/经费/项目联系人·负责人·技术负责人' },
+      { id: 'declaration', name: '立项·申报', filler: '项目联系人', note: '级别/渠道、名称、目标、周期、总经费、专业、牵头分工、联系人·负责人·技术负责人及渠道材料' },
       { id: 'baseinfo', name: '实施·基本信息', filler: '项目团队', note: '补全主管/总师/管理财务等；审过回写台账' },
       { id: 'system', name: '系统生成', filler: '系统', note: '项目编号、预警、成果转化状态' },
     ],
@@ -2959,14 +3631,7 @@ r.get('/meta/stage-fields', (_req, res) => {
 /** 可选人员名录（基本信息岗位绑定用） */
 r.get('/meta/people', (req, res) => {
   const user = currentUser(req);
-  const rows = db.prepare("SELECT id, emp_no, name, role, title, unit_id, scope FROM users WHERE status='在岗' ORDER BY role, name").all();
-  res.json({
-    me: user?.name,
-    people: rows.map((u) => ({
-      id: u.id, empNo: u.emp_no, name: u.name, role: u.role, title: u.title,
-      unitId: u.unit_id, scope: u.scope, label: u.emp_no ? `${u.name}（${u.emp_no}）` : u.name,
-    })),
-  });
+  res.json({ me: user?.name, people: rosterPeople() });
 });
 
 /** 单项目填表齐套检查 */
@@ -3002,8 +3667,7 @@ r.post('/projects/:id/filing', (req, res) => {
   const p = db.prepare('SELECT p.*, c.filing_json, c.name cname FROM projects p JOIN channels c ON c.id=p.channel_id WHERE p.id=?').get(req.params.id);
   if (!p) return res.status(404).json({ error: 'not found' });
   if (p.status !== '立项中') return res.status(400).json({ error: '仅「立项中」项目可提交立项备案' });
-  if (!requireRoles(user, res, ['team'], '立项备案材料须由项目联系人或项目团队上传发起')) return;
-  if (!canAccessProject(user, p)) return res.status(403).json({ error: '无权操作该项目' });
+  if (!requireProjectPerm(user, res, p, 'filing_upload', '立项备案须由本项目联系人发起')) return;
   const materials = req.body?.materials || J(p.filing_json, []);
   const materialUploads = req.body?.materialUploads || [];
   let linkedMats = [];
@@ -3048,8 +3712,7 @@ r.post('/projects/:id/accept-request', (req, res) => {
   const p = db.prepare('SELECT * FROM projects WHERE id=?').get(req.params.id);
   if (!p) return res.status(404).json({ error: 'not found' });
   if (!['实施中', '验收中'].includes(p.status)) return res.status(400).json({ error: '当前状态不可发起验收' });
-  if (!requireRoles(user, res, ['team'], '验收申请须由项目联系人或项目团队发起并上传材料')) return;
-  if (!canAccessProject(user, p)) return res.status(403).json({ error: '无权操作该项目' });
+  if (!requireProjectPerm(user, res, p, 'accept_apply', '验收申请须由本项目负责人发起')) return;
   const pre = acceptPrecheck(p.id);
   if (!pre.ok) return res.status(400).json({ error: '前置条件未满足，无法提交验收申请', checks: pre.checks });
   const stepTitles = ['项目团队提交验收申请', '二级单位管理团队初审'];
@@ -3084,8 +3747,7 @@ r.post('/projects/:id/assessments', (req, res) => {
   const user = currentUser(req);
   const p = db.prepare('SELECT p.*, c.assess_json, c.name cname FROM projects p JOIN channels c ON c.id=p.channel_id WHERE p.id=?').get(req.params.id);
   if (!p) return res.status(404).json({ error: 'not found' });
-  if (!requireRoles(user, res, ['team'], '评估检查必须由项目团队发起')) return;
-  if (!canAccessProject(user, p)) return res.status(403).json({ error: '无权操作该项目' });
+  if (!requireProjectPerm(user, res, p, 'assess_submit', '评估检查须由本项目负责人发起')) return;
   const types = J(p.assess_json, []);
   const { atype, stage = '申请', result = '', note = '', uploadId } = req.body || {};
   if (!types.includes(atype)) return res.status(400).json({ error: '评估检查类型必须来自该渠道配置' });
@@ -3128,8 +3790,10 @@ r.get('/projects/:id/contracts', (req, res) => {
 });
 
 r.post('/projects/:id/contracts', (req, res) => {
-  const user = currentUser(req); if (!requireRoles(user, res, ['team'], '外协合同由项目团队登记')) return;
-  const p = db.prepare('SELECT * FROM projects WHERE id=?').get(req.params.id); if (!p) return res.status(404).json({ error: 'not found' }); if (!canAccessProject(user, p)) return res.status(403).json({ error: '无权操作该项目' });
+  const user = currentUser(req);
+  const p = db.prepare('SELECT * FROM projects WHERE id=?').get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  if (!requireProjectPerm(user, res, p, 'contract_register', '外协合同须由本项目主管登记')) return;
   const { contractNo, supplierName, amount, startDate, endDate, paymentNodes = [], uploadId } = req.body || {};
   if (!contractNo || !supplierName || !uploadId) return res.status(400).json({ error: '合同编号、外协单位和真实合同文件均为必填项' });
   let linked; try { linked = archiveMaterialUploads({ pid: p.id, phase: '实施', requiredNames: ['科研外协合同'], materialUploads: [{ name: '科研外协合同', uploadId }], userName: user.name }); } catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
@@ -3141,8 +3805,9 @@ r.post('/projects/:id/contracts', (req, res) => {
 });
 
 r.post('/contracts/:id/accept', (req, res) => {
-  const user = currentUser(req); if (!requireRoles(user, res, ['team','mgmt'], '仅项目或管理团队可登记外协合同验收')) return;
+  const user = currentUser(req);
   const c = db.prepare('SELECT c.*,p.name pname,p.lead_unit_id,p.team_json FROM external_contracts c JOIN projects p ON p.id=c.project_id WHERE c.id=?').get(req.params.id); if (!c) return res.status(404).json({ error: 'not found' });
+  if (!requireProjectPerm(user, res, c, 'contract_register', '外协合同验收须由本项目主管登记')) return;
   const uploadId = Number(req.body?.uploadId); if (!uploadId) return res.status(400).json({ error: '必须上传合同验收结论' });
   try { archiveMaterialUploads({ pid: c.project_id, phase: '验收', requiredNames: ['外协合同验收结论'], materialUploads: [{ name: '外协合同验收结论', uploadId }], userName: user.name }); } catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
   db.prepare("UPDATE external_contracts SET acceptance_date=?,status='已验收' WHERE id=?").run(TODAY(), c.id);
@@ -3174,10 +3839,9 @@ const ri1200 = () => 800 + Math.floor(Math.random() * 4000);
 /** 年度目标和里程碑计划：团队提交，审批通过后才写入项目台账。 */
 r.post('/projects/:id/milestone-plan', (req, res) => {
   const user = currentUser(req);
-  if (!requireRoles(user, res, ['team'], '年度里程碑计划必须由项目团队发起')) return;
   const p = db.prepare('SELECT * FROM projects WHERE id=?').get(req.params.id);
   if (!p) return res.status(404).json({ error: 'not found' });
-  if (!canAccessProject(user, p)) return res.status(403).json({ error: '无权操作该项目' });
+  if (!requireProjectPerm(user, res, p, 'milestone_plan', '里程碑计划须由本项目技术负责人编制')) return;
   const year = Number(req.body?.year);
   const yearGoal = String(req.body?.yearGoal || '').trim();
   const milestones = Array.isArray(req.body?.milestones) ? req.body.milestones.map((m) => ({ title: String(m?.title || '').trim(), due: String(m?.due || '') })).filter((m) => m.title && /^\d{4}-\d{2}-\d{2}$/.test(m.due)) : [];
@@ -3229,10 +3893,9 @@ r.post('/projects/:id/packages', (req, res) => {
 // ---------- 里程碑 / 计划 ----------
 r.post('/milestones/:id/complete', (req, res) => {
   const user = currentUser(req);
-  if (!requireRoles(user, res, ['team'], '里程碑销项必须由项目团队发起')) return;
   const m = db.prepare('SELECT m.*, p.id AS project_pk, p.name pname, p.lead_unit_id, p.team_json FROM milestones m JOIN projects p ON p.id=m.project_id WHERE m.id=?').get(req.params.id);
   if (!m) return res.status(404).json({ error: 'not found' });
-  if (!canAccessProject(user, m)) return res.status(403).json({ error: '无权操作该项目里程碑' });
+  if (!requireProjectPerm(user, res, m, 'milestone_close', '里程碑销项须由本项目技术负责人发起')) return;
   if (m.done_at) return res.status(409).json({ error: '该里程碑已完成销项' });
   const uploadId = Number(req.body?.uploadId);
   if (!uploadId) return res.status(400).json({ error: '必须上传真实完成佐证材料' });
@@ -3248,7 +3911,8 @@ r.post('/milestones/:id/complete', (req, res) => {
 
 r.post('/packages/:id/progress', (req, res) => {
   const user = currentUser(req); const k = db.prepare('SELECT k.*,p.name pname,p.team_json,p.lead_unit_id FROM packages k JOIN projects p ON p.id=k.project_id WHERE k.id=?').get(req.params.id);
-  if (!k) return res.status(404).json({ error: 'not found' }); if (!['team','contact','mgmt'].includes(user.role)) return res.status(403).json({ error: '仅项目联系人、项目团队或管理团队可更新转化进展' });
+  if (!k) return res.status(404).json({ error: 'not found' });
+  if (!requireProjectPerm(user, res, k, 'transform_update', '成果转化进展须由本项目联系人或负责人更新')) return;
   const { status, actualDate, detail, uploadId } = req.body || {}; if (!['未启动','洽谈中','已签协议','已完成'].includes(status)) return res.status(400).json({ error: '无效转化状态' });
   if (status === '已完成' && (!actualDate || !uploadId)) return res.status(400).json({ error: '完成转化必须填写实际时间并上传成效佐证' });
   if (uploadId) try { archiveMaterialUploads({ pid: k.project_id, phase: '成果转化', requiredNames: ['转化进展佐证'], materialUploads: [{ name: '转化进展佐证', uploadId }], userName: user.name }); } catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
@@ -3257,21 +3921,24 @@ r.post('/packages/:id/progress', (req, res) => {
 
 // ---------- 交付物正式维护与审核 ----------
 r.post('/projects/:id/deliverables', (req, res) => {
-  const user = currentUser(req); if (!requireRoles(user, res, ['team'], '交付物由项目团队维护')) return; const p = db.prepare('SELECT * FROM projects WHERE id=?').get(req.params.id); if (!p || !canAccessProject(user, p)) return res.status(p ? 403 : 404).json({ error: p ? '无权操作该项目' : 'not found' });
+  const user = currentUser(req); const p = db.prepare('SELECT * FROM projects WHERE id=?').get(req.params.id); if (!p) return res.status(404).json({ error: 'not found' });
+  if (!requireProjectPerm(user, res, p, 'deliverable_manage', '交付物须由本项目技术负责人维护')) return;
   const { name, type, due, owners = [] } = req.body || {}; if (!name || !DELIV_TYPES.includes(type) || !due || !owners.length) return res.status(400).json({ error: '名称、有效类型、到期时间和至少一个权属均为必填项' });
   const x = db.prepare('INSERT INTO deliverables (project_id,name,type,due,owner) VALUES (?,?,?,?,?)').run(p.id, name, type, due, JSON.stringify(owners)); audit(user.name, '交付物新增', p.name, `${name}/${type}`); res.json({ ok: true, id: x.lastInsertRowid });
 });
 
 r.post('/deliverables/:id/deliver', (req, res) => {
-  const user = currentUser(req); if (!requireRoles(user, res, ['team'], '交付物交付由项目团队发起')) return; const d = db.prepare('SELECT d.*,p.id AS project_pk,p.name pname,p.team_json,p.lead_unit_id FROM deliverables d JOIN projects p ON p.id=d.project_id WHERE d.id=?').get(req.params.id); if (!d) return res.status(404).json({ error: 'not found' }); const uploadId=Number(req.body?.uploadId); if (!uploadId) return res.status(400).json({ error: '必须上传真实交付物及交付佐证' });
+  const user = currentUser(req); const d = db.prepare('SELECT d.*,p.id AS project_pk,p.name pname,p.team_json,p.lead_unit_id FROM deliverables d JOIN projects p ON p.id=d.project_id WHERE d.id=?').get(req.params.id); if (!d) return res.status(404).json({ error: 'not found' });
+  if (!requireProjectPerm(user, res, d, 'deliverable_manage', '交付物交付须由本项目技术负责人发起')) return; const uploadId=Number(req.body?.uploadId); if (!uploadId) return res.status(400).json({ error: '必须上传真实交付物及交付佐证' });
   let linked; try { linked=archiveMaterialUploads({ pid:d.project_id,phase:'验收',requiredNames:['交付物佐证'],materialUploads:[{name:'交付物佐证',uploadId}],userName:user.name }); } catch(e){return res.status(e.status||400).json({error:e.message});}
   try { newApproval({ type:'deliverable',title:`「${d.pname}」交付物审核（${d.name}）`,project:{...d,id:d.project_pk},initiator:user.name,stepTitles:['项目团队提交交付物','二级单位管理团队审核','总部管理团队确认'],payload:{deliverableId:d.id,evidenceFile:linked[0]?.file} }); } catch(e){return res.status(e.status||400).json({error:e.message});} res.json({ok:true,pendingApproval:true});
 });
 
 r.post('/plans/:id/finish', (req, res) => {
   const user = currentUser(req);
-  const p = db.prepare('SELECT pl.*, pr.name pname, pr.lead_unit_id FROM plans pl JOIN projects pr ON pr.id=pl.project_id WHERE pl.id=?').get(req.params.id);
+  const p = db.prepare('SELECT pl.*, pr.name pname, pr.lead_unit_id, pr.team_json FROM plans pl JOIN projects pr ON pr.id=pl.project_id WHERE pl.id=?').get(req.params.id);
   if (!p) return res.status(404).json({ error: 'not found' });
+  if (!requireProjectPerm(user, res, p, 'plan_manage', '计划办结须由本项目主管发起')) return;
   db.prepare("UPDATE plans SET status='办结审批中' WHERE id=?").run(p.id);
   const steps = [
     { title: '项目团队提交办结申请', assignee: user.name, status: 'approved', at: TODAY(), comment: '提交办结。' },
@@ -3286,11 +3953,10 @@ r.post('/plans/:id/finish', (req, res) => {
 // ---------- 变更 ----------
 r.post('/changes', (req, res) => {
   const user = currentUser(req);
-  if (!requireRoles(user, res, ['team'], '项目/数据变更必须由项目团队发起')) return;
   const { projectId, kind = '项目变更', category, detail, reason, uploadId, proposed = {} } = req.body || {};
   const p = db.prepare('SELECT * FROM projects WHERE id=?').get(projectId);
   if (!p) return res.status(400).json({ error: '项目不存在' });
-  if (!canAccessProject(user, p)) return res.status(403).json({ error: '无权操作该项目' });
+  if (!requireProjectPerm(user, res, p, 'change_submit', '项目变更须由本项目负责人发起')) return;
   const allowedKinds = ['项目变更', '数据变更'];
   const allowedCategories = ['延期', '经费', '外协方', '付款节点', '核心指标', '整体周期', '基础信息', '交付物'];
   if (!allowedKinds.includes(kind) || !allowedCategories.includes(category)) return res.status(400).json({ error: '请选择有效的变更类型和类别' });
@@ -3392,11 +4058,10 @@ r.post('/finance/budget', (req, res) => {
   const user = req.user || requireUser(req, res);
   if (!user) return;
   if (!assertWritable(user, res)) return;
-  if (!requireRoles(user, res, ['team'], '预算必须由项目团队发起，财务团队负责审核')) return;
   const { projectId, year, budget, milestone, milestoneId, note } = req.body || {};
   const p = db.prepare('SELECT * FROM projects WHERE id=?').get(projectId);
   if (!p) return res.status(400).json({ error: '项目不存在' });
-  if (!canAccessProject(user, p)) return res.status(403).json({ error: '无权操作该项目预算' });
+  if (!requireProjectPerm(user, res, p, 'funds_submit', '预算须由本项目财务岗位提报')) return;
   const b = Number(budget);
   if (b == null || b < 0) return res.status(400).json({ error: '请填写有效预算金额' });
   const y = Number(year) || Number(TODAY().slice(0, 4));
@@ -3561,9 +4226,9 @@ r.post('/collaborators/:id/evaluate', (req, res) => {
   if (!assertWritable(user, res)) return;
   const c = db.prepare('SELECT c.*, p.name pname FROM collaborators c JOIN projects p ON p.id=c.project_id WHERE c.id=?').get(req.params.id);
   if (!c) return res.status(404).json({ error: 'not found' });
-  if (!requireRoles(user, res, ['team'], '协作单位评价须由项目团队五维评分发起')) return;
   const p = db.prepare('SELECT * FROM projects WHERE id=?').get(c.project_id);
-  if (!canAccessProject(user, p)) return res.status(403).json({ error: '无权评价该项目协作单位' });
+  if (!p) return res.status(404).json({ error: 'not found' });
+  if (!requireProjectPerm(user, res, p, 'eval_collaborator', '协作评价须由本项目负责人发起')) return;
   const s = req.body?.scores || {};
   const uploadId = Number(req.body?.uploadId);
   if (!uploadId) return res.status(400).json({ error: '必须上传真实评价报告或佐证材料' });
@@ -4126,6 +4791,57 @@ r.post('/admin/users/:id/status', (req, res) => {
 
 
 // ---------- 成员管理 API（系统管理员）----------
+r.get('/rbac/duty-perms', (req, res) => {
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  res.json({
+    duties: PROJECT_DUTY_DEFS,
+    perms: PROJECT_PERM_DEFS,
+    matrix: loadDutyPermMatrix(),
+    defaults: DEFAULT_DUTY_PERMS,
+    viewAlways: PROJECT_VIEW_ALWAYS,
+    hint: '页签与概览字段始终可见，岗位矩阵只控制办理，不关闭信息。平台身份决定登录入口与组织范围；同一人在不同项目担任不同岗位时，办理权限随之不同。',
+  });
+});
+
+r.put('/rbac/duty-perms', (req, res) => {
+  const admin = assertAdminUser(req, res);
+  if (!admin) return;
+  const incoming = req.body?.matrix;
+  if (!incoming || typeof incoming !== 'object') return res.status(400).json({ error: '请提交岗位权限矩阵' });
+  const next = {};
+  for (const d of PROJECT_DUTY_DEFS) {
+    const arr = Array.isArray(incoming[d.key]) ? incoming[d.key] : [];
+    next[d.key] = arr.filter((code) => PROJECT_PERM_DEFS.some((p) => p.code === code));
+  }
+  db.prepare('INSERT INTO kv (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
+    .run(RBAC_DUTY_KV, JSON.stringify(next));
+  audit(admin.name, '岗位权限', '项目岗位功能矩阵', `已保存 ${PROJECT_DUTY_DEFS.length} 类岗位 × ${PROJECT_PERM_DEFS.length} 项功能`);
+  res.json({ ok: true, matrix: loadDutyPermMatrix() });
+});
+
+r.post('/rbac/duty-perms/reset', (req, res) => {
+  const admin = assertAdminUser(req, res);
+  if (!admin) return;
+  db.prepare('DELETE FROM kv WHERE key=?').run(RBAC_DUTY_KV);
+  audit(admin.name, '岗位权限', '项目岗位功能矩阵', '已恢复推荐默认矩阵');
+  res.json({ ok: true, matrix: loadDutyPermMatrix() });
+});
+
+r.get('/me/project-duties', (req, res) => {
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  res.json({ rows: listUserProjectDuties(user) });
+});
+
+r.get('/admin/users/:id/project-duties', (req, res) => {
+  const admin = assertAdminUser(req, res);
+  if (!admin) return;
+  const u = db.prepare('SELECT * FROM users WHERE id=?').get(req.params.id);
+  if (!u) return res.status(404).json({ error: '成员不存在' });
+  res.json({ user: publicUser(u), rows: listUserProjectDuties(publicUser(u)) });
+});
+
 r.get('/admin/users', (req, res) => {
   const admin = assertAdminUser(req, res);
   if (!admin) return;

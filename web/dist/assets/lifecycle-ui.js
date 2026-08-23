@@ -1,7 +1,16 @@
 (() => {
   'use strict';
   const API = '/api';
-  const token = () => localStorage.getItem('srpm.user') || '';
+  const token = () => {
+    const raw = localStorage.getItem('srpm.user') || sessionStorage.getItem('srpm.user') || '';
+    if (!raw) return '';
+    try {
+      const o = JSON.parse(raw);
+      return o.sessionToken || o.token || raw;
+    } catch {
+      return raw;
+    }
+  };
   const $ = (s, r = document) => r.querySelector(s);
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -59,6 +68,15 @@
 .lc-grid button{align-self:end;padding:8px 14px;border:0;border-radius:4px;background:#0759a6;color:#fff;cursor:pointer}
 .lc-toast{position:fixed;right:20px;top:20px;z-index:99999;background:#16835d;color:#fff;padding:10px 14px;border-radius:6px}
 .lc-toast.bad{background:#c53030}
+.lc-owners{position:relative;min-height:86px;margin:2px 0 6px}
+.lc-owner-col{position:absolute;top:0;width:18%;transform:translateX(-50%);text-align:center;padding:6px 6px 8px;border:1px solid transparent;border-radius:4px;background:transparent;cursor:pointer;appearance:none;font:inherit}
+.lc-owner-col:hover{border-color:#91CAFF;background:#F0F5FF}
+.lc-owner-col.current{border-color:#91CAFF;background:#F0F5FF}
+.lc-owner-col.done{opacity:.88}
+.lc-owner-col .k{display:block;font-size:10px;color:#8C8C8C;line-height:1.3;margin-top:2px}
+.lc-owner-col .v{display:block;font-size:12px;color:#262626;font-weight:600;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lc-owner-col .flow{color:#0064EF}
+.lc-owner-col .done-txt{color:#5B8C00}
 @media(max-width:900px){.lc-grid{grid-template-columns:1fr 1fr}}
 `;
     document.head.appendChild(st);
@@ -91,49 +109,88 @@
     return ({ current: '当前', done: '已完成', approved: '已办', pending: '待办', rejected: '驳回' })[st] || st || '';
   }
 
-  async function renderProjectStages(pid) {
+  const VIS_POS = ['8.42%', '29.21%', '50%', '70.79%', '91.58%'];
+
+  function personName(p) {
+    return (p && (p.name || p.label)) || '待指定';
+  }
+
+  function openStageDrawer(data, stage) {
+    const live = stage.liveApproval;
+    const head = live
+      ? `<div class="meta">${live.status === '审批中' ? '在途流程' : '最近流程'}：${esc(live.title)}（${esc(live.status)}）</div>`
+      : `<div class="meta">本阶段按渠道岗位链预排，尚未发起该阶段流程。</div>`;
+    const nodesHtml = (stage.flow || []).map((n) => `
+      <div class="node ${esc(n.status || '')}">
+        <b>${esc(n.title || '')}${n.status === 'current' ? ' · 当前' : ''}</b>
+        <div class="meta">${esc(n.dept || '')} · ${esc(n.owner?.label || n.owner?.name || '待指定')}
+          <br/>状态：${esc(statusLabel(n.status))}${n.at ? ' · ' + esc(n.at) : ''}${n.comment ? '<br/>意见：' + esc(n.comment) : ''}
+        </div>
+      </div>`).join('') || '<div class="meta">暂无节点</div>';
+    openDrawer(`${stage.name} · 责任与流向`, `
+      <div class="meta">${esc(data.code || '')} · ${esc(data.name || '')}</div>
+      <div class="node current"><b>本阶段负责</b><div class="meta">${esc(stage.ownerSlotLabel || '待指定')} · ${esc(personName(stage.owner))}</div></div>
+      <div class="node"><b>当前流向</b><div class="meta">${esc(stage.flowTo?.title || '—')} · ${esc(personName(stage.flowTo?.owner))}</div></div>
+      ${head}
+      <h2 style="font-size:14px;margin-top:12px">审签 / 办理链条</h2>
+      ${nodesHtml}
+    `);
+  }
+
+  async function renderProjectStageOwners(pid, svg) {
     const data = await api(`/projects/${pid}/lifecycle-stages`);
-    const chips = (data.macro || []).map((m) => `
-      <button type="button" class="lc-chip ${esc(m.status)}" data-macro="${esc(m.id)}">
-        <div class="n">${esc(m.name)}</div>
-        <div class="d">${esc(m.dept)}</div>
-        <div class="p">${esc(m.owner?.label || '待指定')}</div>
-        <div class="st">${esc(statusLabel(m.status))}</div>
-      </button>`).join('');
-
-    const bar = placeTop(`
-      <section class="lc-bar">
-        <h3>全生命周期阶段责任</h3>
-        <div class="lc-sub">点击阶段查看部门、负责人与当前审签节点详情（演示数据保留）</div>
-        <div class="lc-macro">${chips}</div>
-      </section>`, 'lc-stage-bar');
-    if (!bar) return;
-
-    bar.onclick = (e) => {
-      const btn = e.target.closest('[data-macro]');
+    const stages = Array.isArray(data.visual) && data.visual.length ? data.visual : [];
+    if (!stages.length) return false;
+    let box = document.getElementById('lc-stage-owners');
+    if (box && box.previousElementSibling !== svg) {
+      box.remove();
+      box = null;
+    }
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'lc-stage-owners';
+      svg.insertAdjacentElement('afterend', box);
+    }
+    box.className = 'lc-owners';
+    box.innerHTML = stages.map((s, i) => {
+      const flowTitle = s.status === 'done' ? '已办结' : (s.flowTo?.title || '待排程');
+      const flowName = s.status === 'done' ? '' : personName(s.flowTo?.owner);
+      return `
+        <button type="button" class="lc-owner-col ${esc(s.status)}" data-stage="${esc(s.id)}" style="left:${VIS_POS[i] || '50%'}" title="${esc(s.name)}：负责 ${esc(s.ownerSlotLabel || '')} ${esc(personName(s.owner))}；流向 ${esc(flowTitle)} ${esc(flowName)}">
+          <span class="k">负责 · ${esc(s.ownerSlotLabel || '待指定')}</span>
+          <span class="v">${esc(personName(s.owner))}</span>
+          <span class="k">流向 · ${esc(flowTitle)}</span>
+          <span class="v ${s.status === 'done' ? 'done-txt' : 'flow'}">${esc(flowName || (s.status === 'done' ? '—' : '待指定'))}</span>
+        </button>`;
+    }).join('');
+    box.onclick = (e) => {
+      const btn = e.target.closest('[data-stage]');
       if (!btn) return;
-      const m = (data.macro || []).find((x) => x.id === btn.dataset.macro);
-      if (!m) return;
-      const ap = data.approval;
-      let nodesHtml = '';
-      if (ap && ap.nodes && ap.nodes.length && (m.status === 'current' || ap.current)) {
-        nodesHtml = `<div class="meta">关联流程：${esc(ap.title)}（${esc(ap.status)}）</div>`
-          + ap.nodes.map((n) => `
-            <div class="node ${esc(n.status)}">
-              <b>${esc(n.title)}</b>
-              <div class="meta">${esc(n.dept)} · ${esc(n.owner?.label || '待指定')}<br/>状态：${esc(statusLabel(n.status))}${n.at ? ' · ' + esc(n.at) : ''}${n.comment ? '<br/>意见：' + esc(n.comment) : ''}</div>
-            </div>`).join('');
-      } else {
-        nodesHtml = `<div class="meta">${esc(m.detail?.summary || '')}</div>
-          <div class="node"><b>填报角色</b><div class="meta">${esc(m.filler)}</div></div>
-          <div class="node"><b>责任部门</b><div class="meta">${esc(m.dept)}</div></div>
-          <div class="node"><b>负责人</b><div class="meta">${esc(m.owner?.label || '待指定')}</div></div>
-          <div class="node"><b>项目状态</b><div class="meta">${esc(data.status)}</div></div>`;
-      }
-      // fill hints
-      const hints = (data.fillHints || []).map((h) => `<div class="node"><b>${esc(h.stage)}</b><div class="meta">谁填：${esc(h.filler)}<br/>字段：${esc(h.fields)}</div></div>`).join('');
-      openDrawer(m.name, `<div class="meta">${esc(data.code)} · ${esc(data.name)}</div>${nodesHtml}<h2 style="font-size:14px;margin-top:16px">填表分工（V19）</h2>${hints}`);
+      const stage = stages.find((x) => x.id === btn.dataset.stage);
+      if (stage) openStageDrawer(data, stage);
     };
+    svg.dataset.lcOwners = String(pid);
+    return true;
+  }
+
+  function injectTeamFlowLink(pid) {
+    const hd = [...document.querySelectorAll('.card-hd, header')].find((el) => {
+      const t = ((el.querySelector('h3,.card-title') || el).textContent || '').replace(/\s+/g, '');
+      return t === '项目团队';
+    });
+    if (!hd || hd.querySelector('#lc-flow-link')) return;
+    const btn = document.createElement('button');
+    btn.id = 'lc-flow-link';
+    btn.type = 'button';
+    btn.textContent = '查看审签流转';
+    btn.style.cssText = 'height:32px;padding:0 12px;border:1px solid #D9D9D9;background:#fff;color:#0064EF;border-radius:4px;font-size:13px;cursor:pointer;margin-left:auto';
+    btn.onclick = () => {
+      const col = document.querySelector('#lc-stage-owners .lc-owner-col.current') || document.querySelector('#lc-stage-owners .lc-owner-col');
+      if (col) col.click();
+    };
+    hd.style.display = hd.style.display || 'flex';
+    hd.style.alignItems = 'center';
+    hd.appendChild(btn);
   }
 
   async function renderDeclareHints() {
@@ -227,27 +284,44 @@
     if (!token()) return;
     ensureStyle();
     const path = location.pathname;
-    if (path === last) return;
-    last = path;
-
     const m = path.match(/^\/projects\/(\d+)/);
-    if (m) {
-      try { await renderProjectStages(m[1]); } catch (e) { console.warn('lifecycle stages', e); }
-    } else {
-      $('#lc-stage-bar')?.remove();
+    $('#lc-stage-bar')?.remove();
+
+    if (!m) {
+      $('#lc-stage-owners')?.remove();
+      if (path === last) return;
+      last = path;
+      if (path.startsWith('/declare')) {
+        try { await renderDeclareHints(); } catch (_) {}
+      }
+      if (path.startsWith('/milestones')) {
+        try { await renderMilestonePanels(); } catch (e) { console.warn('milestone panels', e); }
+      }
+      return;
     }
 
-    if (path.startsWith('/declare')) {
-      try { await renderDeclareHints(); } catch (_) {}
+    last = path;
+    const svg = document.querySelector('svg[aria-label="项目全生命周期阶段"]');
+    const box = document.getElementById('lc-stage-owners');
+    if (svg && box && svg.dataset.lcOwners === m[1] && box.previousElementSibling === svg) {
+      try { injectTeamFlowLink(m[1]); } catch (_) {}
+      return;
     }
-
-    if (path.startsWith('/milestones')) {
-      try { await renderMilestonePanels(); } catch (e) { console.warn('milestone panels', e); }
-    }
+    if (!svg) return;
+    try { await renderProjectStageOwners(m[1], svg); } catch (e) { console.warn('stage owners', e); }
+    try { injectTeamFlowLink(m[1]); } catch (_) {}
   }
 
   new MutationObserver(() => {
-    if (location.pathname !== last) run();
+    const path = location.pathname;
+    if (path !== last) run();
+    else if (/^\/projects\/\d+/.test(path)) {
+      if (!document.getElementById('lc-stage-owners')) run();
+      else {
+        const id = (path.match(/^\/projects\/(\d+)/) || [])[1];
+        if (id) injectTeamFlowLink(id);
+      }
+    }
   }).observe(document.body, { childList: true, subtree: true });
   run();
 })();

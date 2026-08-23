@@ -1,11 +1,12 @@
-# 科研项目信息化管理平台 18087
-# 数据卷：platform_srpm-data（external）
-# 本机若 docker-compose 异常，请改用：sudo bash ./install-manual.sh
-# 禁止：docker-compose down -v / docker volume rm platform_srpm-data（有数据时）
+# 科研项目信息化管理平台
+# 禁止：docker compose down -v / docker volume rm platform_srpm-data（有数据时）
+# 推荐安装：sudo bash ./install.sh
 services:
   srpm:
-    image: srpm-platform:migration-legacy-20260807
+    build: .
+    image: srpm-platform:20260821
     container_name: srpm-18087
+    restart: unless-stopped
     ports:
       - "${SRPM_PORT:-18087}:8787"
     environment:
@@ -14,16 +15,10 @@ services:
       PORT: "8787"
       NODE_ENV: production
       SRPM_DB_FILE: ${SRPM_DB_FILE:-srpm.db}
-      AI_PROVIDER: ${AI_PROVIDER:-openai}
-      AI_API_KEY: ${GLM_API_KEY:-${AI_API_KEY:-}}
-      AI_BASE_URL: ${AI_BASE_URL:-https://open.bigmodel.cn/api/paas/v4}
-      AI_MODEL: ${AI_MODEL:-glm-5.2}
     volumes:
       - platform_srpm-data:/app/server/data
       - ./backups:/app/server/backups
-    restart: unless-stopped
 
 volumes:
   platform_srpm-data:
     name: platform_srpm-data
-    external: true

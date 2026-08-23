@@ -80,9 +80,62 @@
     .req { color: #F5222D; }
     .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
     .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+    .drawer-mask {
+      position: fixed; inset: 0; background: rgba(15, 23, 42, .45);
+      display: none; justify-content: flex-end; z-index: 60;
+    }
+    .drawer-mask.show { display: flex; }
+    .drawer {
+      width: min(70%, 1080px); height: 100%; background: #fff;
+      box-shadow: -8px 0 24px rgba(31,31,31,.12);
+      display: flex; flex-direction: column;
+    }
+    .drawer-hd {
+      padding: 16px 20px; border-bottom: 1px solid var(--line);
+      display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+    }
+    .drawer-hd h2 { margin: 0; font-size: 16px; color: #1F1F1F; }
+    .drawer-hd p { margin: 6px 0 0; font-size: 12px; color: var(--muted); line-height: 1.6; max-width: 760px; }
+    .drawer-bd { flex: 1; overflow: auto; padding: 16px 20px; }
+    .drawer-ft {
+      padding: 12px 20px; border-top: 1px solid var(--line);
+      display: flex; justify-content: flex-end; gap: 8px;
+    }
+    .matrix { border: 1px solid var(--line); border-radius: 4px; overflow: auto; }
+    .matrix table { min-width: 920px; }
+    .matrix th, .matrix td { white-space: nowrap; }
+    .matrix th.sticky, .matrix td.sticky {
+      position: sticky; left: 0; background: #fff; z-index: 1;
+      min-width: 120px; box-shadow: 4px 0 8px rgba(31,31,31,.04);
+    }
+    .matrix thead th { position: sticky; top: 0; z-index: 2; }
+    .matrix thead th.sticky { z-index: 3; }
+    .matrix td { text-align: center; }
+    .matrix td.sticky { text-align: left; }
+    .group-tag { font-size: 11px; color: var(--muted); margin-right: 6px; }
+    .duty-box {
+      grid-column: 1 / -1; margin-top: 4px; padding: 12px;
+      background: #F5F7FA; border: 1px solid var(--line); border-radius: 4px;
+    }
+    .duty-box h3 { margin: 0 0 6px; font-size: 13px; color: #1F1F1F; }
+    .duty-box ul { margin: 0; padding-left: 18px; font-size: 12px; color: #262626; }
+    .lock-box {
+      margin-bottom: 16px; padding: 12px 16px;
+      background: #F5F7FA; border: 1px solid var(--line); border-radius: 4px;
+    }
+    .lock-box h3 { margin: 0 0 8px; font-size: 13px; color: #1F1F1F; }
+    .lock-box p { margin: 0 0 8px; font-size: 12px; color: var(--muted); line-height: 1.6; }
+    .lock-box .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      display: inline-flex; align-items: center; height: 28px; padding: 0 10px;
+      background: #fff; border: 1px solid var(--line); border-radius: 4px;
+      font-size: 12px; color: #262626;
+    }
+    .chip.lock { color: #0048A0; border-color: #91CAFF; background: #E6F4FF; }
     @media (max-width: 720px) {
       .grid { grid-template-columns: 1fr; }
       .hd { flex-direction: column; }
+      .drawer { width: 100%; }
     }
   </style>
 </head>
@@ -91,10 +144,11 @@
     <div class="hd">
       <div>
         <h1>成员管理</h1>
-        <p>工号为 6 位数字账号；新建时初始密码默认等于工号。可增删改成员并重置密码。</p>
+        <p>平台身份决定登录入口与组织可见范围；项目内操作按「本项目岗位」授权。同一人可在 A 项目当负责人、在 B 项目当联系人，权限随岗位变化。</p>
       </div>
       <div class="actions">
         <button class="btn" id="btnReload">刷新</button>
+        <button class="btn" id="btnRbac">项目岗位权限</button>
         <button class="btn primary" id="btnCreate">新增成员</button>
       </div>
     </div>
@@ -105,7 +159,7 @@
           <tr>
             <th>工号</th>
             <th>姓名</th>
-            <th>角色</th>
+            <th>平台身份</th>
             <th>范围</th>
             <th>单位</th>
             <th>职务</th>
@@ -131,10 +185,10 @@
         <label>姓名
           <input id="f_name" placeholder="姓名" />
         </label>
-        <label>角色
+        <label>平台身份
           <select id="f_role">
             <option value="team">项目团队</option>
-            <option value="contact">项目联系人</option>
+            <option value="contact">项目团队 · 联系人</option>
             <option value="mgmt">管理团队</option>
             <option value="finance">财务</option>
             <option value="chief">责任总师</option>
@@ -183,6 +237,11 @@
             <select id="f_form_keys" multiple></select>
           </label>
         </div>
+        <div class="duty-box" id="dutyBox" style="display:none">
+          <h3>本人口径 · 项目岗位任职</h3>
+          <p class="hint" style="margin:0 0 8px">以下来自各项目团队名单（team），不是平台身份。空表示尚未绑定到任何项目岗位。</p>
+          <ul id="dutyList"></ul>
+        </div>
       </div>
       <div class="hint" id="dialogHint">新建账号初始密码 = 工号</div>
       <div class="dialog-actions">
@@ -192,8 +251,28 @@
     </div>
   </div>
 
+  <div class="drawer-mask" id="rbacMask">
+    <div class="drawer" role="dialog" aria-labelledby="rbacTitle">
+      <div class="drawer-hd">
+        <div>
+          <h2 id="rbacTitle">项目岗位功能权限</h2>
+          <p>页签与概览字段始终展示，不随岗位关闭。下方矩阵只控制「能不能办理」，不控制「能不能看见」。总师/管理岗默认走审批节点。保存后立即对全部项目生效，不写台账。</p>
+        </div>
+        <button class="btn" id="btnRbacClose">关闭</button>
+      </div>
+      <div class="drawer-bd">
+        <div class="lock-box" id="rbacLock"></div>
+        <div class="matrix" id="rbacMatrix"><p class="hint">加载中…</p></div>
+      </div>
+      <div class="drawer-ft">
+        <button class="btn" id="btnRbacReset">恢复推荐默认</button>
+        <button class="btn primary" id="btnRbacSave">保存矩阵</button>
+      </div>
+    </div>
+  </div>
+
   <script>
-    const ROLE_LABEL = { team:'项目团队', contact:'项目联系人', mgmt:'管理团队', finance:'财务', chief:'责任总师', leader:'领导', admin:'系统管理员' };
+    const ROLE_LABEL = { team:'项目团队', contact:'项目团队', mgmt:'管理团队', finance:'财务', chief:'责任总师', leader:'领导', admin:'系统管理员' };
     const SCOPE_LABEL = { self:'个人', unit:'本单位', hq:'总部', chief:'总师' };
     const FORM_SCOPE_LABEL = {
       hq: '总部（全部台账）',
@@ -326,7 +405,21 @@
       document.getElementById('f_form_access').value = Number(row?.form_access) === 1 ? '1' : '0';
       document.getElementById('f_form_scope').value = row?.form_scope || 'hq';
       syncFormExtra(row);
+      const dutyBox = document.getElementById('dutyBox');
+      const dutyList = document.getElementById('dutyList');
+      dutyBox.style.display = row ? '' : 'none';
+      dutyList.innerHTML = row ? '<li>加载任职…</li>' : '';
       document.getElementById('mask').classList.add('show');
+      if (row) {
+        api('/admin/users/' + encodeURIComponent(row.id) + '/project-duties').then((d) => {
+          const rows = d.rows || [];
+          dutyList.innerHTML = rows.length
+            ? rows.map((x) => `<li>${x.name}（${x.code || x.projectId} · ${x.status}）— ${x.labels.join('、')}</li>`).join('')
+            : '<li>尚未绑定到任何项目岗位。请在项目「完善基本信息」中指定。</li>';
+        }).catch((err) => {
+          dutyList.innerHTML = `<li>${err.message || '任职查询失败'}</li>`;
+        });
+      }
     }
 
     function closeDialog() {
@@ -384,7 +477,7 @@
         if (isNew && !document.getElementById('f_title').value.trim()) {
           document.getElementById('f_title').value = '项目联系人';
         }
-        document.getElementById('dialogHint').textContent = '项目联系人：发起审批、上传审批材料；默认仅看本人关联项目。';
+        document.getElementById('dialogHint').textContent = '项目联系人属于项目团队：发起审批、上传审批材料；默认仅看本人关联项目。';
       }
     }
 
@@ -392,6 +485,82 @@
     document.getElementById('btnReload').onclick = load;
     document.getElementById('btnCreate').onclick = () => openDialog(null);
     document.getElementById('btnCancel').onclick = closeDialog;
+
+    let rbacState = null;
+    function renderRbac(data) {
+      rbacState = data;
+      const view = data.viewAlways || {};
+      const tabs = (view.tabs || []).map((t) => `<span class="chip lock">${t.label}</span>`).join('');
+      const fields = (view.overviewFields || []).map((f) => `<span class="chip lock">${f}</span>`).join('');
+      document.getElementById('rbacLock').innerHTML = `
+        <h3>始终可见（进入项目即可，岗位无权关闭）</h3>
+        <p>与项目详情一致：页签与「项目信息」字段全部保留。空值显示为「—」，不是丢失。</p>
+        <p>页签</p>
+        <div class="chips">${tabs || '—'}</div>
+        <p style="margin-top:8px">概览 · 项目信息</p>
+        <div class="chips">${fields || '—'}</div>`;
+      const groups = [...new Set((data.perms || []).map((p) => p.group))];
+      const head = groups.map((g) => {
+        const cols = data.perms.filter((p) => p.group === g);
+        return `<th colspan="${cols.length}">${g}</th>`;
+      }).join('');
+      const sub = data.perms.map((p) => `<th>${p.label}</th>`).join('');
+      const body = (data.duties || []).map((d) => {
+        const set = new Set((data.matrix[d.key] || []));
+        const cells = data.perms.map((p) =>
+          `<td><input type="checkbox" data-duty="${d.key}" data-perm="${p.code}" ${set.has(p.code) ? 'checked' : ''}></td>`
+        ).join('');
+        return `<tr><td class="sticky"><span class="group-tag">${d.group}</span>${d.label}</td>${cells}</tr>`;
+      }).join('');
+      document.getElementById('rbacMatrix').innerHTML = `
+        <table>
+          <thead>
+            <tr><th class="sticky" rowspan="2">项目岗位</th>${head}</tr>
+            <tr>${sub}</tr>
+          </thead>
+          <tbody>${body}</tbody>
+        </table>`;
+    }
+    function collectMatrix() {
+      const matrix = {};
+      (rbacState.duties || []).forEach((d) => { matrix[d.key] = []; });
+      document.querySelectorAll('#rbacMatrix input[type=checkbox]').forEach((el) => {
+        if (el.checked) matrix[el.getAttribute('data-duty')].push(el.getAttribute('data-perm'));
+      });
+      return matrix;
+    }
+    async function openRbac() {
+      const data = await api('/rbac/duty-perms');
+      renderRbac(data);
+      document.getElementById('rbacMask').classList.add('show');
+    }
+    function closeRbac() {
+      document.getElementById('rbacMask').classList.remove('show');
+    }
+    document.getElementById('btnRbac').onclick = () => openRbac().catch((e) => showMsg(e.message || String(e), false));
+    document.getElementById('btnRbacClose').onclick = closeRbac;
+    document.getElementById('rbacMask').addEventListener('click', (e) => {
+      if (e.target.id === 'rbacMask') closeRbac();
+    });
+    document.getElementById('btnRbacSave').onclick = async () => {
+      try {
+        await api('/rbac/duty-perms', { method: 'PUT', body: { matrix: collectMatrix() } });
+        showMsg('项目岗位权限已保存，立即按各项目任职生效');
+        closeRbac();
+      } catch (e) {
+        showMsg(e.message || String(e), false);
+      }
+    };
+    document.getElementById('btnRbacReset').onclick = async () => {
+      if (!confirm('确认恢复推荐默认矩阵？将覆盖当前勾选。')) return;
+      try {
+        const data = await api('/rbac/duty-perms/reset', { method: 'POST', body: {} });
+        renderRbac({ ...rbacState, matrix: data.matrix });
+        showMsg('已恢复推荐默认矩阵，请核对后保存或直接使用');
+      } catch (e) {
+        showMsg(e.message || String(e), false);
+      }
+    };
     document.getElementById('f_unit').onchange = () => syncFormExtra();
     document.getElementById('f_form_access').onchange = () => syncFormScope();
     document.getElementById('f_form_scope').onchange = () => syncFormScope();

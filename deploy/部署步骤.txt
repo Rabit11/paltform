@@ -1,188 +1,78 @@
-# 科研项目信息化管理平台（18087）部署步骤
+科研项目信息化管理平台 — 目标机部署步骤
+日期：2026-08-21
 
-对照桌面「部署」目录（表单维护 8092）同款结构，本目录用于把 36 服务器 :18087 平台离线部署到新机器。
+一、目标机前提
+1. Linux x86_64，已安装 Docker。
+2. 表单维护工具已在本机运行，默认容器名 form-maintenance-8092，端口 8092。
+3. 本平台将占用端口 18087。若被占用，改 .env 里 SRPM_PORT 后再装。
+4. 不要动 8092 的数据卷（常见名 fm8092-data）。不要 docker compose down -v。
 
----
+二、上传
+把整个「SRPM-目标机部署包」目录拷到目标机，例如：
+  scp -r "SRPM-目标机部署包" user@目标机:/opt/srpm
+或用 U 盘拷到 /opt/srpm。
 
-## 一、本目录文件说明
+三、安装平台（不含演示项目）
+  cd /opt/srpm
+  chmod +x *.sh
+  test -f .env || cp .env.example .env
+  sudo bash ./install.sh
 
-| 文件 | 作用 |
-|------|------|
-| `srpm-platform-app-18087.tar.gz` | Docker 离线镜像 |
-| `srpm-platform-data.tar.gz` | 业务数据快照（SQLite + uploads） |
-| `docker-compose.yml` | 编排文件（端口默认 18087） |
-| `.env` | 环境变量（端口 / AI 等） |
-| `install-first-deploy.sh` | **推荐**：首次部署（`docker-compose`） |
-| `install-manual.sh` | 备用：不依赖 compose，用 `docker run` |
-| `update-image.sh` | 换镜像（保留数据卷） |
-| `stop.sh` | 删容器、**不删**数据卷 |
-| `DATA_ISOLATION.txt` | 数据隔离约定 |
-| `scripts/safe-update.sh` | 先导出再更新镜像 |
-| `scripts/export-business-data.sh` | 导出业务数据 |
-| `scripts/import-business-data.sh` | 导入业务数据 |
-| `scripts/restore-data-snapshot.sh` | 按快照恢复卷 |
+完成后：
+- 容器 srpm-18087 在跑
+- 数据在 Docker 卷 platform_srpm-data
+- 已有 7 个单位、渠道字典、12 个可登录账户
+- 项目表为空，表单台账尚未接入
 
-命名对照（相对 8092 包）：
+四、接入本机 8092 表单库（必须做）
+原则：只导出台账行，写入本平台 srpm.db 的 kv 键 transition.records.v19。
+禁止把 8092 的 platform.db 整库拷进 18087。
 
-| 8092（表单维护） | 本包（科研平台） |
-|------------------|------------------|
-| `form-maintenance-app-8092.tar.gz` | `srpm-platform-app-18087.tar.gz` |
-| `form-maintenance-data.tar.gz` | `srpm-platform-data.tar.gz` |
-| 容器 `form-maintenance-8092` | 容器 `srpm-18087` |
-| 卷 `fm8092-data` | 卷 `platform_srpm-data` |
-| 端口 `8092` | 端口 `18087` |
+  sudo bash ./attach-form-ledger.sh
 
----
+若 8092 容器名不是 form-maintenance-8092：
+  sudo FORM_CONTAINER=实际容器名 bash ./attach-form-ledger.sh
 
-## 二、新服务器前置条件
+脚本会：只读导出 8092 行 → 写入 18087 → 清演示项目 → 保留 12 个账户。
+8092 容器不重启、数据卷不改。
 
-1. Linux x86_64，已装 Docker，**Docker 服务正常**（`sudo docker info` 能通）
-2. 已装独立命令 **`docker-compose`**（不是 `docker compose`）
-3. 端口 `18087` 空闲，防火墙已放行（如需外网访问）
+五、验收
+  sudo bash ./verify.sh
 
-检查：
+浏览器：
+  http://目标机IP:18087/
+  工号 100001  密码 100001
+  强制刷新（Ctrl+F5）
+  核对：项目台账、成果转化、表单维护 行数与 http://目标机IP:8092/ 一致。
 
-```bash
-sudo docker info
-docker-compose --version
-ss -lntp | grep 18087 || true
-```
+登录页只有工号和密码，没有「展开角色快速入口」。
 
-若 Docker 起不来，先修复守护进程，再部署（不要硬跑安装脚本）。
+六、12 个可登录账户（初始密码 = 工号）
+工号     姓名         角色         范围     单位         表单维护
+100001   系统管理员   系统管理员   总部     总部科技部   全部
+100002   周明远       领导         总部     总部科技部   无
+100003   王建国       管理团队     总部     总部科技部   总部全部台账
+100004   何雨桐       管理团队     总部     总部科技部   总部全部台账
+100005   方致远       管理团队     本单位   上飞院       无
+100006   田念慈       管理团队     本单位   上飞院       无
+100007   陈铁军       责任总师     总师     总部科技部   无
+100008   蔡文渊       责任总师     总师     上飞院       无
+100009   赵美玲       财务         本单位   上飞公司     无
+100010   毕仲文       财务         本单位   上飞院       无
+100011   龚雪君       财务         本单位   上飞院       无
+100012   林晚晴       项目团队     个人     上飞院       无
 
----
+登录后，系统管理员可在「成员管理」里改权限、重置密码。
 
-## 三、上传本目录
+七、禁止事项
+- docker compose down -v
+- docker volume rm platform_srpm-data（有业务数据时）
+- 合并 sqlite 文件（platform.db 与 srpm.db 不是同一套库）
+- 停 8092、改 8092 卷、两边同时改同一张表单
 
-把整个 `部署` 文件夹上传到新服务器，例如：
-
-```bash
-# 本机 PowerShell 示例
-scp -r .\部署 root@新服务器IP:/opt/srpm-18087
-```
-
-或用 FileZilla 上传到 `~/srpm/` 之类目录。
-
-服务器上确认：
-
-```bash
-cd /opt/srpm-18087   # 按实际上传路径调整
-ls -lh
-# 应能看到镜像包、数据包、docker-compose.yml、.env、*.sh
-```
-
----
-
-## 四、首次部署（推荐，与 8092 同习惯）
-
-```bash
-cd /opt/srpm-18087
-chmod +x *.sh scripts/*.sh
-sudo bash ./install-first-deploy.sh
-```
-
-脚本会依次：
-
-1. `docker load` 导入镜像  
-2. 创建卷 `platform_srpm-data`  
-3. 导入 `srpm-platform-data.tar.gz`  
-4. **`docker-compose --env-file .env up -d`**  
-5. 健康检查 `http://127.0.0.1:18087/`
-
-成功后访问：
-
-```text
-http://新服务器IP:18087/
-账号：u_hq
-密码：Srpm@2026
-```
-
----
-
-## 五、备用方式（不用 docker-compose）
-
-compose 异常时：
-
-```bash
-sudo bash ./install-manual.sh
-```
-
-等价于纯 `docker run` 启动，数据卷名仍是 `platform_srpm-data`。
-
----
-
-## 六、日常运维（docker-compose）
-
-```bash
-cd /opt/srpm-18087
-
-# 查看
-sudo docker-compose --env-file .env ps
-sudo docker logs --tail 100 srpm-18087
-
-# 停止 / 启动（不删卷）
-sudo docker-compose --env-file .env stop
-sudo docker-compose --env-file .env start
-
-# 仅删容器、保留数据
-sudo bash ./stop.sh
-```
-
-**禁止：**
-
-```bash
-docker-compose down -v
-docker volume rm platform_srpm-data
-```
-
----
-
-## 七、更新镜像（保留业务数据）
-
-```bash
-# 方式 A：推荐安全更新（先导出再 recreate）
-sudo bash ./scripts/safe-update.sh ./srpm-platform-app-18087.tar.gz
-
-# 方式 B：直接换镜像重建容器
-sudo bash ./update-image.sh ./新镜像.tar.gz
-```
-
----
-
-## 八、导出 / 回滚业务数据
-
-```bash
-# 导出
-sudo bash ./scripts/export-business-data.sh
-
-# 回滚到某次导出
-sudo bash ./scripts/import-business-data.sh ./data-exports/business-data_时间戳.tar.gz
-```
-
----
-
-## 九、改端口
-
-编辑 `.env`：
-
-```dotenv
-SRPM_PORT=18087
-```
-
-然后：
-
-```bash
-sudo docker-compose --env-file .env up -d
-```
-
----
-
-## 十、与旧迁移包关系
-
-本目录由 `srpm-platform-migration` 资产按「桌面/部署」风格重排得到。  
-若只有旧目录结构，也可把镜像/数据放到本目录根：
-
-- `assets/srpm-platform-migration-image.tar.gz` → `srpm-platform-app-18087.tar.gz`
-- `assets/platform-srpm-data.tar.gz` → `srpm-platform-data.tar.gz`
-
-安装脚本也会自动识别 `assets/` 下旧文件名。
+八、卸载（仅空跑测试时）
+先停平台，不要带 -v：
+  docker stop srpm-18087 && docker rm srpm-18087
+有确认要扔掉平台库时才：
+  docker volume rm platform_srpm-data
+8092 始终不要删。
