@@ -1,0 +1,23 @@
+# 仅作对照。正式安装请用 ./install.sh（会创建数据卷，不删 8092）。
+# 禁止：docker compose down -v
+services:
+  srpm:
+    build: .
+    image: srpm-platform:20260827
+    container_name: srpm-18087
+    restart: unless-stopped
+    ports:
+      - "${SRPM_PORT:-18087}:8787"
+    environment:
+      TZ: Asia/Shanghai
+      HOST: "0.0.0.0"
+      PORT: "8787"
+      NODE_ENV: production
+      SRPM_DB_FILE: srpm.db
+    volumes:
+      - platform_srpm-data:/app/server/data
+      - ./backups:/app/server/backups
+
+volumes:
+  platform_srpm-data:
+    name: platform_srpm-data

@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>项目基本信息补充 · SRPM</title>
+  <style>
+    :root { --bg:#f5f7fa; --card:#fff; --line:#e5eaf2; --text:#1f2a37; --muted:#8c8c8c; --accent:#0064ef; --red:#e11d48; --green:#059669; --comac:#0048a0; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg); color:var(--text); font-size:13px; }
+    body.embed { background:transparent; padding:0; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 16px; }
+    h1 { margin:0; font-size:18px; }
+    .sub { color:var(--muted); margin-top:4px; font-size:12px; line-height:1.5; }
+    .banner { margin:12px 0; padding:10px 12px; border-radius:8px; background:#eff6ff; color:#1e40af; line-height:1.55; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:12px; }
+    .card h2 { margin:0 0 10px; font-size:14px; color:var(--comac); }
+    .hint { font-size:11px; color:var(--muted); margin:-4px 0 10px; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+    label { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--muted); }
+    label.req span::after { content:" *"; color:var(--red); }
+    input, select, textarea {
+      height:34px; border:1px solid var(--line); border-radius:4px; padding:0 10px;
+      font-size:13px; color:var(--text); background:#fff;
+    }
+    textarea { height:auto; min-height:72px; padding:8px 10px; resize:vertical; }
+    input:disabled, textarea:disabled, select:disabled { background:#f1f5f9; color:#64748b; }
+    .sys { background:#f8fafc !important; }
+    .actions { display:flex; justify-content:flex-end; gap:8px; margin-top:8px; }
+    .btn { height:32px; padding:0 14px; border-radius:4px; border:1px solid var(--line); background:#fff; cursor:pointer; }
+    .btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .btn:disabled { opacity:.5; cursor:not-allowed; }
+    .msg { margin:8px 0; padding:8px 10px; border-radius:6px; display:none; }
+    .msg.show { display:block; }
+    .msg.ok { background:#ecfdf5; color:var(--green); }
+    .msg.err { background:#fff1f2; color:var(--red); }
+    .check { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+    .tag { padding:2px 8px; border-radius:999px; font-size:11px; background:#f1f5f9; color:#475569; }
+    .tag.bad { background:#fff1f2; color:var(--red); }
+    .tag.ok { background:#ecfdf5; color:var(--green); }
+    .tag.sys { background:#eef2ff; color:#3730a3; }
+    @media (max-width:720px){ .grid,.grid3{ grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>项目基本信息补充建档</h1>
+    <div class="sub">V19：立项已有数据系统回显；缺失项由<strong>项目团队</strong>在<strong>实施阶段</strong>补充。岗位须绑定平台在岗账号姓名；提交后经单位内部审签，通过后回写台账。</div>
+    <div class="banner" id="stageBanner">加载中…</div>
+    <div class="msg" id="msg"></div>
+
+    <div class="card">
+      <h2>项目所属信息</h2>
+      <div class="hint">编号/预警/成果转化为系统生成；级别/渠道在立项申报确定。</div>
+      <div class="grid">
+        <label>项目编号（系统）<input id="code" class="sys" disabled /></label>
+        <label>级别（立项）<input id="level" class="sys" disabled /></label>
+        <label>项目渠道（立项）<input id="channel" class="sys" disabled /></label>
+        <label>总经费（万元）<input id="budget" type="number" step="0.1" /></label>
+        <label>一级专业
+          <select id="major1"><option value="">请选择</option></select>
+        </label>
+        <label>二级专业
+          <select id="major2"><option value="">请先选一级专业</option></select>
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>项目基础与分工</h2>
+      <div class="hint">名称/目标/周期等立项带入；参研单位与分工可在此补全。</div>
+      <div class="grid">
+        <label class="req" style="grid-column:1/-1"><span>项目名称</span><input id="name" /></label>
+        <label class="req" style="grid-column:1/-1"><span>项目目标</span><textarea id="goal"></textarea></label>
+        <label><span>年度目标</span><textarea id="yearGoal" placeholder="本年度拟完成的科研任务"></textarea></label>
+        <label><span>开始日期</span><input id="start" type="date" /></label>
+        <label><span>结束日期</span><input id="end" type="date" /></label>
+        <label style="grid-column:1/-1"><span>参研单位与分工（每行：单位名：工作内容）</span>
+          <textarea id="partners" placeholder="例如：&#10;上海飞机制造有限公司：翼尖试验"></textarea>
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>技术团队 / 责任专家 / 管理与财务</h2>
+      <div class="hint">请从下拉建议中选择<strong>平台在岗姓名</strong>（勿手写工号括号）。标 * 为提交必填。</div>
+      <datalist id="peopleList"></datalist>
+      <div class="grid3">
+        <label class="req"><span>项目负责人</span><input id="owner" list="peopleList" autocomplete="off" /></label>
+        <label class="req"><span>技术负责人</span><input id="tech" list="peopleList" autocomplete="off" /></label>
+        <label class="req"><span>项目主管</span><input id="pm" list="peopleList" autocomplete="off" /></label>
+        <label class="req"><span>一级总师</span><input id="chief1" list="peopleList" autocomplete="off" /></label>
+        <label class="req"><span>二级总师</span><input id="chief2" list="peopleList" autocomplete="off" /></label>
+        <label><span>总部处室处长</span><input id="hqHead" list="peopleList" autocomplete="off" /></label>
+        <label><span>总部处室主管</span><input id="hqStaff" list="peopleList" autocomplete="off" /></label>
+        <label class="req"><span>单位科技部长</span><input id="unitDeptHead" list="peopleList" autocomplete="off" /></label>
+        <label><span>单位科技主管</span><input id="unitStaff" list="peopleList" autocomplete="off" /></label>
+        <label><span>总部财务主管</span><input id="finHq" list="peopleList" autocomplete="off" /></label>
+        <label><span>单位财务部长</span><input id="finHead" list="peopleList" autocomplete="off" /></label>
+        <label><span>单位财务主管</span><input id="finStaff" list="peopleList" autocomplete="off" /></label>
+      </div>
+      <div class="check" id="checklist"></div>
+    </div>
+
+    <div class="actions">
+      <button class="btn" id="btnBack">返回</button>
+      <button class="btn primary" id="btnSubmit">提交审签（项目团队）</button>
+    </div>
+  </div>
+
+  <script>
+    const qs = new URLSearchParams(location.search);
+    const pid = qs.get('id') || qs.get('projectId');
+    const token = localStorage.getItem('srpm.user') || '';
+    if (qs.get('embed') === '1') document.body.classList.add('embed');
+    const $ = (id) => document.getElementById(id);
+    let majorMap = {};
+    let nameByLabel = {};
+    let project = null;
+
+    function msg(text, ok=true) {
+      const el = $('msg');
+      el.className = 'msg show ' + (ok ? 'ok' : 'err');
+      el.textContent = text;
+    }
+
+    async function api(path, opts={}) {
+      const headers = { 'x-session': token, ...(opts.headers||{}) };
+      let body = opts.body;
+      if (body && !(body instanceof FormData)) {
+        headers['Content-Type'] = 'application/json';
+        body = JSON.stringify(body);
+      }
+      const res = await fetch('/api' + path, { ...opts, headers, body });
+      const data = await res.json().catch(()=>({}));
+      if (!res.ok) throw new Error(data.error || ('请求失败 '+res.status));
+      return data;
+    }
+
+    function fillMajors(major1) {
+      const sel = $('major2');
+      const list = majorMap[major1] || [];
+      sel.innerHTML = '<option value="">请选择</option>' + list.map((x)=>`<option value="${x}">${x}</option>`).join('');
+    }
+
+    function parsePartners(text) {
+      return String(text||'').split(/\n/).map((l)=>l.trim()).filter(Boolean).map((l)=>{
+        const m = l.split(/[：:]/);
+        return { name: (m[0]||'').trim(), work: (m.slice(1).join(':')||'').trim() };
+      }).filter((x)=>x.name);
+    }
+
+    function resolveName(raw) {
+      const s = String(raw||'').trim();
+      if (!s) return '';
+      if (nameByLabel[s]) return nameByLabel[s];
+      const m = s.match(/^(.+?)[（(]\d+[）)]$/);
+      return m ? m[1].trim() : s;
+    }
+
+    function requiredMissing() {
+      const miss = [];
+      if (!$('name').value.trim()) miss.push('项目名称');
+      if (!$('goal').value.trim()) miss.push('项目目标');
+      for (const [id, lab] of [['owner','项目负责人'],['tech','技术负责人'],['pm','项目主管'],['chief1','一级总师'],['chief2','二级总师'],['unitDeptHead','单位科技部长']]) {
+        if (!resolveName($(id).value)) miss.push(lab);
+      }
+      return miss;
+    }
+
+    function renderChecklist() {
+      const miss = requiredMissing();
+      const tags = [];
+      tags.push('<span class="tag sys">系统：项目编号/预警/成果转化</span>');
+      tags.push('<span class="tag">立项：级别/渠道</span>');
+      if (miss.length) miss.forEach((m)=> tags.push(`<span class="tag bad">待补：${m}</span>`));
+      else tags.push('<span class="tag ok">实施补全项已齐套</span>');
+      $('checklist').innerHTML = tags.join('');
+      $('stageBanner').innerHTML = project
+        ? `当前项目状态：<b>${project.status||'—'}</b>。本页由<strong>项目团队</strong>填写；提交后：项目团队 → 项目负责人 → 单位科技管理部 → 单位分管领导 → 总部科研项目处。`
+        : '';
+    }
+
+    async function load() {
+      if (!pid) throw new Error('缺少项目 id');
+      if (!token) throw new Error('未登录，请从平台进入');
+      const [meta, peoplePack, projectRow] = await Promise.all([
+        api('/meta/stage-fields'),
+        api('/meta/people'),
+        api('/projects/' + pid),
+      ]);
+      majorMap = meta.major2ByMajor1 || {};
+      $('major1').innerHTML = '<option value="">请选择</option>' + (meta.major1||[]).map((x)=>`<option value="${x}">${x}</option>`).join('');
+      const dl = $('peopleList');
+      dl.innerHTML = '';
+      nameByLabel = {};
+      (peoplePack.people || []).forEach((p) => {
+        const opt = document.createElement('option');
+        opt.value = p.name;
+        opt.label = p.label || p.name;
+        dl.appendChild(opt);
+        nameByLabel[p.name] = p.name;
+        if (p.label) nameByLabel[p.label] = p.name;
+      });
+      project = projectRow;
+      const t = project.team || {};
+      const ch = project.channelName || (project.tags && project.tags[0]) || '';
+      $('code').value = project.code || '';
+      $('level').value = project.level || '';
+      $('channel').value = ch;
+      $('budget').value = project.total_budget || '';
+      $('name').value = project.name || '';
+      $('goal').value = project.goal || '';
+      $('yearGoal').value = project.year_goal || '';
+      $('start').value = (project.start||'').slice(0,10);
+      $('end').value = (project.end||'').slice(0,10);
+      $('partners').value = (project.partners||[]).map((p)=> p.work ? `${p.name}：${p.work}` : p.name).join('\n');
+      const m1 = project.v19?.major1 || project.major1 || '';
+      const m2 = project.v19?.major2 || project.major2 || '';
+      $('major1').value = m1;
+      fillMajors(m1);
+      $('major2').value = m2;
+      ['owner','tech','pm','chief1','chief2','hqHead','hqStaff','unitDeptHead','unitStaff','finHq','finHead','finStaff'].forEach((k) => {
+        $(k).value = t[k] || '';
+      });
+      renderChecklist();
+    }
+
+    $('major1').onchange = () => { fillMajors($('major1').value); renderChecklist(); };
+    ['name','goal','owner','tech','pm','chief1','chief2','unitDeptHead'].forEach((id)=> $(id).addEventListener('input', renderChecklist));
+
+    $('btnBack').onclick = () => {
+      if (history.length > 1) history.back();
+      else location.href = '/projects/' + pid;
+    };
+
+    $('btnSubmit').onclick = async () => {
+      const miss = requiredMissing();
+      if (miss.length) { msg('请先补全：' + miss.join('、'), false); return; }
+      try {
+        $('btnSubmit').disabled = true;
+        const team = {};
+        for (const k of ['owner','tech','pm','chief1','chief2','hqHead','hqStaff','unitDeptHead','unitStaff','finHq','finHead','finStaff']) {
+          const v = resolveName($(k).value);
+          if (v) team[k] = v;
+        }
+        await api('/projects/' + pid + '/baseinfo', {
+          method: 'POST',
+          body: {
+            name: $('name').value.trim(),
+            goal: $('goal').value.trim(),
+            yearGoal: $('yearGoal').value.trim(),
+            start: $('start').value,
+            end: $('end').value,
+            total_budget: Number($('budget').value) || undefined,
+            major1: $('major1').value,
+            major2: $('major2').value,
+            partners: parsePartners($('partners').value),
+            team,
+          },
+        });
+        msg('已提交基本信息审签，通过后回写台账', true);
+        setTimeout(() => { location.href = '/projects/' + pid; }, 800);
+      } catch (e) {
+        msg(e.message || String(e), false);
+      } finally {
+        $('btnSubmit').disabled = false;
+      }
+    };
+
+    load().catch((e) => msg(e.message || String(e), false));
+  </script>
+</body>
+</html>

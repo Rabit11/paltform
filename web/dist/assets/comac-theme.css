@@ -1,0 +1,296 @@
+/* ZGSF / 商飞 · 经营管理类系统统一 UI（对照《经营管理类系统统一UI风格规范》） */
+:root {
+  --comac-header: #0048A0;
+  --comac-brand: #0064EF;
+  --comac-brand-hover: #0052d9;
+  --comac-bg: #f5f7fa;
+  --comac-card: #ffffff;
+  --comac-border: #e8e8e8;
+  --comac-text-1: #262626;
+  --comac-text-2: #595959;
+  --comac-text-3: #8c8c8c;
+  --comac-radius: 4px;
+  --comac-radius-card: 6px;
+  --comac-control-h: 32px;
+  --comac-control-h-lg: 40px;
+  --comac-table-row-h: 55px;
+  --comac-header-h: 64px;
+  --comac-aside-w: 250px;
+  --comac-space-sm: 8px;
+  --comac-space: 16px;
+  --comac-space-lg: 20px;
+}
+
+html, body, #root {
+  background: var(--comac-bg) !important;
+  color: var(--comac-text-1);
+}
+
+/* ---------- 壳层：顶栏商飞蓝 + 浅色侧栏 ---------- */
+#root > div.h-full.flex {
+  background: var(--comac-bg) !important;
+}
+
+#root > div.h-full.flex > aside {
+  width: 250px !important;
+  background: #fff !important;
+  border-right: 1px solid var(--comac-border) !important;
+  color: var(--comac-text-1) !important;
+}
+
+#root > div.h-full.flex > aside .text-faint {
+  color: var(--comac-text-3) !important;
+}
+
+#root > div.h-full.flex > aside .nav-item.active,
+#root > div.h-full.flex > aside a.active,
+#root > div.h-full.flex > aside a[aria-current="page"] {
+  background: rgba(0, 100, 239, 0.08) !important;
+  color: var(--comac-brand) !important;
+}
+
+#root > div.h-full.flex > aside > div.p-3,
+#root > div.h-full.flex > aside .border-t {
+  background: #fafafa !important;
+  border-color: var(--comac-border) !important;
+}
+
+/* 顶栏 商飞蓝（覆盖原深色 sticky header） */
+#root > div.h-full.flex header.h-\[60px\],
+#root > div.h-full.flex > div.grow > header,
+#root > div.h-full.flex header[class*="h-[60px]"] {
+  background: var(--comac-header) !important;
+  color: #fff !important;
+  border-bottom: none !important;
+  backdrop-filter: none !important;
+  min-height: 64px;
+  height: 64px;
+}
+
+#root > div.h-full.flex header .text-faint,
+#root > div.h-full.flex header .text-dim {
+  color: rgba(255, 255, 255, 0.72) !important;
+}
+
+#root > div.h-full.flex header span,
+#root > div.h-full.flex header button {
+  color: inherit;
+}
+
+/* 顶栏内预警通知等弹层：白底深字，避免继承标题栏白色 */
+#root > div.h-full.flex header .card {
+  color: var(--comac-text-1) !important;
+  background: var(--comac-card) !important;
+}
+#root > div.h-full.flex header .card span,
+#root > div.h-full.flex header .card button {
+  color: inherit;
+}
+#root > div.h-full.flex header .card .text-ink,
+#root > div.h-full.flex header .card .font-medium {
+  color: var(--comac-text-1) !important;
+}
+#root > div.h-full.flex header .card .text-faint,
+#root > div.h-full.flex header .card .text-dim {
+  color: var(--comac-text-3) !important;
+}
+#root > div.h-full.flex header .card .text-accent {
+  color: var(--comac-brand) !important;
+}
+
+#root > div.h-full.flex > div.grow {
+  background: var(--comac-bg) !important;
+}
+
+#root > div.h-full.flex > div.grow > div {
+  /* content */
+}
+
+/* ---------- 卡片 / 表格 ---------- */
+.card {
+  background: var(--comac-card) !important;
+  border: 1px solid var(--comac-border) !important;
+  border-radius: var(--comac-radius-card) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.card-title {
+  color: var(--comac-text-1) !important;
+  font-size: 14px !important;
+}
+
+.card-title:before {
+  background: var(--comac-brand) !important;
+}
+
+.dtable thead th,
+table thead th {
+  height: var(--comac-table-row-h);
+  background: #fafafa !important;
+  color: var(--comac-text-2) !important;
+  border-bottom: 1px solid var(--comac-border) !important;
+  font-weight: 500 !important;
+}
+
+.dtable tbody td,
+table tbody td {
+  height: var(--comac-table-row-h);
+  border-bottom: 1px solid #f0f0f0 !important;
+  color: var(--comac-text-1);
+}
+
+/* ---------- 控件 ---------- */
+button.bg-accent,
+button.bg-accent2,
+.btn-primary,
+#srpm-login-btn {
+  background: var(--comac-brand) !important;
+  border-color: var(--comac-brand) !important;
+  border-radius: var(--comac-radius) !important;
+}
+
+button.bg-accent:hover,
+button.bg-accent2:hover,
+#srpm-login-btn:hover {
+  background: var(--comac-brand-hover) !important;
+}
+
+input, select, textarea {
+  border-radius: var(--comac-radius) !important;
+}
+
+/* ---------- 登录页专属（浅色底 + 深色字，保证对比度） ---------- */
+.blueprint-bg {
+  background:
+    radial-gradient(900px 420px at 12% -10%, rgba(0, 72, 160, 0.08), transparent 55%),
+    linear-gradient(180deg, #f7f9fc 0%, #eef2f7 100%) !important;
+  color: var(--comac-text-1) !important;
+}
+
+/* 原深色主题字色在登录浅色底上会发灰，强制可读 */
+.blueprint-bg .text-ink,
+.blueprint-bg .font-bold,
+.blueprint-bg h1 {
+  color: #1f1f1f !important;
+}
+.blueprint-bg .text-dim {
+  color: #595959 !important;
+}
+.blueprint-bg .text-faint {
+  color: #8c8c8c !important;
+}
+.blueprint-bg .text-accent {
+  color: var(--comac-brand) !important;
+}
+
+.blueprint-bg .card {
+  background: #fff !important;
+  border: 1px solid var(--comac-border) !important;
+  box-shadow: 0 8px 24px rgba(0, 72, 160, 0.06) !important;
+}
+
+.blueprint-bg header .truncate {
+  color: #1f1f1f !important;
+}
+
+/* 登录主按钮：大尺寸 40px（规范：登录用大档） */
+#srpm-login-btn {
+  height: var(--comac-control-h-lg) !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.12em;
+  background: var(--comac-brand) !important;
+  color: #fff !important;
+}
+
+#srpm-login-btn:hover {
+  background: var(--comac-brand-hover) !important;
+}
+
+label input[type="text"],
+label input[type="password"] {
+  height: 40px !important;
+  border-radius: 4px !important;
+  background: #fff !important;
+  border: 1px solid #d9d9d9 !important;
+  color: #262626 !important;
+}
+
+label input[type="text"]:focus,
+label input[type="password"]:focus {
+  border-color: var(--comac-brand) !important;
+  box-shadow: 0 0 0 2px rgba(0, 100, 239, 0.15);
+}
+
+.blueprint-bg button.border {
+  background: #fff !important;
+  border-color: var(--comac-border) !important;
+  color: var(--comac-text-2) !important;
+}
+
+/* 芯片/次要文字 */
+.chip {
+  background: #f5f5f5 !important;
+  border: 1px solid var(--comac-border) !important;
+  color: var(--comac-text-3) !important;
+  border-radius: 4px !important;
+}
+
+.text-accent {
+  color: var(--comac-brand) !important;
+}
+
+a.text-accent {
+  color: var(--comac-brand) !important;
+}
+
+/* ECharts 悬浮标签：对齐规范「次要按钮」浅色态 — 白底、浅商飞蓝描边、商飞蓝字 */
+.echarts-tooltip,
+div[class*="echarts-tooltip"] {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  border: 1px solid #91CAFF !important;
+  border-radius: 4px !important;
+  color: #0064EF !important;
+  font-size: 12px !important;
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif !important;
+  line-height: 1.6 !important;
+  box-shadow: none !important;
+  padding: 8px 12px !important;
+}
+.echarts-tooltip *,
+div[class*="echarts-tooltip"] * {
+  color: #0064EF !important;
+  font-size: 12px !important;
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif !important;
+}
+
+/* 内容区卡片间距 */
+.card + .card,
+.grid > .card {
+  margin-bottom: 0;
+}
+
+/* Login decorative panels: match left column height, flush edges */
+.srpm-login-aero {
+  width: 100%;
+}
+.srpm-login-aero > div {
+  line-height: 0;
+  overflow: hidden;
+}
+.srpm-login-aero > div:first-child {
+  height: 230px;
+}
+.srpm-login-aero > div:not(:first-child) {
+  height: 162px;
+}
+.srpm-login-aero svg {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+@media (min-width: 1536px) {
+  .srpm-login-aero > div:first-child { height: 240px; }
+  .srpm-login-aero > div:not(:first-child) { height: 168px; }
+}

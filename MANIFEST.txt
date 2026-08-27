@@ -1,0 +1,14 @@
+科研项目平台-迁移部署包-20260827
+日期：2026-08-27
+
+相对 2026-08-24 包的变更（来自目标机 10.91.118.142 实装）：
+1. 镜像构建后校验 init-clean.js / attachFormLedger.js / staffAccounts.js 已打进镜像
+2. 启动后从主机再注入 db.js、init-clean.js、staffAccounts.js，避免旧缓存镜像缺脚本
+3. db.js / api.js 自动创建 login_attempts、login_sessions（修复登录 500）
+4. 增加 fix-login-tables.sh 应急补表
+5. 镜像标签 srpm-platform:20260827
+6. 去掉套娃内层重复目录，工作目录即包根
+
+口径不变：
+- 只迁 18087 程序 + 从本机 8092 导出台账行
+- 禁止 down -v、禁止删 platform_srpm-data、禁止动 8092 卷

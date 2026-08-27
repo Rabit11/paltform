@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>成员管理 · SRPM</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --card: #fff;
+      --line: #e5eaf2;
+      --text: #1f2a37;
+      --muted: #6b7a90;
+      --accent: #0064ef;
+      --red: #e11d48;
+      --green: #059669;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 16px;
+    }
+    body.embed { padding: 0; background: transparent; }
+    .wrap { max-width: 1180px; margin: 0 auto; }
+    .hd { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+    .hd h1 { margin: 0; font-size: 18px; }
+    .hd p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+    .btn {
+      height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line);
+      background: #fff; cursor: pointer; font-size: 13px; color: var(--text);
+    }
+    .btn:hover { border-color: var(--accent); color: var(--accent); }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.danger { color: var(--red); border-color: #fecdd3; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .card {
+      background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+    th { background: #f8fafc; color: var(--muted); font-weight: 600; font-size: 12px; }
+    .tag {
+      display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px;
+      background: #eff6ff; color: var(--accent);
+    }
+    .tag.red { background: #fff1f2; color: var(--red); }
+    .tag.green { background: #ecfdf5; color: var(--green); }
+    .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .msg { margin: 0 0 12px; padding: 10px 12px; border-radius: 8px; font-size: 13px; }
+    .msg.ok { background: #ecfdf5; color: var(--green); }
+    .msg.err { background: #fff1f2; color: var(--red); }
+    .mask {
+      position: fixed; inset: 0; background: rgba(15, 23, 42, .45);
+      display: none; align-items: center; justify-content: center; padding: 16px; z-index: 50;
+    }
+    .mask.show { display: flex; }
+    .dialog {
+      width: min(640px, 100%); background: #fff; border-radius: 8px; padding: 18px;
+      box-shadow: 0 8px 24px rgba(31,31,31,.12);
+    }
+    .dialog h2 { margin: 0 0 12px; font-size: 16px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+    input, select {
+      height: 32px; border: 1px solid var(--line); border-radius: 4px; padding: 0 10px;
+      font-size: 13px; color: var(--text); background: #fff;
+    }
+    select[multiple] { height: auto; min-height: 96px; padding: 6px 8px; }
+    .form-extra {
+      display: none; grid-column: 1 / -1; margin-top: 4px; padding: 12px;
+      background: #F5F7FA; border: 1px solid var(--line); border-radius: 4px;
+    }
+    .form-extra.show { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .form-extra h3 {
+      grid-column: 1 / -1; margin: 0 0 4px; font-size: 13px; color: #1F1F1F; font-weight: 600;
+    }
+    .req { color: #F5222D; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+    .drawer-mask {
+      position: fixed; inset: 0; background: rgba(15, 23, 42, .45);
+      display: none; justify-content: flex-end; z-index: 60;
+    }
+    .drawer-mask.show { display: flex; }
+    .drawer {
+      width: min(70%, 1080px); height: 100%; background: #fff;
+      box-shadow: -8px 0 24px rgba(31,31,31,.12);
+      display: flex; flex-direction: column;
+    }
+    .drawer-hd {
+      padding: 16px 20px; border-bottom: 1px solid var(--line);
+      display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+    }
+    .drawer-hd h2 { margin: 0; font-size: 16px; color: #1F1F1F; }
+    .drawer-hd p { margin: 6px 0 0; font-size: 12px; color: var(--muted); line-height: 1.6; max-width: 760px; }
+    .drawer-bd { flex: 1; overflow: auto; padding: 16px 20px; }
+    .drawer-ft {
+      padding: 12px 20px; border-top: 1px solid var(--line);
+      display: flex; justify-content: flex-end; gap: 8px;
+    }
+    .matrix { border: 1px solid var(--line); border-radius: 4px; overflow: auto; }
+    .matrix table { min-width: 920px; }
+    .matrix th, .matrix td { white-space: nowrap; }
+    .matrix th.sticky, .matrix td.sticky {
+      position: sticky; left: 0; background: #fff; z-index: 1;
+      min-width: 120px; box-shadow: 4px 0 8px rgba(31,31,31,.04);
+    }
+    .matrix thead th { position: sticky; top: 0; z-index: 2; }
+    .matrix thead th.sticky { z-index: 3; }
+    .matrix td { text-align: center; }
+    .matrix td.sticky { text-align: left; }
+    .group-tag { font-size: 11px; color: var(--muted); margin-right: 6px; }
+    .duty-box {
+      grid-column: 1 / -1; margin-top: 4px; padding: 12px;
+      background: #F5F7FA; border: 1px solid var(--line); border-radius: 4px;
+    }
+    .duty-box h3 { margin: 0 0 6px; font-size: 13px; color: #1F1F1F; }
+    .duty-box ul { margin: 0; padding-left: 18px; font-size: 12px; color: #262626; }
+    .lock-box {
+      margin-bottom: 16px; padding: 12px 16px;
+      background: #F5F7FA; border: 1px solid var(--line); border-radius: 4px;
+    }
+    .lock-box h3 { margin: 0 0 8px; font-size: 13px; color: #1F1F1F; }
+    .lock-box p { margin: 0 0 8px; font-size: 12px; color: var(--muted); line-height: 1.6; }
+    .lock-box .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      display: inline-flex; align-items: center; height: 28px; padding: 0 10px;
+      background: #fff; border: 1px solid var(--line); border-radius: 4px;
+      font-size: 12px; color: #262626;
+    }
+    .chip.lock { color: #0048A0; border-color: #91CAFF; background: #E6F4FF; }
+    @media (max-width: 720px) {
+      .grid { grid-template-columns: 1fr; }
+      .hd { flex-direction: column; }
+      .drawer { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hd">
+      <div>
+        <h1>成员管理</h1>
+        <p>平台身份决定登录入口与组织可见范围；项目内操作按「本项目岗位」授权。同一人可在 A 项目当负责人、在 B 项目当联系人，权限随岗位变化。</p>
+      </div>
+      <div class="actions">
+        <button class="btn" id="btnReload">刷新</button>
+        <button class="btn" id="btnRbac">项目岗位权限</button>
+        <button class="btn primary" id="btnCreate">新增成员</button>
+      </div>
+    </div>
+    <div id="msg"></div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>工号</th>
+            <th>姓名</th>
+            <th>平台身份</th>
+            <th>范围</th>
+            <th>单位</th>
+            <th>职务</th>
+            <th>表单维护</th>
+            <th>状态</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="tbody">
+          <tr><td colspan="9" style="color:#6b7a90;padding:24px;text-align:center">加载中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="mask" id="mask">
+    <div class="dialog">
+      <h2 id="dialogTitle">新增成员</h2>
+      <div class="grid">
+        <label>工号（6 位数字）
+          <input id="f_id" maxlength="6" placeholder="例如 100001" />
+        </label>
+        <label>姓名
+          <input id="f_name" placeholder="姓名" />
+        </label>
+        <label>平台身份
+          <select id="f_role">
+            <option value="team">项目团队</option>
+            <option value="contact">项目团队 · 联系人</option>
+            <option value="mgmt">管理团队</option>
+            <option value="finance">财务</option>
+            <option value="chief">责任总师</option>
+            <option value="leader">领导</option>
+            <option value="admin">系统管理员</option>
+          </select>
+        </label>
+        <label>范围
+          <select id="f_scope">
+            <option value="self">个人</option>
+            <option value="unit">本单位</option>
+            <option value="hq">总部</option>
+            <option value="chief">总师</option>
+          </select>
+        </label>
+        <label>单位
+          <select id="f_unit"></select>
+        </label>
+        <label>状态
+          <select id="f_status">
+            <option value="在岗">在岗</option>
+            <option value="已离岗">已离岗</option>
+          </select>
+        </label>
+        <label style="grid-column: 1 / -1">职务/说明
+          <input id="f_title" placeholder="例如：项目联系人 / 单位科研项目主管" />
+        </label>
+        <div class="form-extra" id="formExtra">
+          <h3>表单维护权限（仅总部科技部）</h3>
+          <label>是否具有表单维护权限
+            <select id="f_form_access">
+              <option value="0">否</option>
+              <option value="1">是</option>
+            </select>
+          </label>
+          <label id="formScopeWrap">权限范围 <span class="req">*</span>
+            <select id="f_form_scope">
+              <option value="hq">总部（全部台账）</option>
+              <option value="unit">本单位</option>
+              <option value="channel">指定渠道（按渠道授权）</option>
+              <option value="type">项目类型主管（按类型授权）</option>
+              <option value="self">仅本人</option>
+            </select>
+          </label>
+          <label id="formKeysWrap" style="grid-column: 1 / -1; display:none">授权项 <span class="req">*</span>
+            <select id="f_form_keys" multiple></select>
+          </label>
+        </div>
+        <div class="duty-box" id="dutyBox" style="display:none">
+          <h3>本人口径 · 项目岗位任职</h3>
+          <p class="hint" style="margin:0 0 8px">以下来自各项目团队名单（team），不是平台身份。空表示尚未绑定到任何项目岗位。</p>
+          <ul id="dutyList"></ul>
+        </div>
+      </div>
+      <div class="hint" id="dialogHint">新建账号初始密码 = 工号</div>
+      <div class="dialog-actions">
+        <button class="btn" id="btnCancel">取消</button>
+        <button class="btn primary" id="btnSave">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="drawer-mask" id="rbacMask">
+    <div class="drawer" role="dialog" aria-labelledby="rbacTitle">
+      <div class="drawer-hd">
+        <div>
+          <h2 id="rbacTitle">项目岗位功能权限</h2>
+          <p>页签与概览字段始终展示，不随岗位关闭。下方矩阵只控制「能不能办理」，不控制「能不能看见」。总师/管理岗默认走审批节点。保存后立即对全部项目生效，不写台账。</p>
+        </div>
+        <button class="btn" id="btnRbacClose">关闭</button>
+      </div>
+      <div class="drawer-bd">
+        <div class="lock-box" id="rbacLock"></div>
+        <div class="matrix" id="rbacMatrix"><p class="hint">加载中…</p></div>
+      </div>
+      <div class="drawer-ft">
+        <button class="btn" id="btnRbacReset">恢复推荐默认</button>
+        <button class="btn primary" id="btnRbacSave">保存矩阵</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const ROLE_LABEL = { team:'项目团队', contact:'项目团队', mgmt:'管理团队', finance:'财务', chief:'责任总师', leader:'领导', admin:'系统管理员' };
+    const SCOPE_LABEL = { self:'个人', unit:'本单位', hq:'总部', chief:'总师' };
+    const FORM_SCOPE_LABEL = {
+      hq: '总部（全部台账）',
+      unit: '本单位',
+      channel: '指定渠道',
+      type: '按类型授权',
+      self: '仅本人',
+    };
+    function token() {
+      const raw = localStorage.getItem('srpm.user') || sessionStorage.getItem('srpm.user') || '';
+      if (!raw) return '';
+      try {
+        const o = JSON.parse(raw);
+        if (o && typeof o === 'object') return o.sessionToken || o.token || '';
+      } catch { /* raw token */ }
+      return raw;
+    }
+    const qs = new URLSearchParams(location.search);
+    if (qs.get('embed') === '1') document.body.classList.add('embed');
+
+    let units = [];
+    let channels = [];
+    let editingId = null;
+
+    function showMsg(text, ok=true) {
+      const el = document.getElementById('msg');
+      el.className = 'msg ' + (ok ? 'ok' : 'err');
+      el.textContent = text;
+      if (!text) el.className = '';
+    }
+
+    async function api(path, opts={}) {
+      const res = await fetch('/api' + path, {
+        ...opts,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session': token(),
+          ...(opts.headers || {}),
+        },
+        body: opts.body ? JSON.stringify(opts.body) : undefined,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || ('请求失败 ' + res.status));
+      return data;
+    }
+
+    function unitName(id) {
+      const u = units.find((x) => String(x.id) === String(id));
+      return u ? (u.short || u.name) : (id ? String(id) : '—');
+    }
+
+    function isHqTechUnit(id) {
+      const u = units.find((x) => String(x.id) === String(id));
+      return /总部科技/.test(`${u?.short || ''}${u?.name || ''}`);
+    }
+
+    function parseKeys(raw) {
+      if (Array.isArray(raw)) return raw;
+      try { const v = JSON.parse(raw || '[]'); return Array.isArray(v) ? v : []; } catch { return []; }
+    }
+
+    function unique(list) {
+      return [...new Set(list.filter(Boolean))];
+    }
+
+    function fillUnits(selected) {
+      const sel = document.getElementById('f_unit');
+      sel.innerHTML = '<option value="">（无）</option>' + units.map((u) =>
+        `<option value="${u.id}">${u.short || u.name}</option>`
+      ).join('');
+      if (selected != null && selected !== '') sel.value = String(selected);
+    }
+
+    function fillFormKeys(scope, selected) {
+      const sel = document.getElementById('f_form_keys');
+      const chosen = new Set((selected || []).map(String));
+      let opts = [];
+      if (scope === 'channel') {
+        opts = unique(channels.map((c) => c.source_channel || c.sourceChannel)).sort((a, b) => a.localeCompare(b, 'zh-CN'));
+      } else if (scope === 'type') {
+        opts = unique(channels.map((c) => c.name)).sort((a, b) => a.localeCompare(b, 'zh-CN'));
+      }
+      sel.innerHTML = opts.map((v) => `<option value="${v.replace(/"/g,'&quot;')}" ${chosen.has(v) ? 'selected' : ''}>${v}</option>`).join('');
+    }
+
+    function syncFormExtra(row) {
+      const extra = document.getElementById('formExtra');
+      const unitId = document.getElementById('f_unit').value;
+      const show = isHqTechUnit(unitId);
+      extra.classList.toggle('show', show);
+      if (!show) {
+        document.getElementById('f_form_access').value = '0';
+        document.getElementById('f_form_scope').value = 'hq';
+        document.getElementById('formKeysWrap').style.display = 'none';
+        return;
+      }
+      if (row) {
+        document.getElementById('f_form_access').value = hasFormAccess(row) ? '1' : '0';
+        document.getElementById('f_form_scope').value = row.form_scope || 'hq';
+      }
+      syncFormScope(row);
+    }
+
+    function syncFormScope(row) {
+      const on = document.getElementById('f_form_access').value === '1';
+      document.getElementById('formScopeWrap').style.display = on ? '' : 'none';
+      const scope = document.getElementById('f_form_scope').value;
+      const needKeys = on && (scope === 'channel' || scope === 'type');
+      document.getElementById('formKeysWrap').style.display = needKeys ? '' : 'none';
+      if (needKeys) fillFormKeys(scope, row ? parseKeys(row.form_scope_keys) : selectedFormKeys());
+    }
+
+    function selectedFormKeys() {
+      return [...document.getElementById('f_form_keys').selectedOptions].map((o) => o.value);
+    }
+
+    function hasFormAccess(u) {
+      return u && (u.role === 'admin' || u.form_access === true || u.form_access === '1' || Number(u.form_access) === 1);
+    }
+
+    function formLabel(u) {
+      if (u.role === 'admin') return '系统管理员（全部）';
+      if (!hasFormAccess(u)) return '无';
+      if (u.form_scope_label) return u.form_scope_label;
+      const keys = parseKeys(u.form_scope_keys);
+      const base = FORM_SCOPE_LABEL[u.form_scope] || '是';
+      return keys.length ? `${base}（${keys.length}项）` : base;
+    }
+
+    function openDialog(row) {
+      editingId = row ? row.id : null;
+      document.getElementById('dialogTitle').textContent = row ? '编辑成员' : '新增成员';
+      document.getElementById('dialogHint').textContent = row
+        ? '保存后不会改动密码；如需改密请点「重置密码」'
+        : '新建账号初始密码默认等于工号（6 位）';
+      document.getElementById('f_id').value = row ? (row.emp_no || row.id) : '';
+      document.getElementById('f_id').disabled = !!row;
+      document.getElementById('f_name').value = row?.name || '';
+      document.getElementById('f_role').value = row?.role || 'team';
+      document.getElementById('f_scope').value = row?.scope || 'self';
+      document.getElementById('f_status').value = row?.status || '在岗';
+      document.getElementById('f_title').value = row?.title || '';
+      syncContactRoleDefaults(!row);
+      fillUnits(row?.unit_id);
+      document.getElementById('f_form_access').value = hasFormAccess(row) ? '1' : '0';
+      document.getElementById('f_form_scope').value = row?.form_scope || 'hq';
+      syncFormExtra(row);
+      const dutyBox = document.getElementById('dutyBox');
+      const dutyList = document.getElementById('dutyList');
+      dutyBox.style.display = row ? '' : 'none';
+      dutyList.innerHTML = row ? '<li>加载任职…</li>' : '';
+      document.getElementById('mask').classList.add('show');
+      if (row) {
+        api('/admin/users/' + encodeURIComponent(row.id) + '/project-duties').then((d) => {
+          const rows = d.rows || [];
+          dutyList.innerHTML = rows.length
+            ? rows.map((x) => `<li>${x.name}（${x.code || x.projectId} · ${x.status}）— ${x.labels.join('、')}</li>`).join('')
+            : '<li>尚未绑定到任何项目岗位。请在项目「完善基本信息」中指定。</li>';
+        }).catch((err) => {
+          dutyList.innerHTML = `<li>${err.message || '任职查询失败'}</li>`;
+        });
+      }
+    }
+
+    function closeDialog() {
+      document.getElementById('mask').classList.remove('show');
+      editingId = null;
+    }
+
+    async function load() {
+      if (!token()) {
+        showMsg('未登录或登录已失效，请先以系统管理员登录平台', false);
+        return;
+      }
+      try {
+        const boot = await api('/bootstrap');
+        units = (boot.units || []).filter((u) => u.kind === 'unit' || u.kind === 'hq');
+        channels = boot.channels || [];
+        const data = await api('/admin/users');
+        const rows = data.users || [];
+        const tb = document.getElementById('tbody');
+        if (!rows.length) {
+          tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#6b7a90;padding:24px">暂无成员</td></tr>';
+          return;
+        }
+        tb.innerHTML = rows.map((u) => {
+          const emp = u.emp_no || u.id;
+          return `
+          <tr>
+            <td><code>${emp}</code></td>
+            <td>${u.name || ''}</td>
+            <td><span class="tag">${ROLE_LABEL[u.role] || u.role}</span></td>
+            <td>${SCOPE_LABEL[u.scope] || u.scope || ''}</td>
+            <td>${unitName(u.unit_id)}</td>
+            <td>${u.title || '—'}</td>
+            <td>${formLabel(u)}</td>
+            <td><span class="tag ${u.status === '在岗' ? 'green' : 'red'}">${u.status || ''}</span></td>
+            <td>
+              <div class="actions">
+                <button class="btn" data-act="edit" data-id="${u.id}" data-emp="${emp}">编辑</button>
+                <button class="btn" data-act="reset" data-id="${u.id}" data-emp="${emp}">重置密码</button>
+                <button class="btn danger" data-act="del" data-id="${u.id}" data-emp="${emp}">删除</button>
+              </div>
+            </td>
+          </tr>`;
+        }).join('');
+        showMsg('');
+      } catch (e) {
+        showMsg(e.message || String(e), false);
+      }
+    }
+
+    function syncContactRoleDefaults(isNew) {
+      const role = document.getElementById('f_role').value;
+      if (role === 'contact') {
+        if (!document.getElementById('f_scope').value) document.getElementById('f_scope').value = 'self';
+        if (isNew && !document.getElementById('f_title').value.trim()) {
+          document.getElementById('f_title').value = '项目联系人';
+        }
+        document.getElementById('dialogHint').textContent = '项目联系人属于项目团队：发起审批、上传审批材料；默认仅看本人关联项目。';
+      }
+    }
+
+    document.getElementById('f_role').onchange = () => syncContactRoleDefaults(true);
+    document.getElementById('btnReload').onclick = load;
+    document.getElementById('btnCreate').onclick = () => openDialog(null);
+    document.getElementById('btnCancel').onclick = closeDialog;
+
+    let rbacState = null;
+    function renderRbac(data) {
+      rbacState = data;
+      const view = data.viewAlways || {};
+      const tabs = (view.tabs || []).map((t) => `<span class="chip lock">${t.label}</span>`).join('');
+      const fields = (view.overviewFields || []).map((f) => `<span class="chip lock">${f}</span>`).join('');
+      document.getElementById('rbacLock').innerHTML = `
+        <h3>始终可见（进入项目即可，岗位无权关闭）</h3>
+        <p>与项目详情一致：页签与「项目信息」字段全部保留。空值显示为「—」，不是丢失。</p>
+        <p>页签</p>
+        <div class="chips">${tabs || '—'}</div>
+        <p style="margin-top:8px">概览 · 项目信息</p>
+        <div class="chips">${fields || '—'}</div>`;
+      const groups = [...new Set((data.perms || []).map((p) => p.group))];
+      const head = groups.map((g) => {
+        const cols = data.perms.filter((p) => p.group === g);
+        return `<th colspan="${cols.length}">${g}</th>`;
+      }).join('');
+      const sub = data.perms.map((p) => `<th>${p.label}</th>`).join('');
+      const body = (data.duties || []).map((d) => {
+        const set = new Set((data.matrix[d.key] || []));
+        const cells = data.perms.map((p) =>
+          `<td><input type="checkbox" data-duty="${d.key}" data-perm="${p.code}" ${set.has(p.code) ? 'checked' : ''}></td>`
+        ).join('');
+        return `<tr><td class="sticky"><span class="group-tag">${d.group}</span>${d.label}</td>${cells}</tr>`;
+      }).join('');
+      document.getElementById('rbacMatrix').innerHTML = `
+        <table>
+          <thead>
+            <tr><th class="sticky" rowspan="2">项目岗位</th>${head}</tr>
+            <tr>${sub}</tr>
+          </thead>
+          <tbody>${body}</tbody>
+        </table>`;
+    }
+    function collectMatrix() {
+      const matrix = {};
+      (rbacState.duties || []).forEach((d) => { matrix[d.key] = []; });
+      document.querySelectorAll('#rbacMatrix input[type=checkbox]').forEach((el) => {
+        if (el.checked) matrix[el.getAttribute('data-duty')].push(el.getAttribute('data-perm'));
+      });
+      return matrix;
+    }
+    async function openRbac() {
+      const data = await api('/rbac/duty-perms');
+      renderRbac(data);
+      document.getElementById('rbacMask').classList.add('show');
+    }
+    function closeRbac() {
+      document.getElementById('rbacMask').classList.remove('show');
+    }
+    document.getElementById('btnRbac').onclick = () => openRbac().catch((e) => showMsg(e.message || String(e), false));
+    document.getElementById('btnRbacClose').onclick = closeRbac;
+    document.getElementById('rbacMask').addEventListener('click', (e) => {
+      if (e.target.id === 'rbacMask') closeRbac();
+    });
+    document.getElementById('btnRbacSave').onclick = async () => {
+      try {
+        await api('/rbac/duty-perms', { method: 'PUT', body: { matrix: collectMatrix() } });
+        showMsg('项目岗位权限已保存，立即按各项目任职生效');
+        closeRbac();
+      } catch (e) {
+        showMsg(e.message || String(e), false);
+      }
+    };
+    document.getElementById('btnRbacReset').onclick = async () => {
+      if (!confirm('确认恢复推荐默认矩阵？将覆盖当前勾选。')) return;
+      try {
+        const data = await api('/rbac/duty-perms/reset', { method: 'POST', body: {} });
+        renderRbac({ ...rbacState, matrix: data.matrix });
+        showMsg('已恢复推荐默认矩阵，请核对后保存或直接使用');
+      } catch (e) {
+        showMsg(e.message || String(e), false);
+      }
+    };
+    document.getElementById('f_unit').onchange = () => syncFormExtra();
+    document.getElementById('f_form_access').onchange = () => syncFormScope();
+    document.getElementById('f_form_scope').onchange = () => syncFormScope();
+    document.getElementById('mask').addEventListener('click', (e) => {
+      if (e.target.id === 'mask') closeDialog();
+    });
+
+    document.getElementById('btnSave').onclick = async () => {
+      try {
+        const formAccess = document.getElementById('f_form_access').value === '1';
+        const formScope = document.getElementById('f_form_scope').value;
+        const payload = {
+          id: document.getElementById('f_id').value.trim(),
+          name: document.getElementById('f_name').value.trim(),
+          role: document.getElementById('f_role').value,
+          scope: document.getElementById('f_scope').value,
+          unit_id: document.getElementById('f_unit').value ? Number(document.getElementById('f_unit').value) : null,
+          title: document.getElementById('f_title').value.trim(),
+          status: document.getElementById('f_status').value,
+          form_access: formAccess,
+          form_scope: formScope,
+          form_scope_keys: selectedFormKeys(),
+        };
+        if (isHqTechUnit(payload.unit_id) && formAccess && (formScope === 'channel' || formScope === 'type') && !payload.form_scope_keys.length) {
+          throw new Error(formScope === 'channel' ? '请选择授权渠道' : '请选择授权项目类型');
+        }
+        if (editingId) {
+          await api('/admin/users/' + encodeURIComponent(editingId), { method: 'PUT', body: payload });
+          showMsg('成员已更新');
+        } else {
+          await api('/admin/users', { method: 'POST', body: payload });
+          showMsg(`成员已创建；初始密码为工号 ${payload.id}`);
+        }
+        closeDialog();
+        await load();
+      } catch (e) {
+        showMsg(e.message || String(e), false);
+      }
+    };
+
+    document.getElementById('tbody').addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-act]');
+      if (!btn) return;
+      const id = btn.getAttribute('data-id');
+      const emp = btn.getAttribute('data-emp') || id;
+      const act = btn.getAttribute('data-act');
+      try {
+        if (act === 'edit') {
+          const data = await api('/admin/users');
+          const row = (data.users || []).find((u) => u.id === id);
+          if (!row) throw new Error('成员不存在');
+          openDialog(row);
+          return;
+        }
+        if (act === 'reset') {
+          const custom = prompt(`重置密码\n工号：${emp}\n留空则重置为工号本身；也可输入新密码：`, emp);
+          if (custom === null) return;
+          const body = custom.trim() ? { password: custom.trim() } : {};
+          const r = await api('/admin/users/' + encodeURIComponent(id) + '/reset-password', { method: 'POST', body });
+          showMsg(r.message || `已重置密码为：${r.password || emp}`);
+          return;
+        }
+        if (act === 'del') {
+          if (!confirm(`确认删除成员 ${emp}（${id}）？此操作不可恢复。`)) return;
+          await api('/admin/users/' + encodeURIComponent(id), { method: 'DELETE' });
+          showMsg('成员已删除');
+          await load();
+        }
+      } catch (err) {
+        showMsg(err.message || String(err), false);
+      }
+    });
+
+    load();
+    window.addEventListener('storage', (e) => {
+      if (!e.key || e.key === 'srpm.user') load();
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) load();
+    });
+  </script>
+</body>
+</html>

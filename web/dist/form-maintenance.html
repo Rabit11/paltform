@@ -1,0 +1,810 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>表单维护 · 科研预研信息管理平台</title>
+  <style>
+    :root {
+      --bg: #f0f2f5;
+      --card: #fff;
+      --line: #e5eaf2;
+      --line2: #d9e2ef;
+      --text: #1f2a37;
+      --muted: #8c8c8c;
+      --accent: #0064ef;
+      --comac: #0048a0;
+      --green: #059669;
+      --red: #e11d48;
+      --orange: #d97706;
+      --row-delay: #fff1f2;
+      --head: #f7f9fc;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+    }
+    body.embed { background: #fff; }
+    .page { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+    .hd {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      padding: 16px 20px 10px; background: #fff; border-bottom: 1px solid var(--line);
+    }
+    .hd h1 { margin: 0; font-size: 22px; font-weight: 700; color: #111; }
+    .hd .sub { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+    .hd-right { display: flex; align-items: center; gap: 10px; }
+    .perm { color: var(--muted); font-size: 12px; }
+    .btn {
+      height: 32px; padding: 0 12px; border-radius: 4px; border: 1px solid var(--line2);
+      background: #fff; cursor: pointer; font-size: 13px; color: var(--text);
+      display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+    }
+    .btn:hover { border-color: var(--accent); color: var(--accent); }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.primary:hover { filter: brightness(1.05); color: #fff; }
+    .btn.ghost { background: transparent; }
+    .toolbar, .filters {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      padding: 10px 20px; background: #f7f8fa; border-bottom: 1px solid var(--line);
+    }
+    .toolbar .lab, .filters .lab { color: var(--muted); font-size: 12px; margin-right: 2px; }
+    .search {
+      display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px;
+      border: 1px solid var(--line2); border-radius: 4px; background: #fff; min-width: 220px;
+    }
+    .search input {
+      border: 0; outline: none; width: 100%; font-size: 13px; background: transparent;
+    }
+    select.sel {
+      height: 32px; border: 1px solid var(--line2); border-radius: 4px; padding: 0 8px;
+      background: #fff; color: var(--text); font-size: 13px; max-width: 140px;
+    }
+    .tabs {
+      display: flex; gap: 0; padding: 10px 20px 0; background: #fff; border-bottom: 1px solid var(--line);
+    }
+    .tab {
+      height: 34px; padding: 0 16px; border: 1px solid transparent; border-bottom: none;
+      border-radius: 6px 6px 0 0; background: transparent; cursor: pointer; color: var(--muted);
+      display: inline-flex; align-items: center; gap: 6px; font-size: 13px;
+    }
+    .tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .badge {
+      min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px;
+      background: #f59e0b; color: #fff; font-size: 10px; line-height: 16px; text-align: center;
+    }
+    .tab.active .badge { background: rgba(255,255,255,.28); }
+    .meta {
+      display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+      padding: 12px 20px 8px; background: #fff;
+    }
+    .meta-title { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+    .stats { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 10px 14px; color: var(--muted); font-size: 12px; }
+    .stats b { color: var(--text); font-weight: 600; }
+    .stats .blue { color: var(--accent); }
+    .stats .green { color: var(--green); }
+    .stats .red { color: var(--red); }
+    .meta-right { text-align: right; }
+    .meta-right .hint { margin-top: 6px; color: var(--muted); font-size: 11px; }
+    .group-bar { display: none; }
+    .table-wrap {
+      flex: 1; min-height: 0; overflow: auto; background: #fff; margin: 0 20px 16px;
+      border: 1px solid var(--line); border-radius: 6px;
+    }
+    table.sheet {
+      border-collapse: separate; border-spacing: 0; min-width: 100%;
+      font-size: 12px;
+    }
+    table.sheet th, table.sheet td {
+      border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
+      padding: 0; vertical-align: middle; background: #fff;
+    }
+    table.sheet thead th {
+      position: sticky; z-index: 4; font-weight: 600; color: #0f172a;
+    }
+    table.sheet thead tr.letter-row th { top: 0; height: 22px; background: #eef2f7; z-index: 6; }
+    table.sheet thead tr.group-row th { top: 22px; height: 28px; background: #d6e6f2; z-index: 5; text-align: center; }
+    table.sheet thead tr.mid-row th { top: 50px; height: 28px; background: #e8f1f8; z-index: 5; text-align: center; }
+    table.sheet thead tr.leaf-row th { top: 78px; height: 32px; background: #f7f9fc; z-index: 5; }
+    table.sheet th .col-letter {
+      display: block; text-align: center; font-size: 11px; color: var(--muted); font-weight: 500;
+      height: 22px; line-height: 22px;
+    }
+    table.sheet th .col-title {
+      display: flex; align-items: center; justify-content: space-between; gap: 4px;
+      padding: 0 8px; min-height: 28px; white-space: nowrap;
+    }
+    table.sheet th .funnel {
+      border: 0; background: transparent; color: var(--muted); cursor: pointer; padding: 0 2px;
+      font-size: 11px;
+    }
+    table.sheet th .funnel.on { color: var(--accent); }
+    table.sheet td .cell {
+      display: block; padding: 8px 10px; min-height: 40px; white-space: nowrap;
+      max-width: 280px; overflow: hidden; text-overflow: ellipsis;
+    }
+    table.sheet tr.delay td { background: var(--row-delay); }
+    table.sheet tr.delay td .cell { background: transparent; }
+    table.sheet tr:hover td .cell { background: #f8fbff; }
+    table.sheet td.num .cell { text-align: right; font-variant-numeric: tabular-nums; }
+    .panel {
+      display: none; margin: 0 20px 16px; padding: 16px; background: #fff;
+      border: 1px solid var(--line); border-radius: 6px; min-height: 240px;
+    }
+    .panel.active { display: block; }
+    .panel h3 { margin: 0 0 10px; font-size: 14px; }
+    .subgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+    .subcard {
+      border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: #fafbfd;
+    }
+    .subcard .n { font-size: 18px; font-weight: 700; color: var(--accent); }
+    .msg {
+      margin: 8px 20px 0; padding: 8px 12px; border-radius: 6px; font-size: 12px; display: none;
+    }
+    .msg.show { display: block; }
+    .msg.ok { background: #ecfdf5; color: var(--green); }
+    .msg.err { background: #fff1f2; color: var(--red); }
+    .drop {
+      border: 1px dashed var(--line2); border-radius: 8px; padding: 24px; text-align: center;
+      color: var(--muted); background: #fafbfd;
+    }
+    .issues { margin-top: 12px; max-height: 280px; overflow: auto; }
+    .issues li { margin: 4px 0; color: #9a3412; }
+    .mask {
+      position: fixed; inset: 0; background: rgba(15,23,42,.4); display: none;
+      align-items: center; justify-content: center; z-index: 50; padding: 16px;
+    }
+    .mask.show { display: flex; }
+    .dialog {
+      width: min(480px, 100%); background: #fff; border-radius: 10px; padding: 16px;
+      box-shadow: 0 18px 40px rgba(15,23,42,.2);
+    }
+    .dialog h2 { margin: 0 0 10px; font-size: 15px; }
+    .cols { max-height: 360px; overflow: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+    .cols label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+    .perm-pop {
+      position: absolute; right: 20px; top: 56px; width: 280px; background: #fff;
+      border: 1px solid var(--line); border-radius: 8px; padding: 12px; box-shadow: 0 10px 30px rgba(15,23,42,.12);
+      display: none; z-index: 20; font-size: 12px; color: #475569; line-height: 1.6;
+    }
+    .perm-pop.show { display: block; }
+    .empty { padding: 48px; text-align: center; color: var(--muted); }
+    .btn.danger { color: #e11d48; border-color: #fecdd3; }
+    input[type=file] { display: none; }
+    td.check, th.check { width: 36px; text-align: center; }
+    .cell.edit { outline: 2px solid #2563eb; background: #fff; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="hd">
+      <div>
+        <h1>表单维护</h1>
+        <div class="sub">维护对象：公司全部预研项目总表 / 分表</div>
+      </div>
+      <div class="hd-right">
+        <span class="perm" id="permText">总部总维护 · 读写全部</span>
+        <button class="btn" id="btnPerm">权限说明 ▾</button>
+      </div>
+      <div class="perm-pop" id="permPop">
+        表单维护权限由系统管理员在「配置中心 → 成员管理」中分配。<br/>
+        系统管理员 / 总部（全部台账）：可编辑、上传总表与分表、导出、校验、删除。<br/>
+        本单位 / 指定渠道 / 项目类型：只能维护授权范围内的台账，总表覆盖导入不可用。
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <span class="lab">操作</span>
+      <button class="btn" id="btnUploadMain">☁ 上传总表</button>
+      <button class="btn" id="btnUploadSub">☁ 上传分表</button>
+      <button class="btn primary" id="btnExport">⬇ 导出 Excel</button>
+      <button class="btn" id="btnExportFilter">⬇ 导出筛选包</button>
+      <button class="btn danger" id="btnDelSel">删除所选</button>
+      <button class="btn danger" id="btnClearAll">清空全部项目</button>
+      <input type="file" id="fileMain" accept=".xlsx,.xls" />
+      <input type="file" id="fileSub" accept=".xlsx,.xls" />
+    </div>
+
+    <div class="filters">
+      <span class="lab">筛选</span>
+      <div class="search">
+        <span>🔍</span>
+        <input id="q" placeholder="序号 / 项目名称 / 编号" />
+      </div>
+      <select class="sel" id="fLevel"><option value="">全部层级</option></select>
+      <select class="sel" id="fChannel"><option value="">全部渠道</option></select>
+      <select class="sel" id="fType"><option value="">全部项目类型</option></select>
+      <select class="sel" id="fUnit"><option value="">全部单位</option></select>
+      <select class="sel" id="fStatus"><option value="">全部状态</option></select>
+      <select class="sel" id="fAdvanced">
+        <option value="">高级筛选</option>
+        <option value="invalid">仅校验未通过</option>
+        <option value="valid">仅校验通过</option>
+        <option value="delay">仅延期</option>
+        <option value="done">仅已完成</option>
+      </select>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="main">总表管理</button>
+      <button class="tab" data-tab="split">分表拆分</button>
+      <button class="tab" data-tab="batch">批量上传 <span class="badge" id="batchBadge">0</span></button>
+      <button class="tab" data-tab="report">校验报告</button>
+    </div>
+
+    <div class="msg" id="msg"></div>
+
+    <div id="viewMain" class="main-view" style="display:flex;flex-direction:column;flex:1;min-height:0;">
+      <div class="meta">
+        <div>
+          <div class="meta-title">☰ 预先研究项目信息</div>
+          <div class="stats" id="stats"></div>
+        </div>
+        <div class="meta-right">
+          <button class="btn" id="btnCols">列配置 <span id="colCount">0</span> 列 ▾</button>
+          <div class="hint">表头漏斗可按列筛选，导出完整表头</div>
+        </div>
+      </div>
+      <div class="group-bar"><span id="groupLabel">项目基本信息</span></div>
+      <div class="table-wrap">
+        <table class="sheet" id="sheet">
+          <thead id="thead"></thead>
+          <tbody id="tbody"><tr><td class="empty" colspan="20">加载中…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel" id="viewSplit">
+      <h3>按项目类型拆分分表</h3>
+      <div class="subgrid" id="subgrid"></div>
+    </div>
+    <div class="panel" id="viewBatch">
+      <h3>批量上传</h3>
+      <div class="drop">支持 .xlsx / .xls。总表=覆盖导入，分表=合并导入。可多次上传，结果写入平台库。</div>
+      <div style="margin-top:12px;display:flex;gap:8px;">
+        <button class="btn primary" id="btnBatchMain">上传总表</button>
+        <button class="btn" id="btnBatchSub">上传分表</button>
+      </div>
+      <ul class="issues" id="batchIssues"></ul>
+    </div>
+    <div class="panel" id="viewReport">
+      <h3>校验报告</h3>
+      <div id="reportBox"></div>
+    </div>
+  </div>
+
+  <div class="mask" id="colMask">
+    <div class="dialog">
+      <h2>列配置</h2>
+      <div class="cols" id="colList"></div>
+      <div class="dialog-actions">
+        <button class="btn" id="btnColsAll">全选</button>
+        <button class="btn" id="btnColsReset">恢复默认</button>
+        <button class="btn primary" id="btnColsOk">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const token = localStorage.getItem('srpm.user') || sessionStorage.getItem('srpm.user') || '';
+    if (new URLSearchParams(location.search).get('embed') === '1') document.body.classList.add('embed');
+
+    const state = {
+      fields: [],
+      rows: [],
+      summary: {},
+      subtables: [],
+      cascade: null,
+      visible: null,
+      colFilter: {},
+      batchLogs: [],
+      selected: new Set(),
+      access: { canFormMaintain: true, canReplaceAll: true },
+    };
+
+    const $ = (id) => document.getElementById(id);
+    function showMsg(text, ok = true) {
+      const el = $('msg');
+      if (!text) { el.className = 'msg'; el.textContent = ''; return; }
+      el.className = 'msg show ' + (ok ? 'ok' : 'err');
+      el.textContent = text;
+    }
+
+    function colLetter(idx) {
+      let n = idx + 1, s = '';
+      while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); }
+      return s;
+    }
+
+    async function api(path, opts = {}) {
+      const headers = { 'x-session': token, ...(opts.headers || {}) };
+      let body = opts.body;
+      if (body && !(body instanceof FormData)) {
+        headers['Content-Type'] = 'application/json';
+        body = JSON.stringify(body);
+      }
+      const res = await fetch('/api' + path, { ...opts, headers, body });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || ('请求失败 ' + res.status));
+      return data;
+    }
+
+    async function uploadFile(file) {
+      const fd = new FormData();
+      fd.append('file', file);
+      return api('/uploads', { method: 'POST', body: fd });
+    }
+
+    function fmtNum(n) {
+      if (n == null || n === '') return '—';
+      const x = Number(n);
+      if (Number.isNaN(x)) return String(n);
+      return x.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+    }
+
+    function unique(arr) {
+      return [...new Set(arr.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'zh-CN'));
+    }
+
+    function fillSelect(sel, values, allLabel) {
+      const cur = sel.value;
+      sel.innerHTML = `<option value="">${allLabel}</option>` + values.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+      if ([...sel.options].some((o) => o.value === cur)) sel.value = cur;
+    }
+
+    function esc(s) {
+      return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function ledgerFields(fields) {
+      return (fields || []).filter((f) => f.ledger !== false);
+    }
+
+    function defaultVisible(fields) {
+      const all = ledgerFields(fields).map((f) => f.code);
+      const saved = localStorage.getItem('srpm.form.cols.v37');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved).filter((c) => all.includes(c));
+          if (parsed.length) return parsed;
+        } catch {}
+      }
+      return all;
+    }
+
+    function isDelay(row) {
+      const st = String(row.projectStatus || '');
+      return /延期|逾期/.test(st) || (row.validation && !row.validation.ok && /延期/.test(JSON.stringify(row.validation)));
+    }
+    function isDone(row) {
+      return /完成|结题|验收/.test(String(row.projectStatus || ''));
+    }
+    function isRunning(row) {
+      return /执行|实施|进行/.test(String(row.projectStatus || ''));
+    }
+
+    function filteredRows() {
+      const q = $('q').value.trim().toLowerCase();
+      const level = $('fLevel').value;
+      const channel = $('fChannel').value;
+      const type = $('fType').value;
+      const unit = $('fUnit').value;
+      const status = $('fStatus').value;
+      const adv = $('fAdvanced').value;
+      return state.rows.filter((r) => {
+        if (level && r.level !== level) return false;
+        if (channel && r.sourceChannel !== channel) return false;
+        if (type && r.projectType !== type) return false;
+        if (unit && r.responsibleUnit !== unit && r.demandUnit !== unit) return false;
+        if (status && r.projectStatus !== status) return false;
+        if (adv === 'invalid' && r.validation?.ok !== false) return false;
+        if (adv === 'valid' && r.validation?.ok !== true) return false;
+        if (adv === 'delay' && !isDelay(r)) return false;
+        if (adv === 'done' && !isDone(r)) return false;
+        if (q) {
+          const blob = [r.serial, r.name, r.code, r.id].map((x) => String(x || '').toLowerCase()).join(' ');
+          if (!blob.includes(q)) return false;
+        }
+        for (const [code, val] of Object.entries(state.colFilter)) {
+          if (!val) continue;
+          if (String(r[code] ?? '') !== val) return false;
+        }
+        return true;
+      });
+    }
+
+    function renderStats(rows) {
+      const s = state.summary || {};
+      const delay = rows.filter(isDelay).length;
+      const done = rows.filter(isDone).length;
+      const running = rows.filter(isRunning).length;
+      const types = unique(rows.map((r) => r.projectType)).length;
+      const invalid = rows.filter((r) => r.validation && !r.validation.ok).length;
+      const totalBudget = rows.reduce((a, r) => a + (Number(r.totalBudget) || 0), 0);
+      const grant = rows.reduce((a, r) => a + (Number(r.centralGrant) || 0), 0);
+      const self = rows.reduce((a, r) => a + (Number(r.selfFund) || 0), 0);
+      $('stats').innerHTML = [
+        `项目 <b>${rows.length}</b>`,
+        `类型 <b>${types}</b>`,
+        `总经费 <b class="blue">${fmtNum(totalBudget)} 万</b>`,
+        `国拨 <b>${fmtNum(grant)}</b>`,
+        `自筹 <b>${fmtNum(self)}</b>`,
+        `执行中 <b>${running || '—'}</b>`,
+        `已完成 <b class="green">${done}</b>`,
+        `延期 <b class="red">${delay}</b>`,
+        invalid ? `校验未通过 <b class="red">${invalid}</b>` : `校验通过 <b class="green">${s.valid ?? rows.length}</b>`,
+      ].join('<span>·</span>');
+    }
+
+    function catalogFields() {
+      return ledgerFields(state.fields);
+    }
+
+    function visibleFields() {
+      return catalogFields().filter((f) => state.visible.includes(f.code));
+    }
+
+    function renderHead() {
+      const fields = visibleFields();
+      $('colCount').textContent = fields.length;
+      if ($('groupLabel')) $('groupLabel').textContent = '项目基本信息 / 经费情况 / 转化基本信息';
+      const n = fields.length;
+      const top = Array(n).fill('');
+      const mid = Array(n).fill('');
+      const leaf = Array(n).fill('');
+      const topSpan = Array(n).fill(1);
+      const midSpan = Array(n).fill(1);
+      const midRowSpan = Array(n).fill(1);
+      const skipTop = Array(n).fill(false);
+      const skipMid = Array(n).fill(false);
+      const skipLeaf = Array(n).fill(false);
+      let i = 0;
+      while (i < n) {
+        let j = i + 1;
+        while (j < n && fields[j].group === fields[i].group) j += 1;
+        top[i] = fields[i].group || '';
+        topSpan[i] = j - i;
+        for (let k = i + 1; k < j; k += 1) skipTop[k] = true;
+        i = j;
+      }
+      i = 0;
+      while (i < n) {
+        if (!fields[i].subGroup) {
+          mid[i] = fields[i].label;
+          midRowSpan[i] = 2;
+          skipLeaf[i] = true;
+          i += 1;
+          continue;
+        }
+        let j = i + 1;
+        while (j < n && fields[j].subGroup === fields[i].subGroup) j += 1;
+        mid[i] = fields[i].subGroup;
+        midSpan[i] = j - i;
+        for (let k = i + 1; k < j; k += 1) skipMid[k] = true;
+        for (let k = i; k < j; k += 1) leaf[k] = fields[k].label;
+        i = j;
+      }
+      const letters = `<tr class="letter-row"><th class="check" rowspan="4"><input type="checkbox" id="chkAll" title="全选当前筛选"/></th>${fields.map((f, idx) => `<th style="min-width:${(f.width || 12) * 8}px"><span class="col-letter">${colLetter(idx)}</span></th>`).join('')}</tr>`;
+      const groupCells = fields.map((f, idx) => {
+        if (skipTop[idx]) return '';
+        return `<th colspan="${topSpan[idx]}">${esc(top[idx])}</th>`;
+      }).join('');
+      const midCells = fields.map((f, idx) => {
+        if (skipMid[idx]) return '';
+        const on = state.colFilter[f.code] && midRowSpan[idx] === 2 ? 'on' : '';
+        const funnel = midRowSpan[idx] === 2
+          ? `<button class="funnel ${on}" data-code="${esc(f.code)}" title="列筛选">▾</button>`
+          : '';
+        return `<th colspan="${midSpan[idx]}" rowspan="${midRowSpan[idx]}"><div class="col-title"><span>${esc(mid[idx])}</span>${funnel}</div></th>`;
+      }).join('');
+      const leafCells = fields.map((f, idx) => {
+        if (skipLeaf[idx]) return '';
+        const on = state.colFilter[f.code] ? 'on' : '';
+        return `<th style="min-width:${(f.width || 12) * 8}px"><div class="col-title"><span>${esc(leaf[idx])}</span>
+          <button class="funnel ${on}" data-code="${esc(f.code)}" title="列筛选">▾</button></div></th>`;
+      }).join('');
+      $('thead').innerHTML = `${letters}<tr class="group-row">${groupCells}</tr><tr class="mid-row">${midCells}</tr><tr class="leaf-row">${leafCells}</tr>`;
+    }
+
+    function renderBody() {
+      const fields = visibleFields();
+      const rows = filteredRows();
+      renderStats(rows);
+      if (!rows.length) {
+        $('tbody').innerHTML = `<tr><td class="empty" colspan="${Math.max(fields.length + 1, 1)}">无匹配数据</td></tr>`;
+        return;
+      }
+      $('tbody').innerHTML = rows.map((r) => {
+        const cls = isDelay(r) ? 'delay' : '';
+        const checked = state.selected.has(r.id) ? 'checked' : '';
+        return `<tr class="${cls}" data-id="${esc(r.id)}"><td class="check"><input type="checkbox" class="row-chk" data-id="${esc(r.id)}" ${checked}/></td>${fields.map((f) => {
+          const raw = r[f.code];
+          const text = f.number ? fmtNum(raw) : (raw == null || raw === '' ? '—' : String(raw));
+          return `<td class="${f.number ? 'num' : ''}"><span class="cell" data-id="${esc(r.id)}" data-code="${esc(f.code)}" title="双击编辑">${esc(text)}</span></td>`;
+        }).join('')}</tr>`;
+      }).join('');
+    }
+
+    function renderSplit() {
+      const list = state.subtables || [];
+      if (!list.length) { $('subgrid').innerHTML = '<div class="empty">暂无分表</div>'; return; }
+      $('subgrid').innerHTML = list.map((x) => `
+        <div class="subcard">
+          <div style="font-weight:600;margin-bottom:6px">${esc(x.name)}</div>
+          <div class="n">${x.count}</div>
+          <div style="color:var(--muted);margin-top:4px">总经费 ${fmtNum(x.totalBudget)} 万 · 异常 ${x.invalid || 0}</div>
+        </div>`).join('');
+    }
+
+    function renderReport() {
+      const bad = state.rows.filter((r) => r.validation && !r.validation.ok);
+      if (!bad.length) { $('reportBox').innerHTML = '<div class="empty" style="color:var(--green)">全部校验通过</div>'; return; }
+      $('reportBox').innerHTML = `<div style="margin-bottom:8px;color:var(--red)">共 ${bad.length} 条未通过</div>` +
+        bad.map((r) => {
+          const miss = (r.validation.missing || []).join('、');
+          const warn = (r.validation.warnings || []).join('；');
+          return `<div style="border:1px solid var(--line);border-radius:6px;padding:10px;margin-bottom:8px">
+            <b>${esc(r.name || r.serial || r.id)}</b>
+            <div style="color:var(--muted);margin-top:4px">${esc(miss || warn || '校验未通过')}</div>
+          </div>`;
+        }).join('');
+    }
+
+    function renderAll() {
+      renderHead();
+      renderBody();
+      renderSplit();
+      renderReport();
+      $('batchBadge').textContent = String(state.batchLogs.length || 0);
+    }
+
+    function switchTab(name) {
+      document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
+      $('viewMain').style.display = name === 'main' ? 'flex' : 'none';
+      ['split', 'batch', 'report'].forEach((k) => {
+        $('view' + k[0].toUpperCase() + k.slice(1)).classList.toggle('active', name === k);
+      });
+    }
+
+    async function load() {
+      const data = await api('/transition-tool');
+      state.fields = data.fields || [];
+      state.rows = data.rows || [];
+      state.summary = data.summary || {};
+      state.subtables = data.subtables || [];
+      state.cascade = data.cascade || null;
+      if (data.access && $('permText')) {
+        state.access = data.access;
+        $('permText').textContent = data.access.form_scope_label || '表单维护';
+        const canWrite = !!data.access.canFormMaintain;
+        const canAll = !!data.access.canReplaceAll;
+        ['btnUploadMain', 'btnUploadSub', 'btnDelSel', 'btnBatchMain', 'btnBatchSub'].forEach((id) => {
+          if ($(id)) $(id).style.display = canWrite ? '' : 'none';
+        });
+        if ($('btnClearAll')) $('btnClearAll').style.display = canAll ? '' : 'none';
+        if ($('btnUploadMain')) $('btnUploadMain').style.display = canAll ? '' : 'none';
+      }
+      state.visible = defaultVisible(state.fields);
+      fillSelect($('fLevel'), unique(state.rows.map((r) => r.level)), '全部层级');
+      fillSelect($('fChannel'), unique(state.rows.map((r) => r.sourceChannel)), '全部渠道');
+      fillSelect($('fType'), unique(state.rows.map((r) => r.projectType)), '全部项目类型');
+      fillSelect($('fUnit'), unique(state.rows.flatMap((r) => [r.responsibleUnit, r.demandUnit])), '全部单位');
+      fillSelect($('fStatus'), unique(state.rows.map((r) => r.projectStatus)), '全部状态');
+      renderAll();
+      showMsg(`已加载 ${state.rows.length} 条预研项目`, true);
+    }
+
+    async function doImport(file, mode) {
+      if (!file) return;
+      showMsg('正在上传并解析…');
+      try {
+        const up = await uploadFile(file);
+        const ret = await api('/transition-tool/import-upload', {
+          method: 'POST',
+          body: { uploadId: up.id, mode },
+        });
+        state.batchLogs.unshift({
+          at: new Date().toLocaleString(),
+          file: ret.file || file.name,
+          mode,
+          text: `解析新增 ${ret.added || 0} / 更新 ${ret.updated || 0} / 跳过 ${ret.skipped || 0}`,
+          issues: ret.issues || [],
+        });
+        $('batchIssues').innerHTML = state.batchLogs.map((x) =>
+          `<li>[${esc(x.at)}] ${esc(x.file)}（${x.mode === 'replace' ? '总表覆盖' : '分表合并'}）${esc(x.text)}</li>`
+        ).join('');
+        await load();
+        showMsg(`${mode === 'replace' ? '总表' : '分表'}导入完成：新增 ${ret.added || 0}，更新 ${ret.updated || 0}`, true);
+      } catch (e) {
+        showMsg(e.message || String(e), false);
+      }
+    }
+
+    function exportFilteredCsv() {
+      const fields = state.fields;
+      const rows = filteredRows();
+      const lines = [fields.map((f) => f.label).join(',')];
+      for (const r of rows) {
+        lines.push(fields.map((f) => {
+          const v = r[f.code] == null ? '' : String(r[f.code]);
+          return `"${v.replace(/"/g, '""')}"`;
+        }).join(','));
+      }
+      const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `预研筛选包-${rows.length}条.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    function openCols() {
+      const catalog = catalogFields();
+      $('colList').innerHTML = catalog.map((f) => `
+        <label><input type="checkbox" value="${esc(f.code)}" ${state.visible.includes(f.code) ? 'checked' : ''}/> ${esc(f.label)}</label>
+      `).join('');
+      $('colMask').classList.add('show');
+    }
+
+    async function saveRowField(id, code, value) {
+      const row = state.rows.find((r) => r.id === id);
+      if (!row) return;
+      const payload = { ...row };
+      delete payload.validation;
+      payload[code] = value;
+      showMsg('正在保存…');
+      const ret = await api('/transition-tool/records', { method: 'POST', body: payload });
+      const idx = state.rows.findIndex((r) => r.id === id);
+      if (idx >= 0) state.rows[idx] = ret.row;
+      renderAll();
+      showMsg('已保存', true);
+    }
+
+    function startCellEdit(span) {
+      if (!span || span.querySelector('input')) return;
+      const id = span.dataset.id;
+      const code = span.dataset.code;
+      const row = state.rows.find((r) => r.id === id);
+      if (!row) return;
+      const field = (state.fields || []).find((f) => f.code === code);
+      const raw = row[code] == null ? '' : String(row[code]);
+      const input = document.createElement('input');
+      input.value = raw;
+      input.style.cssText = 'width:100%;min-width:80px;border:0;outline:none;font:inherit;background:transparent';
+      span.textContent = '';
+      span.appendChild(input);
+      span.classList.add('edit');
+      input.focus();
+      input.select();
+      const commit = async () => {
+        if (input.dataset.done) return;
+        input.dataset.done = '1';
+        let val = input.value.trim();
+        if (field?.number) val = val === '' ? '' : Number(val);
+        try {
+          await saveRowField(id, code, val);
+        } catch (e) {
+          showMsg(e.message || String(e), false);
+          renderBody();
+        }
+      };
+      input.addEventListener('blur', commit);
+      input.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); }
+        if (ev.key === 'Escape') { input.dataset.done = '1'; renderBody(); }
+      });
+    }
+
+    // events
+    document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+    ['q', 'fLevel', 'fChannel', 'fType', 'fUnit', 'fStatus', 'fAdvanced'].forEach((id) => {
+      $(id).addEventListener('input', renderBody);
+      $(id).addEventListener('change', renderBody);
+    });
+    $('btnUploadMain').onclick = () => $('fileMain').click();
+    $('btnUploadSub').onclick = () => $('fileSub').click();
+    $('btnBatchMain').onclick = () => $('fileMain').click();
+    $('btnBatchSub').onclick = () => $('fileSub').click();
+    $('fileMain').onchange = (e) => { doImport(e.target.files?.[0], 'replace'); e.target.value = ''; };
+    $('fileSub').onchange = (e) => { doImport(e.target.files?.[0], 'merge'); e.target.value = ''; };
+    $('btnExport').onclick = () => {
+      fetch('/api/transition-tool/export.xlsx', { headers: { 'x-session': token } })
+        .then(async (r) => {
+          if (!r.ok) {
+            const t = await r.text();
+            let msg = '导出失败';
+            try { msg = JSON.parse(t).error || msg; } catch {}
+            throw new Error(msg);
+          }
+          const blob = await r.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = '预研项目总表.xlsx'; a.click();
+          URL.revokeObjectURL(url);
+          showMsg('导出完成', true);
+        })
+        .catch((e) => showMsg(e.message, false));
+    };
+    $('btnExportFilter').onclick = () => { exportFilteredCsv(); showMsg('已导出当前筛选结果', true); };
+    $('btnDelSel').onclick = async () => {
+      const ids = [...state.selected];
+      if (!ids.length) return showMsg('请先勾选要删除的行', false);
+      if (!confirm(`确定删除所选 ${ids.length} 条？`)) return;
+      try {
+        const ret = await api('/transition-tool/records/delete-bulk', { method: 'POST', body: { ids } });
+        state.selected.clear();
+        await load();
+        showMsg(`已删除 ${ret.deleted || ids.length} 条`, true);
+      } catch (e) { showMsg(e.message, false); }
+    };
+    $('btnClearAll').onclick = async () => {
+      if (!confirm('确定清空全部项目？此操作不可恢复。')) return;
+      try {
+        const ret = await api('/transition-tool/records/delete-bulk', { method: 'POST', body: { all: true } });
+        state.selected.clear();
+        await load();
+        showMsg(`已清空 ${ret.deleted || 0} 条`, true);
+      } catch (e) { showMsg(e.message, false); }
+    };
+    $('btnCols').onclick = openCols;
+    $('btnColsOk').onclick = () => {
+      const catalog = catalogFields().map((f) => f.code);
+      state.visible = [...$('colList').querySelectorAll('input:checked')].map((x) => x.value).filter((c) => catalog.includes(c));
+      if (!state.visible.length) state.visible = catalog;
+      localStorage.setItem('srpm.form.cols.v37', JSON.stringify(state.visible));
+      $('colMask').classList.remove('show');
+      renderAll();
+    };
+    $('btnColsAll').onclick = () => $('colList').querySelectorAll('input').forEach((x) => { x.checked = true; });
+    $('btnColsReset').onclick = () => {
+      state.visible = catalogFields().map((f) => f.code);
+      localStorage.removeItem('srpm.form.cols.v37');
+      localStorage.removeItem('srpm.form.cols');
+      openCols();
+    };
+    $('colMask').addEventListener('click', (e) => { if (e.target === $('colMask')) $('colMask').classList.remove('show'); });
+    $('btnPerm').onclick = (e) => { e.stopPropagation(); $('permPop').classList.toggle('show'); };
+    document.addEventListener('click', () => $('permPop').classList.remove('show'));
+
+    $('thead').addEventListener('change', (e) => {
+      if (e.target.id !== 'chkAll') return;
+      filteredRows().forEach((r) => {
+        if (e.target.checked) state.selected.add(r.id); else state.selected.delete(r.id);
+      });
+      renderBody();
+    });
+    $('tbody').addEventListener('change', (e) => {
+      const chk = e.target.closest('.row-chk');
+      if (!chk) return;
+      if (chk.checked) state.selected.add(chk.dataset.id); else state.selected.delete(chk.dataset.id);
+    });
+    $('tbody').addEventListener('dblclick', (e) => {
+      const cell = e.target.closest('.cell');
+      if (cell) startCellEdit(cell);
+    });
+    $('thead').addEventListener('click', (e) => {
+      const btn = e.target.closest('.funnel');
+      if (!btn) return;
+      const code = btn.dataset.code;
+      const vals = unique(state.rows.map((r) => r[code]));
+      const cur = state.colFilter[code] || '';
+      const pick = prompt(`列筛选：${code}\n留空清除筛选\n可选值示例：${vals.slice(0, 8).join(' / ')}`, cur);
+      if (pick == null) return;
+      if (!pick) delete state.colFilter[code];
+      else state.colFilter[code] = pick;
+      renderAll();
+    });
+
+    if (!token) {
+      showMsg('未检测到登录会话，请从平台登录后进入本页', false);
+    } else {
+      load().catch((e) => showMsg(e.message || String(e), false));
+    }
+  </script>
+</body>
+</html>

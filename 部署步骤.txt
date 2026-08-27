@@ -1,0 +1,133 @@
+科研项目信息化管理平台 — 目标机部署步骤
+包版本：2026-08-27（含 118 机实装修复）
+
+一、目标机前提
+1. Linux x86_64，已安装 Docker（能执行 docker info）。
+2. 原表单维护工具已在本机运行，默认容器名 form-maintenance-8092，端口 8092。
+   若名字不同，安装后改 .env 里 FORM_CONTAINER，或执行接入时带环境变量。
+3. 本平台占用端口 18087。被占用则改 .env 的 SRPM_PORT。
+4. 不要动 8092 数据卷，不要 docker compose down -v。
+5. 从 Windows 拷贝后，脚本可能带 CRLF，安装前必须：
+     sed -i 's/\r$//' *.sh
+     chmod +x *.sh
+
+二、上传
+把整个「科研项目平台-迁移部署包-20260827」拷到目标机。
+工作目录必须同时具备：
+  install.sh  Dockerfile  server/  web/  .env.example
+
+示例：
+  scp -r "科研项目平台-迁移部署包-20260827" user@目标机:/opt/srpm
+或 U 盘 / FileZilla 拷到 /opt/srpm 或 ~/srpm-18087-new。
+
+不要只拷内层空目录。以能直接看到 install.sh 的那一层为工作目录。
+
+三、安装平台（不含演示项目）
+  cd /opt/srpm          # 或你的实际路径
+  sed -i 's/\r$//' *.sh
+  chmod +x *.sh
+  test -f .env || cp .env.example .env
+  sudo bash ./install.sh
+
+脚本会：检查必备 js → 创建数据卷 → 构建镜像 srpm-platform:20260827
+→ 启动容器 → 把 db.js / init-clean.js 注入容器 → 初始化单位/渠道/12 个账户。
+全新库会同时建好登录表，避免登录 500。
+
+完成后：
+- 容器 srpm-18087 在跑（端口 18087）
+- 数据在 Docker 卷 platform_srpm-data（文件 srpm.db）
+- 已有单位、渠道字典、12 个可登录账户
+- 项目表为空，8092 台账尚未接入
+
+四、接入本机 8092 台账（迁移必须做）
+原则：只导出台账行，写入本平台 srpm.db 的 kv 键 transition.records.v19。
+禁止把 8092 的 platform.db / form-maintenance.db 整库拷进 18087。
+
+  sudo bash ./attach-form-ledger.sh
+
+容器名不是 form-maintenance-8092 时：
+  sudo FORM_CONTAINER=实际容器名 bash ./attach-form-ledger.sh
+
+脚本会：只读导出 8092 行 → 写入 18087 → 清演示项目 → 保留 12 个账户。
+8092 不重启、数据卷不改。
+这是拷贝合并，不是两个库同时实时查询。8092 以后再改的行，需再执行一次本脚本才会进驾驶舱。
+
+成功标志示例：  ledger=932（行数以现场为准）
+
+五、验收
+  sudo bash ./verify.sh
+
+期望看到：LOGIN_OK、VERIFY_OK，projects / dashboard_total / form_rows 与 8092 台账一致。
+
+浏览器：
+  http://目标机IP:18087/
+  工号 100001  密码 100001
+  强制刷新（Ctrl+F5）
+  核对：项目台账、可视化驾驶舱、表单维护
+
+登录页只有工号和密码。
+
+六、12 个可登录账户（初始密码 = 工号）
+工号     姓名         角色
+100001   系统管理员   系统管理员
+100002   周明远       领导
+100003   王建国       管理团队（总部）
+100004   何雨桐       管理团队（总部）
+100005   方致远       管理团队（单位）
+100006   田念慈       管理团队（单位）
+100007   陈铁军       责任总师
+100008   蔡文渊       责任总师
+100009   赵美玲       财务
+100010   毕仲文       财务
+100011   龚雪君       财务
+100012   林晚晴       项目团队
+
+七、故障排查（118 机已出现过）
+
+1) Cannot find module .../init-clean.js 或 attachFormLedger.js
+   原因：容器里是旧镜像，缺本包脚本。
+   处理：确认工作目录能 ls 到下面三个文件（注意 staffAccounts 有两个 c）：
+     server/src/init-clean.js
+     server/src/attachFormLedger.js
+     server/src/staffAccounts.js
+   然后：
+     sudo docker cp server/src/db.js srpm-18087:/app/server/src/db.js
+     sudo docker cp server/src/staffAccounts.js srpm-18087:/app/server/src/staffAccounts.js
+     sudo docker cp server/src/init-clean.js srpm-18087:/app/server/src/init-clean.js
+     sudo docker cp server/src/attachFormLedger.js srpm-18087:/app/server/src/attachFormLedger.js
+     sudo docker exec -w /app/server srpm-18087 node src/init-clean.js
+     sudo docker exec -w /app/server srpm-18087 node src/attachFormLedger.js
+   若 /tmp/form-rows-from-8092.json 已在容器里，不必重导 8092。
+
+2) 登录页提示「服务器内部错误」
+   原因：全新库缺 login_attempts / login_sessions。
+   处理：
+     sudo bash ./fix-login-tables.sh
+   看到 LOGIN_TABLES_OK 后 Ctrl+F5，再用 100001 / 100001 登录。
+   不要重装，不要 docker volume rm。
+
+3) 找不到 8092 容器
+   docker ps 看实际名字，再：
+     sudo FORM_CONTAINER=实际容器名 bash ./attach-form-ledger.sh
+
+八、禁止事项
+- docker compose down -v
+- docker volume rm platform_srpm-data（有业务数据时）
+- 合并 sqlite 文件（8092 库与 srpm.db 不是同一套表）
+- 停 8092、改 8092 卷
+
+九、停止平台（测试用，不删数据）
+  sudo bash ./stop.sh
+8092 始终不要删。
+
+十、本目录文件
+  请先读我.txt            最短步骤
+  部署步骤.txt            本文
+  install.sh              构建并启动 18087
+  attach-form-ledger.sh   接入 8092 台账
+  verify.sh               验收
+  fix-login-tables.sh     应急：补登录表
+  stop.sh                 只停平台容器
+  Dockerfile  docker-compose.yml  .env.example
+  server/                 后端（含登录表、12 账户、台账接入）
+  web/dist                前端构建产物

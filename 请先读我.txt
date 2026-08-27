@@ -1,0 +1,30 @@
+科研项目信息化管理平台 · 迁移部署包（2026-08-27）
+
+【这是什么】
+把 18087 平台装到目标 Linux 上，并把该机器上正在跑的 8092 表单台账
+拷贝合并进平台主库，使「项目台账 / 可视化驾驶舱 / 表单维护」能看到原台账。
+
+本包已纳入 118 目标机实装踩坑修复：
+- 镜像必须带上 init-clean.js / attachFormLedger.js / staffAccounts.js
+- 全新库补齐 login_attempts / login_sessions，避免登录页「服务器内部错误」
+
+【最短步骤】（目标机已装 Docker，8092 已在跑）
+1. 把本文件夹拷到目标机，例如 /opt/srpm 或 ~/srpm-18087-new
+   工作目录必须能直接看到 install.sh、Dockerfile、server/、web/
+2. cd 到该目录
+   sed -i 's/\r$//' *.sh
+   chmod +x *.sh
+   sudo bash ./install.sh
+3. sudo bash ./attach-form-ledger.sh
+4. sudo bash ./verify.sh
+5. 浏览器打开 http://目标机IP:18087/
+   工号 100001    密码 100001
+   Ctrl+F5 后看项目台账和可视化驾驶舱
+
+详细说明见《部署步骤.txt》。
+
+【禁止】
+- 不要 docker compose down -v
+- 不要 docker volume rm platform_srpm-data（有数据时）
+- 不要把 8092 的整个 .db 文件拷进本平台
+- 不要停、不要改 8092 容器和数据卷
