@@ -1,0 +1,31 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: srpm-backend
+  datasource:
+    url: jdbc:h2:file:./data/srpm;MODE=MySQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  h2:
+    console:
+      enabled: true
+      path: /h2
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+srpm:
+  jwt:
+    secret: "srpm-dev-only-change-in-production-please-use-256bit-secret-key!!"
+    expire-hours: 12
+  org-platform:
+    enabled: false
+    base-url: http://127.0.0.1:8088
+    token: ""

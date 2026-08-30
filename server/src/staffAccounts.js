@@ -39,7 +39,16 @@ export function ensureAuthColumns(db) {
   if (!cols.includes('form_access')) db.prepare('ALTER TABLE users ADD COLUMN form_access INTEGER NOT NULL DEFAULT 0').run();
   if (!cols.includes('form_scope')) db.prepare('ALTER TABLE users ADD COLUMN form_scope TEXT').run();
   if (!cols.includes('form_scope_keys')) db.prepare('ALTER TABLE users ADD COLUMN form_scope_keys TEXT').run();
+  if (!cols.includes('declare_result_access')) db.prepare('ALTER TABLE users ADD COLUMN declare_result_access INTEGER NOT NULL DEFAULT 0').run();
 }
+
+export const HQ_TECH_ACCOUNTS = [
+  { emp_no: '411582', name: '黄光辉', role: 'mgmt', scope: 'hq', unit_id: 7, title: '总部科技部', form_access: 1, form_scope: 'hq' },
+  { emp_no: '333897', name: '黄晓华', role: 'mgmt', scope: 'hq', unit_id: 7, title: '总部科技部', form_access: 1, form_scope: 'hq' },
+  { emp_no: '203322', name: '张大伟', role: 'mgmt', scope: 'hq', unit_id: 7, title: '总部科技部', form_access: 1, form_scope: 'hq' },
+  { emp_no: '339189', name: '罗鑫鑫', role: 'mgmt', scope: 'hq', unit_id: 7, title: '总部科技部', form_access: 1, form_scope: 'hq' },
+  { emp_no: '201882', name: '邹运佳', role: 'mgmt', scope: 'hq', unit_id: 7, title: '总部科技部', form_access: 1, form_scope: 'hq' },
+];
 
 function findUser(db, empNo, id) {
   return db.prepare('SELECT * FROM users WHERE emp_no=? OR id=? OR id=?').get(empNo, empNo, id) || null;
@@ -72,6 +81,29 @@ export function ensureStaffAccounts(db) {
   });
   tx();
   return { created, updated, total: STAFF_ACCOUNTS.length };
+}
+
+/** 表单维护「人员权限」清单：总部科技部实名账号。已存在则不改密码、不覆盖角色。 */
+export function ensureHqTechAccounts(db) {
+  ensureAuthColumns(db);
+  let created = 0;
+  let skipped = 0;
+  const tx = db.transaction(() => {
+    for (const s of HQ_TECH_ACCOUNTS) {
+      const hit = findUser(db, s.emp_no, s.emp_no);
+      if (hit) {
+        skipped += 1;
+        continue;
+      }
+      const keys = s.form_access ? JSON.stringify([]) : null;
+      db.prepare(`INSERT INTO users (id,name,role,scope,unit_id,title,status,password_hash,emp_no,form_access,form_scope,form_scope_keys,declare_result_access)
+        VALUES (?,?,?,?,?,?,'在岗',?,?,?,?,?,0)`)
+        .run(s.emp_no, s.name, s.role, s.scope, s.unit_id, s.title, hashPassword(s.emp_no), s.emp_no, s.form_access, s.form_scope, keys);
+      created += 1;
+    }
+  });
+  tx();
+  return { created, skipped, total: HQ_TECH_ACCOUNTS.length };
 }
 
 export function staffEmpNos() {

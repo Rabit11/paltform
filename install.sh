@@ -59,8 +59,10 @@ for i in $(seq 1 15); do
   sleep 2
 done
 docker cp "$ROOT/server/src/db.js" "$NAME":/app/server/src/db.js
+docker cp "$ROOT/server/src/api.js" "$NAME":/app/server/src/api.js
 docker cp "$ROOT/server/src/staffAccounts.js" "$NAME":/app/server/src/staffAccounts.js
 docker cp "$ROOT/server/src/init-clean.js" "$NAME":/app/server/src/init-clean.js
+docker cp "$ROOT/web/dist/form-maintenance.html" "$NAME":/app/web/dist/form-maintenance.html
 docker exec -w /app/server "$NAME" node src/init-clean.js
 
 echo "======== 安装完成 ========"

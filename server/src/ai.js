@@ -41,11 +41,11 @@ const DELIVERABLE_TYPES = ['专利', '论文', '软著', '技术标准', '原理
 
 const EXTRACT_TOOL = {
   name: 'extract_project_info',
-  description: '从科研项目申报材料（建议书/申请书/任务书）中抽取结构化立项信息',
+  description: '从科研项目申报材料（项目建议书/项目申请书）中抽取结构化立项信息',
   input_schema: {
     type: 'object',
     properties: {
-      name: { type: 'string', description: '项目名称全称（不含"建议书/申请书"等文种后缀）' },
+      name: { type: 'string', description: '项目名称全称（不含“项目建议书/项目申请书”等文种后缀）' },
       goal: { type: 'string', description: '项目总体目标，浓缩为一段话（≤120字）' },
       yearGoal: { type: 'string', description: '当年年度目标（如有）' },
       budget: { type: 'number', description: '申请总经费，单位：万元（文中若为亿元请换算）' },
@@ -73,7 +73,7 @@ const EXTRACT_TOOL = {
 };
 
 function systemPrompt(channels) {
-  return `你是科研项目管理平台的申报材料结构化助手。用户上传一份科研项目申报文档（建议书/申请书/任务清单等），你负责精确抽取立项关键信息，用于自动预填申报表单（用户会人工核对修改）。
+  return `你是科研项目管理平台的申报材料结构化助手。用户上传一份科研项目申报文档（项目建议书或项目申请书，不含任务清单），你负责精确抽取立项关键信息，用于自动预填申报表单（用户会人工核对修改）。
 规则：
 1. 只抽取文档中明确存在的信息，缺失字段留空，严禁编造。
 2. 金额统一换算为万元；日期统一为 YYYY-MM-DD。
@@ -176,6 +176,7 @@ async function callOpenAI(cfg, { text, channels }) {
 function mockExtract({ text, channels }) {
   const lines = text.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
   const title = (lines.find((l) => /(研究|研制|技术|系统|平台|验证)/.test(l) && l.length <= 45) || lines[0] || '未命名项目')
+    .replace(/项目建议书|项目申请书/g, '')
     .replace(/(项目)?(建议书|申请书|任务书|任务清单|可研报告)$/g, '').trim();
   const budgetM = text.match(/([\d,.]+)\s*万元/) || text.match(/([\d.]+)\s*亿元/);
   let budget;

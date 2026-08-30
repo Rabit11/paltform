@@ -34,39 +34,6 @@ app.use((req, res, next) => {
 app.get('/healthz', (_req, res) => res.json({ status: 'ok', service: 'srpm', version: '1.2.0' }));
 app.use('/api', api);
 
-import http from 'node:http';
-import { URL } from 'node:url';
-const FORM_TOOL_UPSTREAM = process.env.FORM_TOOL_UPSTREAM || 'http://172.17.0.1:8092';
-function proxyFormTool(req, res) {
-  const upstream = new URL(FORM_TOOL_UPSTREAM);
-  const suffix = (req.url && req.url !== '') ? req.url : '/';
-  const headers = { ...req.headers, host: upstream.host };
-  const opts = {
-    protocol: upstream.protocol,
-    hostname: upstream.hostname,
-    port: upstream.port || 80,
-    path: suffix,
-    method: req.method,
-    headers,
-  };
-  const pReq = http.request(opts, (pRes) => {
-    const outHeaders = { ...pRes.headers };
-    delete outHeaders['x-frame-options'];
-    delete outHeaders['content-security-policy'];
-    res.writeHead(pRes.statusCode || 502, outHeaders);
-    pRes.pipe(res);
-  });
-  pReq.on('error', (err) => {
-    res.statusCode = 502;
-    res.setHeader('content-type', 'application/json; charset=utf-8');
-    res.end(JSON.stringify({ error: '表单维护工具(8092)不可用', detail: String(err.message || err) }));
-  });
-  req.pipe(pReq);
-}
-// FORM_TOOL_PROXY_V1
-app.use('/form-tool', proxyFormTool);
-
-
 // 生产/演示模式：托管前端构建产物
 const dist = join(__dirname, '..', '..', 'web', 'dist');
 if (existsSync(dist)) {

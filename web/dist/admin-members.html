@@ -24,10 +24,10 @@
       padding: 16px;
     }
     body.embed { padding: 0; background: transparent; }
-    .wrap { max-width: 1180px; margin: 0 auto; }
-    .hd { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+    .wrap { max-width: none; margin: 0 auto; }
+    .hd { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
     .hd h1 { margin: 0; font-size: 18px; }
-    .hd p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+    .hd p { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; max-width: 860px; }
     .btn {
       height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line);
       background: #fff; cursor: pointer; font-size: 13px; color: var(--text);
@@ -40,8 +40,12 @@
       background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
     }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
-    th { background: #f8fafc; color: var(--muted); font-weight: 600; font-size: 12px; }
+    th, td { padding: 12px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; height: 55px; }
+    th { background: #f8fafc; color: var(--muted); font-weight: 600; font-size: 12px; height: 55px; }
+    td.duty-cell { max-width: 280px; height: auto; padding-top: 10px; padding-bottom: 10px; }
+    .duty-sum { font-size: 12px; color: #1F1F1F; margin-bottom: 6px; }
+    .duty-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag.duty { background: #E6F4FF; color: #0048A0; border-radius: 4px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .tag {
       display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px;
       background: #eff6ff; color: var(--accent);
@@ -144,7 +148,7 @@
     <div class="hd">
       <div>
         <h1>成员管理</h1>
-        <p>平台身份决定登录入口与组织可见范围；项目内操作按「本项目岗位」授权。同一人可在 A 项目当负责人、在 B 项目当联系人，权限随岗位变化。</p>
+        <p>登录身份只决定菜单与组织可见范围，不是项目职能。同一人可在 A 项目当负责人、在 B 项目当技术负责人或责任总师、在 C 项目进管理团队；办理权限只认「本项目岗位」。跨项目任职在列表中汇总，项目内指定/转办岗位。</p>
       </div>
       <div class="actions">
         <button class="btn" id="btnReload">刷新</button>
@@ -159,7 +163,8 @@
           <tr>
             <th>工号</th>
             <th>姓名</th>
-            <th>平台身份</th>
+            <th>登录身份</th>
+            <th>跨项目任职</th>
             <th>范围</th>
             <th>单位</th>
             <th>职务</th>
@@ -169,7 +174,7 @@
           </tr>
         </thead>
         <tbody id="tbody">
-          <tr><td colspan="9" style="color:#6b7a90;padding:24px;text-align:center">加载中…</td></tr>
+          <tr><td colspan="10" style="color:#6b7a90;padding:24px;text-align:center">加载中…</td></tr>
         </tbody>
       </table>
     </div>
@@ -185,7 +190,7 @@
         <label>姓名
           <input id="f_name" placeholder="姓名" />
         </label>
-        <label>平台身份
+        <label>登录身份
           <select id="f_role">
             <option value="team">项目团队</option>
             <option value="contact">项目团队 · 联系人</option>
@@ -213,9 +218,19 @@
             <option value="已离岗">已离岗</option>
           </select>
         </label>
-        <label style="grid-column: 1 / -1">职务/说明
-          <input id="f_title" placeholder="例如：项目联系人 / 单位科研项目主管" />
+        <label style="grid-column: 1 / -1">职务/说明（人事口径，不是项目岗位）
+          <input id="f_title" placeholder="例如：单位科研项目主管。项目内岗位请在各项目指定" />
         </label>
+        <div class="form-extra">
+          <h3>立项审批结果权限</h3>
+          <p class="hint" style="margin:0 0 8px">申报流程中「审批结果」（通过 / 驳回 / 不立项）默认仅系统管理员可办。管理员可将该权限分配给其他在岗人员。</p>
+          <label>是否可办理立项审批结果
+            <select id="f_declare_result">
+              <option value="0">否</option>
+              <option value="1">是</option>
+            </select>
+          </label>
+        </div>
         <div class="form-extra" id="formExtra">
           <h3>表单维护权限（仅总部科技部）</h3>
           <label>是否具有表单维护权限
@@ -238,8 +253,8 @@
           </label>
         </div>
         <div class="duty-box" id="dutyBox" style="display:none">
-          <h3>本人口径 · 项目岗位任职</h3>
-          <p class="hint" style="margin:0 0 8px">以下来自各项目团队名单（team），不是平台身份。空表示尚未绑定到任何项目岗位。</p>
+          <h3>跨项目任职（本项目岗位）</h3>
+          <p class="hint" style="margin:0 0 8px">来自各项目团队名单，不是登录身份。同一人可在不同项目担任不同岗位；空表示尚未绑定。</p>
           <ul id="dutyList"></ul>
         </div>
       </div>
@@ -402,6 +417,14 @@
       return keys.length ? `${base}（${keys.length}项）` : base;
     }
 
+    function dutyCell(u) {
+      const s = u.dutySummary || {};
+      const labels = s.byLabel || [];
+      if (!s.projectCount && !labels.length) return '<span style="color:#8C8C8C">尚未绑定</span>';
+      const chips = labels.map((x) => `<span class="tag duty" title="${x.count}个项目">${x.label}×${x.count}</span>`).join('');
+      return `<div class="duty-sum">${s.projectCount || 0} 个项目</div><div class="duty-chips">${chips}</div>`;
+    }
+
     function openDialog(row) {
       editingId = row ? row.id : null;
       document.getElementById('dialogTitle').textContent = row ? '编辑成员' : '新增成员';
@@ -419,6 +442,11 @@
       fillUnits(row?.unit_id);
       document.getElementById('f_form_access').value = hasFormAccess(row) ? '1' : '0';
       document.getElementById('f_form_scope').value = row?.form_scope || 'hq';
+      const dr = document.getElementById('f_declare_result');
+      if (dr) {
+        dr.value = (row?.role === 'admin' || Number(row?.declare_result_access) === 1 || row?.canDeclareResult) ? '1' : '0';
+        dr.disabled = row?.role === 'admin';
+      }
       syncFormExtra(row);
       const dutyBox = document.getElementById('dutyBox');
       const dutyList = document.getElementById('dutyList');
@@ -455,7 +483,7 @@
         const rows = data.users || [];
         const tb = document.getElementById('tbody');
         if (!rows.length) {
-          tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#6b7a90;padding:24px">暂无成员</td></tr>';
+          tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#6b7a90;padding:24px">暂无成员</td></tr>';
           return;
         }
         tb.innerHTML = rows.map((u) => {
@@ -465,6 +493,7 @@
             <td><code>${emp}</code></td>
             <td>${u.name || ''}</td>
             <td><span class="tag">${ROLE_LABEL[u.role] || u.role}</span></td>
+            <td class="duty-cell">${dutyCell(u)}</td>
             <td>${SCOPE_LABEL[u.scope] || u.scope || ''}</td>
             <td>${unitName(u.unit_id)}</td>
             <td>${u.title || '—'}</td>
@@ -492,7 +521,7 @@
         if (isNew && !document.getElementById('f_title').value.trim()) {
           document.getElementById('f_title').value = '项目联系人';
         }
-        document.getElementById('dialogHint').textContent = '项目联系人属于项目团队：发起审批、上传审批材料；默认仅看本人关联项目。';
+        document.getElementById('dialogHint').textContent = '登录身份「项目联系人」只影响默认可见范围；具体是否担任某项目联系人，须在该项目岗位中指定。';
       }
     }
 
@@ -598,6 +627,7 @@
           form_access: formAccess,
           form_scope: formScope,
           form_scope_keys: selectedFormKeys(),
+          declare_result_access: document.getElementById('f_declare_result').value === '1',
         };
         if (isHqTechUnit(payload.unit_id) && formAccess && (formScope === 'channel' || formScope === 'type') && !payload.form_scope_keys.length) {
           throw new Error(formScope === 'channel' ? '请选择授权渠道' : '请选择授权项目类型');

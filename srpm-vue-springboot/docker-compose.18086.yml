@@ -1,0 +1,21 @@
+services:
+  srpm-vue-api:
+    image: srpm-vue-api:20260828
+    container_name: srpm-vue-18086-api
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:h2:file:/data/srpm;MODE=MySQL
+    volumes:
+      - srpm-vue-18086-data:/data
+  srpm-vue-web:
+    image: srpm-vue-web:20260828
+    container_name: srpm-vue-18086-web
+    restart: unless-stopped
+    depends_on:
+      - srpm-vue-api
+    ports:
+      - "18086:80"
+
+volumes:
+  srpm-vue-18086-data:
+    name: srpm-vue-18086-data

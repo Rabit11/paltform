@@ -3,11 +3,11 @@ import multer from 'multer';
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
-import { readFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, extname } from 'node:path';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { openDb, createSchema } from './db.js';
+import { openDb, createSchema, ensureTransitionImportBatches } from './db.js';
 import { todayISO, statusColor, worstColor, evalGrade, daysLeft, addDays } from './domain.js';
 import { aiStatus, extractProjectInfo } from './ai.js';
 import { findCascadePath, getCascadeConfig, resolveOfficeByProjectType, buildCascadeIndexes } from './cascadeConfig.js';
@@ -15,6 +15,7 @@ import { getMajorConfig, majorPayload, validateMajorPair } from './majorConfig.j
 import { normalizeResultFields, pairResultItems, splitResultLines } from './resultItems.js';
 import { buildStyledTransitionWorkbookBuffer, exportTransitionFieldValue } from './transitionExport.js';
 import { selectPrimaryImportSheet } from './transitionFiles.js';
+import { ensureHqTechAccounts } from './staffAccounts.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = join(__dirname, '..', 'data', 'uploads');
@@ -23,10 +24,64 @@ mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const db = openDb();
 createSchema(db);
+ensureTransitionImportBatches(db);
 const r = Router();
 
 const J = (s, d = null) => { try { return s ? JSON.parse(s) : d; } catch { return d; } };
 const TODAY = () => todayISO();
+function nowDateTime(d = new Date()) {
+  const tz = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return tz.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function listImportBatches(limit = 80) {
+  try {
+    ensureTransitionImportBatches(db);
+    return db.prepare(`
+      SELECT id, orig_name, mode, uploaded_at, uploader_name, uploader_emp_no,
+             parsed, added, updated, skipped, issue_count, upload_id,
+             COALESCE(status, '已入库') AS status, confirmed_at, confirmed_by
+      FROM transition_import_batches
+      ORDER BY id DESC
+      LIMIT ?
+    `).all(limit);
+  } catch {
+    return [];
+  }
+}
+
+function uploaderMeta(user) {
+  return {
+    name: String(user?.name || '').trim(),
+    emp_no: String(user?.emp_no || '').trim(),
+  };
+}
+
+function recordImportBatch(row) {
+  ensureTransitionImportBatches(db);
+  const info = db.prepare(`
+    INSERT INTO transition_import_batches
+      (orig_name, mode, uploaded_at, uploader_name, uploader_emp_no, parsed, added, updated, skipped, issue_count, upload_id, status, rows_json, snapshot_json, meta_json)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `).run(
+    String(row.orig_name || '').trim() || '（未命名表格）',
+    row.mode === 'replace' ? 'replace' : 'merge',
+    row.uploaded_at || nowDateTime(),
+    row.uploader_name || '',
+    row.uploader_emp_no || '',
+    Number(row.parsed) || 0,
+    Number(row.added) || 0,
+    Number(row.updated) || 0,
+    Number(row.skipped) || 0,
+    Number(row.issue_count) || 0,
+    row.upload_id == null ? null : Number(row.upload_id),
+    row.status || '待确认',
+    row.rows_json || null,
+    row.snapshot_json || null,
+    row.meta_json || null,
+  );
+  return Number(info.lastInsertRowid);
+}
 const LEVELS = ['国家级', '地方级', '公司级'];
 const STATUS_FLOW = ['申报中', '立项中', '实施中', '验收中', '已验收', '已终止'];
 
@@ -114,6 +169,7 @@ const V19_MAJOR_BY_CHANNEL = {
   XP: ['50-复合材料', '5002-复合材料与工艺'],
   HQZX: ['30-系统', '3004-动力机APU'],
   KJZ: ['70-运行支持', '7004-培训工程'],
+  DFY: ['80-通用基础', '8006-工业工程'],
   DFY_NH: ['80-通用基础', '8006-工业工程'],
   DFY_XG: ['80-通用基础', '8006-工业工程'],
   DFY_TJ: ['80-通用基础', '8006-工业工程'],
@@ -128,18 +184,42 @@ const V19_MAJOR_BY_CHANNEL = {
 
 function mapChannelRow(c) {
   const orgOffice = c.org_office || c.org || '';
+  const declareRaw = J(c.declare_json, []);
   return {
     ...c,
     source_channel: c.source_channel || '',
     org_office: orgOffice,
     org: orgOffice,
     flow: J(c.flow_json, []),
-    declare: J(c.declare_json, []),
+    declare: Array.isArray(declareRaw) ? declareRaw.map(displayDeclareMaterial) : [],
     filing: J(c.filing_json, []),
     chain: J(c.approve_chain_json, []),
     assess: J(c.assess_json, []),
   };
 }
+
+/** 立项申报材料：任务书/建议书统一为项目建议书，申请书为项目申请书（不含任务清单） */
+function displayDeclareMaterial(name) {
+  let t = String(name || '').trim();
+  if (!t || /任务清单/.test(t)) return t;
+  t = t.replace(/项目建议书/g, '\u0001').replace(/项目申请书/g, '\u0002');
+  t = t.replace(/建议书/g, '项目建议书').replace(/申请书/g, '项目申请书').replace(/任务书/g, '项目建议书');
+  return t.replace(/\u0001/g, '项目建议书').replace(/\u0002/g, '项目申请书');
+}
+
+function migrateDeclareMaterialLabels() {
+  try {
+    const rows = db.prepare('SELECT id, declare_json FROM channels').all();
+    const upd = db.prepare('UPDATE channels SET declare_json=? WHERE id=?');
+    for (const r of rows) {
+      const arr = J(r.declare_json, []);
+      if (!Array.isArray(arr) || !arr.length) continue;
+      const next = arr.map(displayDeclareMaterial);
+      if (JSON.stringify(next) !== JSON.stringify(arr)) upd.run(JSON.stringify(next), r.id);
+    }
+  } catch { /* ignore */ }
+}
+migrateDeclareMaterialLabels();
 
 function cascadePayload() {
   const cfg = liveCascadeConfig();
@@ -368,8 +448,17 @@ function ensureUserAuthColumns() {
   if (!cols.includes('form_scope_keys')) {
     db.prepare('ALTER TABLE users ADD COLUMN form_scope_keys TEXT').run();
   }
+  if (!cols.includes('declare_result_access')) {
+    db.prepare('ALTER TABLE users ADD COLUMN declare_result_access INTEGER NOT NULL DEFAULT 0').run();
+  }
 }
 ensureUserAuthColumns();
+try {
+  const hq = ensureHqTechAccounts(db);
+  if (hq.created) console.log(`✔ 已建立总部科技部账号 ${hq.created} 个`);
+} catch (err) {
+  console.error('ensureHqTechAccounts failed', err);
+}
 
 function ensureLoginTables() {
   db.exec(`
@@ -504,6 +593,16 @@ function filterTransitionRowsForUser(user, rows) {
   });
 }
 
+function canDeclareResult(user) {
+  if (!user || user.status === '已离岗') return false;
+  if (user.role === 'admin') return true;
+  return Number(user.declare_result_access) === 1;
+}
+
+function isDeclareResultStep(step) {
+  return !!step && (step.title === '审批结果' || step.slot === 'declare_result');
+}
+
 function formAccessMeta(user) {
   const can = canAccessFormTool(user);
   const scope = user?.role === 'admin' ? 'hq' : (user?.form_scope || null);
@@ -514,6 +613,8 @@ function formAccessMeta(user) {
     form_scope_label: can ? (user?.role === 'admin' ? '系统管理员（全部）' : (FORM_SCOPE_LABEL[scope] || FORM_SCOPE_LABEL.hq)) : '无',
     form_scope_keys: parseFormScopeKeys(user?.form_scope_keys),
     canReplaceAll: can && (user?.role === 'admin' || (user?.form_scope || 'hq') === 'hq'),
+    canDeclareResult: canDeclareResult(user),
+    declare_result_access: canDeclareResult(user) ? 1 : Number(user?.declare_result_access || 0),
   };
 }
 
@@ -594,6 +695,7 @@ function canAccessProject(user, project) {
 
 function canActApprovalStep(user, approval, step) {
   if (!user || !step) return false;
+  if (isDeclareResultStep(step)) return canDeclareResult(user);
   if (user.role === 'admin') return true;
   if (!step.assignee && !step.assigneeId) return false;
   return step.assignee === user.name || (step.assigneeId && String(step.assigneeId) === String(user.emp_no || user.id));
@@ -764,6 +866,70 @@ function listUserProjectDuties(user) {
     .filter(Boolean);
 }
 
+function dutySummaryPayload(projectCount, slotCounts) {
+  const byLabel = PROJECT_DUTY_DEFS
+    .filter((d) => slotCounts[d.key])
+    .map((d) => ({ key: d.key, label: d.label, count: slotCounts[d.key] }));
+  const text = byLabel.length
+    ? byLabel.map((x) => `${x.count}个项目·${x.label}`).join('；')
+    : '尚未绑定项目岗位';
+  return { projectCount: Number(projectCount) || 0, byLabel, text };
+}
+
+function summarizeDutyRows(rows) {
+  const slotCounts = {};
+  for (const r of rows || []) {
+    for (const d of r.duties || []) slotCounts[d] = (slotCounts[d] || 0) + 1;
+  }
+  return dutySummaryPayload((rows || []).length, slotCounts);
+}
+
+function summarizeDutiesForUser(user) {
+  return summarizeDutyRows(listUserProjectDuties(user));
+}
+
+function bulkDutySummaries(users) {
+  const byEmp = new Map();
+  const byName = new Map();
+  const push = (map, key, pid, slot) => {
+    const k = String(key || '').trim();
+    if (!k) return;
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push({ pid, slot });
+  };
+  const memberRows = db.prepare('SELECT project_id, slot, emp_no, name FROM project_members').all();
+  for (const r of memberRows) {
+    push(byEmp, r.emp_no, r.project_id, r.slot);
+    push(byName, r.name, r.project_id, r.slot);
+  }
+  const memberPids = new Set(memberRows.map((r) => r.project_id));
+  for (const p of db.prepare('SELECT id, team_json FROM projects').all()) {
+    if (memberPids.has(p.id)) continue;
+    const team = J(p.team_json, {});
+    for (const d of PROJECT_DUTY_DEFS) {
+      const u = resolvePerson(team[d.key]);
+      if (!u) continue;
+      push(byEmp, u.emp_no || u.id, p.id, d.key);
+      push(byName, u.name, p.id, d.key);
+    }
+  }
+  const pack = (hits) => {
+    const projects = new Set();
+    const slotCounts = {};
+    for (const h of hits || []) {
+      projects.add(h.pid);
+      slotCounts[h.slot] = (slotCounts[h.slot] || 0) + 1;
+    }
+    return dutySummaryPayload(projects.size, slotCounts);
+  };
+  const out = {};
+  for (const u of users || []) {
+    const emp = String(u.emp_no || u.id || '');
+    out[u.id] = pack(byEmp.get(emp) || byName.get(u.name) || []);
+  }
+  return out;
+}
+
 function ensureProjectMembersTable() {
   db.exec(`CREATE TABLE IF NOT EXISTS project_members (
     project_id INTEGER NOT NULL,
@@ -908,7 +1074,11 @@ function canSeeApproval(user, a) {
 function withApprovalAuth(user, a) {
   const mapped = a && Array.isArray(a.steps) ? a : mapApproval(a);
   const step = mapped.steps?.[mapped.current_step];
-  return { ...mapped, canAct: mapped.status === '审批中' && canActApprovalStep(user, mapped, step) };
+  return {
+    ...mapped,
+    canAct: mapped.status === '审批中' && canActApprovalStep(user, mapped, step),
+    isDeclareResultStep: isDeclareResultStep(step),
+  };
 }
 
 const ROLE_DEPT = {
@@ -1028,7 +1198,8 @@ r.get('/session', (req, res) => {
     ...publicUser(user),
     canPreResearch: canAccessPreResearch(user),
     ...formAccessMeta(user),
-    projectDutyHint: '平台身份决定登录入口与组织范围；项目内操作按「本项目岗位」授权，同一人在不同项目可有不同权限。',
+    projectDutyHint: '登录身份只决定菜单与组织可见范围；项目内职能以「本项目岗位」为准，同一人可在不同项目担任负责人、总师、主管等。',
+    dutySummary: summarizeDutiesForUser(user),
   });
 });
 
@@ -1065,7 +1236,7 @@ function enrichProject(p, today) {
     ...p,
     partners: J(p.partners_json, []),
     team,
-    teamMembers: teamMembersPayload(team),
+    teamMembers: teamMembersPayload(team, p.id),
     tags: J(p.tags_json, []),
     ledgerSource: false,
     v19,
@@ -1091,9 +1262,9 @@ function scopeProjects(user, rows) {
     db.prepare('SELECT project_id FROM project_members WHERE emp_no=? OR emp_no=? OR name=?').all(emp, String(user.id || ''), user.name).map((r) => r.project_id),
   );
   if ((user.role === 'mgmt' || user.role === 'finance') && user.scope === 'unit') {
-    return rows.filter((p) => p.lead_unit_id === user.unit_id || memberIds.has(p.id));
+    return rows.filter((p) => p.lead_unit_id === user.unit_id || memberIds.has(p.id) || projectDutiesOf(user, p).length > 0);
   }
-  return rows.filter((p) => memberIds.has(p.id));
+  return rows.filter((p) => memberIds.has(p.id) || projectDutiesOf(user, p).length > 0);
 }
 
 // ---------- 基础 ----------
@@ -1311,12 +1482,51 @@ function completeDisplayTeam(team, unitId) {
   return t;
 }
 
-function teamMembersPayload(team) {
+function teamMembersPayload(team, projectId) {
+  const bySlot = {};
+  if (projectId) {
+    for (const r of db.prepare('SELECT slot, emp_no, name FROM project_members WHERE project_id=?').all(Number(projectId))) {
+      bySlot[r.slot] = r;
+    }
+  }
   return TEAM_DISPLAY_SLOTS.map(([key, label]) => {
-    const name = team?.[key] || '';
-    const u = name ? userByName(name) : null;
-    return { key, label, name, empNo: u?.emp_no || '', title: u?.title || '', vacant: !name };
+    const row = bySlot[key];
+    const name = row?.name || team?.[key] || '';
+    const u = row?.emp_no
+      ? db.prepare("SELECT * FROM users WHERE (emp_no=? OR id=?) AND status='在岗'").get(row.emp_no, row.emp_no)
+      : (name ? resolvePerson(name) || userByName(name) : null);
+    return {
+      key, label, name: u?.name || name, empNo: u?.emp_no || row?.emp_no || '',
+      title: u?.title || '', vacant: !name,
+    };
   });
+}
+
+function dutyTaskHint(slot, project) {
+  const filing = project?.status === '立项中' || project?.status === '已立项';
+  const hints = {
+    contact: filing ? '上传立项佐证并提交备案归档' : '跟踪审签、配合补正申报材料',
+    owner: filing ? '完善基本信息并推进立项确认' : '按审签节点审核申报',
+    tech: filing ? '编制里程碑与交付物' : '按节点复核技术方案',
+    pm: filing ? '编制/办结实施计划并登记外协' : '项目过程管控，按节点签署',
+    chief1: '技术把关审签（一级总师）',
+    chief2: '技术把关审签（二级总师/责任总师）',
+    hqHead: '总部处室审签与归档把关',
+    hqStaff: '总部处室承办与材料核验',
+    unitDeptHead: '单位科技管理审签',
+    unitStaff: '单位科技管理承办',
+    finHq: '总部经费口径审核',
+    finHead: '单位财务审核',
+    finStaff: '经费提报与财务审核',
+  };
+  return hints[slot] || `按本项目「${dutyLabelOf(slot)}」岗位办理`;
+}
+
+function projectRecipientNames(projectId) {
+  const rows = db.prepare('SELECT name FROM project_members WHERE project_id=?').all(Number(projectId));
+  if (rows.length) return [...new Set(rows.map((r) => r.name).filter(Boolean))];
+  const team = J(db.prepare('SELECT team_json FROM projects WHERE id=?').get(Number(projectId))?.team_json, {});
+  return [...new Set(PROJECT_DUTY_DEFS.map((d) => team[d.key]).filter(Boolean))];
 }
 
 function projectFromTransitionRow(row, today) {
@@ -1633,27 +1843,26 @@ r.get('/inbox', (req, res) => {
     if (items.filter((it) => it.kind === 'track').length >= 8) break;
   }
   for (const p of scopeProjects(user, db.prepare('SELECT * FROM projects').all())) {
-    if (p.status === '已终止') continue;
+    if (p.status === '已终止' || p.status === '不立项') continue;
     const duties = projectDutiesOf(user, p);
     if (!duties.length) continue;
     const lc = buildLifecycleStages(p);
-    const hasApprovalInbox = items.some((it) => (it.kind === 'approval' || it.kind === 'track') && String(it.projectId) === String(p.id));
-    if (p.status === '申报中') {
-      const core = duties.filter((d) => ['contact', 'owner', 'tech'].includes(d));
-      if (!core.length || hasApprovalInbox) continue;
+    const hasApprovalInbox = items.some((it) => it.kind === 'approval' && String(it.projectId) === String(p.id));
+    if (!hasApprovalInbox && items.filter((it) => it.kind === 'assign').length < 16) {
       items.push({
-        kind: 'fill',
+        kind: 'assign',
         id: `assign-${p.id}`,
         projectId: p.id,
         projectName: p.name,
         projectCode: p.code,
-        title: `「${p.name}」已指定您为${core.map(dutyLabelOf).join('、')}`,
-        stepTitle: '打开项目档案跟踪审签',
+        title: `「${p.name}」已建档`,
+        stepTitle: `本项目岗位：${duties.map(dutyLabelOf).join('、')}。${duties.map((d) => dutyTaskHint(d, p)).join('；')}`,
         href: `/projects/${p.id}`,
-        slot: core[0],
+        slot: duties[0],
+        dutyLabels: duties.map(dutyLabelOf),
       });
-      continue;
     }
+    if (p.status === '申报中') continue;
     if (lc.currentMacro === 'declare') continue;
     if (lc.approval && lc.approval.current) continue;
     const ownerKey = MACRO_OWNER_SLOT[lc.currentMacro] || 'owner';
@@ -1672,7 +1881,13 @@ r.get('/inbox', (req, res) => {
       vacant: !cur?.owner?.name,
     });
   }
-  res.json({ items, count: items.length });
+  const dutyRows = listUserProjectDuties(user);
+  res.json({
+    items,
+    count: items.length,
+    dutySummary: summarizeDutyRows(dutyRows),
+    dutyRows: dutyRows.slice(0, 12),
+  });
 });
 
 r.get('/projects/:id/members', (req, res) => {
@@ -1681,12 +1896,15 @@ r.get('/projects/:id/members', (req, res) => {
   const p = requireProjectRow(req, res, user);
   if (!p) return;
   const team = assignedTeamOf(p.id);
+  const auth = projectAuthPayload(user, p);
   res.json({
     team,
-    members: teamMembersPayload(team),
+    members: teamMembersPayload(team, p.id),
     duties: PROJECT_DUTY_DEFS,
     people: rosterPeople(),
     editable: canEditProjectMembers(user, p),
+    loginRole: user.role,
+    ...auth,
   });
 });
 
@@ -1707,7 +1925,7 @@ r.put('/projects/:id/members', (req, res) => {
     if (person) reassigned += reassignOpenSteps(p.id, d.key, person);
   }
   audit(user.name, '指定项目岗位', p.name, PROJECT_DUTY_DEFS.map((d) => `${d.label}=${next[d.key] || '待指定'}`).join('；'));
-  res.json({ ok: true, team: next, members: teamMembersPayload(next), reassigned });
+  res.json({ ok: true, team: next, members: teamMembersPayload(next, p.id), reassigned });
 });
 
 r.post('/projects/:id/members/transfer', (req, res) => {
@@ -1731,7 +1949,7 @@ r.post('/projects/:id/members/transfer', (req, res) => {
     slot,
     person: { name: person.name, empNo: person.emp_no || person.id },
     reassigned: n,
-    members: teamMembersPayload(assignedTeamOf(p.id)),
+    members: teamMembersPayload(assignedTeamOf(p.id), p.id),
   });
 });
 
@@ -2048,8 +2266,7 @@ r.get('/dashboard', (req, res) => {
 // ---------- 预警 ----------
 function queueAlertNotifications(alert) {
   if (!alert?.id || Number(alert.id) < 1) return;
-  const p = alert.project_id ? db.prepare('SELECT team_json FROM projects WHERE id=?').get(alert.project_id) : null;
-  const team = J(p?.team_json, {}); const recipients = [...new Set([team.contact, team.owner, team.tech, team.pm, team.unitDeptHead, team.unitStaff].filter(Boolean))];
+  const recipients = projectRecipientNames(alert.project_id);
   const insert = db.prepare('INSERT INTO notification_outbox (alert_id,channel,recipient,subject,status,attempts,last_error,created_at) VALUES (?,?,?,?,?,0,?,?)');
   for (const recipient of recipients) for (const channel of ['站内','邮箱','蓝信']) {
     const exists = db.prepare('SELECT id FROM notification_outbox WHERE alert_id=? AND channel=? AND recipient=?').get(alert.id, channel, recipient);
@@ -2321,7 +2538,7 @@ function buildLifecycleStages(p) {
       nodes,
     } : null,
     fillHints: [
-      { stage: '立项·申报', filler: '项目团队', fields: '级别/渠道、名称、目标、周期、经费、负责人·技术负责人、申报材料' },
+      { stage: '立项·申报', filler: '项目团队', fields: '级别/渠道、名称、目标、周期、经费、申报岗位（技术/专家/管理/财务）姓名及工号、申报材料' },
       { stage: '实施·基本信息', filler: '项目团队', fields: '主管/总师/管理财务等岗位；缺失台账字段；审过回写' },
       { stage: '系统生成', filler: '系统', fields: '项目编号、预警色、成果转化状态' },
     ],
@@ -2354,15 +2571,25 @@ function approvalSteps(project, initiator, stepTitles) {
 }
 
 function assertApprovalAssignments(steps) {
-  const missing = steps.slice(1).filter((x) => !x.assignee).map((x) => x.title);
+  const missing = steps.slice(1).filter((x) => x.title !== '审批结果' && !x.assignee).map((x) => x.title);
   if (missing.length) { const err = new Error(`审批节点尚未绑定具体人员和工号：${missing.join('、')}`); err.status = 409; throw err; }
 }
 
 function effectiveDeclarationChain(ch) {
   if (ch.key === 'XX25') return ['项目联系人','项目负责人','项目承担部门负责人','二级总师','单位科技部门负责人','单位分管领导','一级总师','总部科研项目处'];
   if (ch.key === 'CLLM') return ['项目团队提交申请书','联盟专委会审查','联盟理事会审查','总部科研项目处报批'];
-  if (String(ch.key).startsWith('DFY_')) return ['建设单位提交项目建议书','研究院学术委员会评审','形成拟立项清单','研究院理事会审议'];
+  if (ch.key === 'DFY' || String(ch.key).startsWith('DFY_')) return ['建设单位提交项目建议书','研究院学术委员会评审','形成拟立项清单','研究院理事会审议'];
   return J(ch.approve_chain_json, []);
+}
+
+const REPORT_DECLARE_CHAIN = ['项目联系人', '线上报备归档'];
+
+function parseNeedApproval(body, ch) {
+  if (body?.needApproval === false || body?.needApproval === 0 || body?.needApproval === 'false') return false;
+  if (body?.needApproval === true || body?.needApproval === 1 || body?.needApproval === 'true') return true;
+  if (String(body?.declareMode || '') === '报备') return false;
+  if (String(body?.declareMode || '') === '审批') return true;
+  return String(ch?.declare_mode || '审批') !== '报备';
 }
 r.get('/approvals', (req, res) => {
   const user = req.user || requireUser(req, res);
@@ -2377,7 +2604,7 @@ r.get('/approvals', (req, res) => {
       const step = a.steps[a.current_step];
       if (!step) return false;
       if (user.role === 'admin') return true;
-      return isCurrentStepAssignee(user, step);
+      return canActApprovalStep(user, a, step);
     });
   } else {
     rows = rows.filter((a) => canSeeApproval(user, a));
@@ -2424,14 +2651,31 @@ r.post('/approvals/:id/act', (req, res) => {
       const project = a.project_id ? db.prepare('SELECT * FROM projects WHERE id=?').get(a.project_id) : null;
       const assigned = stepAssignee(project, steps[newIdx].title, a.initiator);
       steps[newIdx] = { ...steps[newIdx], ...assigned, status: 'current' };
-      if (!steps[newIdx].assignee) return res.status(409).json({ error: `下一节点「${steps[newIdx].title}」尚未绑定具体人员和工号，请先完善项目团队` });
+      if (steps[newIdx].title === '审批结果') {
+        steps[newIdx] = { ...steps[newIdx], assignee: steps[newIdx].assignee || '系统管理员', slot: 'declare_result' };
+      } else if (!steps[newIdx].assignee) return res.status(409).json({ error: `下一节点「${steps[newIdx].title}」尚未绑定具体人员和工号，请先完善项目团队` });
     }
     db.prepare('UPDATE approvals SET steps_json=?, current_step=?, status=? WHERE id=?').run(JSON.stringify(steps), newIdx, newStatus, a.id);
     audit(user.name, newStatus === '已通过' ? '审批办结' : '审批通过', a.title, `节点「${steps[idx].title}」${comment || '同意'}`);
   } else if (action === 'reject') {
     steps[idx] = { ...steps[idx], status: 'rejected', at: now, comment: comment || '退回修改。', actor: user.name };
     db.prepare('UPDATE approvals SET steps_json=?, status=? WHERE id=?').run(JSON.stringify(steps), '已驳回', a.id);
+    if (a.type === 'declaration' && a.project_id) {
+      db.prepare("UPDATE projects SET status='申报中' WHERE id=? AND status IN ('申报中','待立项确认')").run(a.project_id);
+    }
     audit(user.name, '审批驳回', a.title, comment || '退回修改');
+  } else if (action === 'deny' || action === 'not_initiate') {
+    if (!isDeclareResultStep(steps[idx])) return res.status(400).json({ error: '仅「审批结果」节点可登记不立项' });
+    steps[idx] = { ...steps[idx], status: 'rejected', at: now, comment: comment || '不立项。', actor: user.name };
+    db.prepare('UPDATE approvals SET steps_json=?, status=? WHERE id=?').run(JSON.stringify(steps), '已办结', a.id);
+    if (a.project_id) {
+      db.prepare("UPDATE projects SET status='不立项' WHERE id=?").run(a.project_id);
+      try {
+        db.prepare('INSERT INTO project_decisions (project_id,decision,reason,decided_at,decided_by,upload_id) VALUES (?,?,?,?,?,?)')
+          .run(a.project_id, '不立项', comment || '', now, user.name, 0);
+      } catch { /* table may miss upload_id not null */ }
+    }
+    audit(user.name, '审批结果', a.title, `不立项；${comment || ''}`);
   } else {
     return res.status(400).json({ error: 'bad action' });
   }
@@ -2455,17 +2699,17 @@ const STAGE_FIELD_META = [
   { code: 'contact', label: '项目联系人', stage: 'declaration', filler: '项目团队', required: true },
   { code: 'owner', label: '项目负责人', stage: 'declaration', filler: '项目团队', required: true },
   { code: 'tech', label: '技术负责人', stage: 'declaration', filler: '项目团队', required: true },
+  { code: 'pm', label: '项目主管', stage: 'declaration', filler: '项目团队', required: true },
+  { code: 'chief1', label: '一级总师', stage: 'declaration', filler: '项目团队', required: true },
+  { code: 'chief2', label: '二级总师', stage: 'declaration', filler: '项目团队', required: true },
+  { code: 'hqHead', label: '总部处室处长', stage: 'declaration', filler: '项目团队', required: true },
+  { code: 'hqStaff', label: '总部处室主管', stage: 'declaration', filler: '项目团队', required: true },
+  { code: 'unitDeptHead', label: '单位科技部长', stage: 'declaration', filler: '项目团队', required: true },
+  { code: 'unitStaff', label: '单位科技主管', stage: 'declaration', filler: '项目团队', required: true },
+  { code: 'finHq', label: '总部财务主管', stage: 'declaration', filler: '项目团队', required: true },
+  { code: 'finHead', label: '单位财务部长', stage: 'declaration', filler: '项目团队', required: true },
+  { code: 'finStaff', label: '单位财务主管', stage: 'declaration', filler: '项目团队', required: true },
   { code: 'yearGoal', label: '年度目标', stage: 'baseinfo', filler: '项目团队', required: false },
-  { code: 'pm', label: '项目主管', stage: 'baseinfo', filler: '项目团队', required: true },
-  { code: 'chief1', label: '一级总师', stage: 'baseinfo', filler: '项目团队', required: true },
-  { code: 'chief2', label: '二级总师', stage: 'baseinfo', filler: '项目团队', required: true },
-  { code: 'hqHead', label: '总部处室处长', stage: 'baseinfo', filler: '项目团队', required: false },
-  { code: 'hqStaff', label: '总部处室主管', stage: 'baseinfo', filler: '项目团队', required: false },
-  { code: 'unitDeptHead', label: '单位科技部长', stage: 'baseinfo', filler: '项目团队', required: true },
-  { code: 'unitStaff', label: '单位科技主管', stage: 'baseinfo', filler: '项目团队', required: false },
-  { code: 'finHq', label: '总部财务主管', stage: 'baseinfo', filler: '项目团队', required: false },
-  { code: 'finHead', label: '单位财务部长', stage: 'baseinfo', filler: '项目团队', required: false },
-  { code: 'finStaff', label: '单位财务主管', stage: 'baseinfo', filler: '项目团队', required: false },
   { code: 'warning', label: '预警', stage: 'system', filler: '系统', required: false },
   { code: 'transform', label: '成果转化状态', stage: 'system', filler: '系统', required: false },
 ];
@@ -2483,7 +2727,7 @@ function applyApprovalEffect(a, user) {
   }
   if (!a.project_id) return;
   if (a.type === 'declaration') {
-    db.prepare("UPDATE projects SET status='待立项确认' WHERE id=? AND status='申报中'").run(a.project_id);
+    db.prepare("UPDATE projects SET status='立项中' WHERE id=? AND status IN ('申报中','待立项确认')").run(a.project_id);
   } else if (a.type === 'filing') {
     db.prepare("UPDATE projects SET status='实施中' WHERE id=? AND status IN ('申报中','立项中')").run(a.project_id);
   } else if (a.type === 'acceptance') {
@@ -2674,13 +2918,24 @@ r.post('/declarations', (req, res) => {
   if (!String(leadWork || '').trim()) return res.status(400).json({ error: '立项申报须填写牵头单位主要工作内容' });
   if (!resolvePerson(submittedTeam.owner)) return res.status(400).json({ error: '立项申报须指定项目负责人（在岗账号）' });
   if (!resolvePerson(submittedTeam.tech)) return res.status(400).json({ error: '立项申报须指定技术负责人（在岗账号）' });
+  const declareTeamRequired = [
+    ['pm', '项目主管'], ['chief1', '一级总师'], ['chief2', '二级总师'],
+    ['hqHead', '总部处室处长'], ['hqStaff', '总部处室主管'],
+    ['unitDeptHead', '单位科技部长'], ['unitStaff', '单位科技主管'],
+    ['finHq', '总部财务主管'], ['finHead', '单位财务部长'], ['finStaff', '单位财务主管'],
+  ];
+  for (const [key, label] of declareTeamRequired) {
+    if (!resolvePerson(submittedTeam[key])) {
+      return res.status(400).json({ error: `立项申报须指定${label}（姓名及工号，须为在岗账号）` });
+    }
+  }
   const ch = db.prepare('SELECT * FROM channels WHERE id=?').get(channelId);
   if (!ch) return res.status(400).json({ error: '渠道不存在' });
-  const requiredMats = materials || J(ch.declare_json, []);
+  const requiredMats = (materials || J(ch.declare_json, [])).map(displayDeclareMaterial);
   if (requiredMats.length) {
     const probe = Array.isArray(materialUploads) ? materialUploads : [];
-    const have = new Set(probe.map((x) => String(x?.name || '').trim()).filter(Boolean));
-    const missing = requiredMats.filter((n) => !have.has(String(n)));
+    const have = new Set(probe.map((x) => displayDeclareMaterial(String(x?.name || '').trim())).filter(Boolean));
+    const missing = requiredMats.filter((n) => !have.has(n));
     if (missing.length) return res.status(400).json({ error: `尚有申报材料未上传：${missing.join('、')}` });
     for (const row of probe) {
       if (!db.prepare('SELECT id FROM uploads WHERE id=?').get(Number(row?.uploadId))) {
@@ -2691,18 +2946,18 @@ r.post('/declarations', (req, res) => {
   const year = Number(TODAY().slice(0, 4));
   const n = db.prepare('SELECT COUNT(*) n FROM projects WHERE code LIKE ?').get(`KY-${year}-%`).n;
   const code = `KY-${year}-${String(n + 1).padStart(3, '0')}`;
-  const chainDefaults = { pm: '吴思远', chief1: '陈铁军', chief2: '蔡文渊', hqHead: '王建国', hqStaff: '何雨桐', unitDeptHead: '方致远', unitStaff: '田念慈', finHq: '', finHead: '毕仲文', finStaff: '龚雪君' };
   const ownerPerson = resolvePerson(submittedTeam.owner);
   const techPerson = resolvePerson(submittedTeam.tech);
+  const contactPerson = resolvePerson(submittedTeam.contact || user.emp_no || user.name) || user;
   const team = {
-    ...chainDefaults,
     ...submittedTeam,
-    contact: submittedTeam.contact || user.name,
+    contact: contactPerson.name || user.name,
     owner: ownerPerson.name,
     tech: techPerson.name,
   };
-  for (const [k, v] of Object.entries(chainDefaults)) {
-    if (!String(team[k] || '').trim()) team[k] = v;
+  for (const [key] of declareTeamRequired) {
+    const u = resolvePerson(submittedTeam[key]);
+    if (u) team[key] = u.name;
   }
   const partnerRows = (Array.isArray(partners) ? partners : []).map((x) => {
     if (x && typeof x === 'object') return { name: String(x.name || '').trim(), work: String(x.work || '').trim() };
@@ -2726,16 +2981,36 @@ r.post('/declarations', (req, res) => {
     db.prepare('DELETE FROM projects WHERE id=?').run(pid);
     return res.status(e.status || 400).json({ error: String(e.message || e) });
   }
-  const chain = effectiveDeclarationChain(ch);
+  const needApproval = parseNeedApproval(req.body || {}, ch);
+  const chain = needApproval
+    ? [...effectiveDeclarationChain(ch), ...(effectiveDeclarationChain(ch).slice(-1)[0] === '审批结果' ? [] : ['审批结果'])]
+    : REPORT_DECLARE_CHAIN;
   const steps = approvalSteps({ id: pid, lead_unit_id: user.unit_id || 1, team_json: JSON.stringify(writtenTeam) }, user.name, chain);
+  if (needApproval) {
+    const last = steps[steps.length - 1];
+    if (last && last.title === '审批结果') steps[steps.length - 1] = { ...last, assignee: '系统管理员', slot: 'declare_result', status: 'pending' };
+  }
+  if (!needApproval && steps[1] && !steps[1].assignee) {
+    steps[1] = { ...steps[1], assignee: user.name, slot: 'contact' };
+  }
   try { assertApprovalAssignments(steps); } catch (e) {
     db.prepare('DELETE FROM project_members WHERE project_id=?').run(pid);
     db.prepare('DELETE FROM projects WHERE id=?').run(pid);
     return res.status(e.status || 409).json({ error: e.message });
   }
-  const isFiling = ch.declare_mode === '报备';
+  const declareMode = needApproval ? '审批' : '报备';
+  let apprStatus = '审批中';
+  let apprStep = 1;
+  if (!needApproval) {
+    const now = TODAY();
+    steps[0] = { ...steps[0], status: 'approved', at: now, comment: '提交线上报备', actor: user.name };
+    if (steps[1]) steps[1] = { ...steps[1], status: 'approved', at: now, comment: '无需审批，直接报备归档', actor: user.name };
+    apprStatus = '已通过';
+    apprStep = Math.max(0, steps.length - 1);
+    db.prepare("UPDATE projects SET status='立项中' WHERE id=?").run(pid);
+  }
   db.prepare('INSERT INTO approvals (type,title,project_id,initiator,unit_id,created_at,status,current_step,steps_json,payload_json) VALUES (?,?,?,?,?,?,?,?,?,?)')
-    .run('declaration', `「${name}」${ch.name} ${isFiling ? '报备申签' : '申报审签'}`, pid, user.name, user.unit_id || 1, TODAY(), '审批中', 1, JSON.stringify(steps), JSON.stringify({ materials: requiredMats, materialUploads: linkedMats, declareMode: ch.declare_mode }));
+    .run('declaration', `「${name}」${ch.name} ${needApproval ? '申报审签' : '线上报备'}`, pid, user.name, user.unit_id || 1, TODAY(), apprStatus, apprStep, JSON.stringify(steps), JSON.stringify({ materials: requiredMats, materialUploads: linkedMats, declareMode, needApproval }));
   // AI 识读预填的里程碑 / 交付物（用户已核对修改）
   const endDate = end || `${year + 2}-12-31`;
   if (Array.isArray(milestones)) {
@@ -2766,24 +3041,38 @@ r.post('/declarations', (req, res) => {
         .run(pid, '申报', up.orig_name, up.uploaded_at, up.uploader || user.name, up.size_kb, up.stored_name);
     }
   }
-  audit(user.name, '发起申报', name, `渠道：${ch.name}，在线提交申报审签流程（材料 ${linkedMats.length} 份真文件归档${uploadId ? ' + AI 识读原件' : ''}）`);
-  const roleBits = [['contact', '项目联系人'], ['owner', '项目负责人'], ['tech', '技术负责人']]
-    .filter(([k]) => writtenTeam[k])
-    .map(([, lab]) => lab);
+  audit(user.name, '发起申报', name, `渠道：${ch.name}，${needApproval ? '在线提交申报审签流程' : '无需审批，直接线上报备并同步台账'}（材料 ${linkedMats.length} 份真文件归档${uploadId ? ' + AI 识读原件' : ''}）`);
+  const archiveMembers = teamMembersPayload(writtenTeam, pid);
+  const named = archiveMembers.filter((m) => !m.vacant);
   db.prepare('INSERT INTO alerts (project_id,kind,level,title,due,created_at,channels,recipients,read) VALUES (?,?,?,?,?,?,?,?,0)')
     .run(
       pid,
       '岗位流转',
       'blue',
-      `【申报流转】「${name}」已提交审签，已下发至${roleBits.join('、')}工作台`,
+      `【项目建档】「${name}」（${code}）已${needApproval ? '提交审签并建档' : '线上报备建档'}，已关联 ${named.length} 名岗位人员并下发任务`,
       TODAY(),
       TODAY(),
       '站内,邮箱,蓝信',
-      [writtenTeam.contact, writtenTeam.owner, writtenTeam.tech].filter(Boolean).join('、'),
+      named.map((m) => m.name).join('、'),
     );
   const alertRow = db.prepare('SELECT * FROM alerts WHERE project_id=? ORDER BY id DESC LIMIT 1').get(pid);
   if (alertRow) queueAlertNotifications(alertRow);
-  res.json({ ok: true, projectId: pid, code });
+  res.json({
+    ok: true,
+    projectId: pid,
+    code,
+    needApproval,
+    declareMode,
+    status: needApproval ? '申报中' : '立项中',
+    archive: {
+      projectId: pid,
+      code,
+      name,
+      status: needApproval ? '申报中' : '立项中',
+      memberCount: named.length,
+      members: named.map((m) => ({ slot: m.key, label: m.label, name: m.name, empNo: m.empNo, task: dutyTaskHint(m.key, { status: needApproval ? '申报中' : '立项中' }) })),
+    },
+  });
 });
 
 const DELIV_TYPES = ['专利', '论文', '软著', '技术标准', '原理样机', '设备', '成套技术成果'];
@@ -3043,7 +3332,7 @@ function setTransitionRows(rows) {
   db.prepare('INSERT INTO kv (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
     .run(transitionKey, JSON.stringify(rows.map((x) => normalizeTransitionRow(x))));
 }
-function validateTransitionRow(input) {
+function validateTransitionRow(input, opts = {}) {
   const row = normalizeTransitionRow(input);
   const missing = TRANSITION_FIELDS.filter((f) => f.required && !cellText(row[f.code])).map((f) => f.label);
   const warnings = [];
@@ -3052,7 +3341,15 @@ function validateTransitionRow(input) {
   const self = cellNumber(row.selfFund) || 0;
   if (row.totalBudget !== '' && row.totalBudget != null && total == null) warnings.push('总经费需填写为数字');
   if (total != null && total <= 0) warnings.push('总经费需大于 0');
-  if (total != null && grant + self > total + 0.01) warnings.push('国拨经费与自筹经费合计大于总经费');
+  if (total != null && Math.abs(total - (grant + self)) > 0.01) {
+    const difference = total - (grant + self);
+    const direction = difference > 0 ? '总经费比合计多' : '国拨与自筹合计比总经费多';
+    warnings.push(`总经费必须等于国拨经费与自筹经费之和；当前相差 ${Math.abs(difference).toFixed(2)} 万元（${direction}）`);
+  }
+  const internalGrant = cellNumber(row.internalGrant);
+  const internalSelf = cellNumber(row.internalSelfFund);
+  if (internalGrant != null && internalGrant > grant + 0.01) warnings.push('其中商飞内部单位国拨经费不能大于国拨经费');
+  if (internalSelf != null && internalSelf > self + 0.01) warnings.push('其中商飞内部单位自筹经费不能大于自筹经费');
   if (row.level && !LEVELS.includes(row.level)) warnings.push('级别不在国家级/地方级/公司级内');
   if (row.startMonth && row.endMonth && String(row.startMonth).slice(0, 7) > String(row.endMonth).slice(0, 7)) warnings.push('项目开始年月晚于结束年月');
   if (row.budget2026 && row.budget2026Actual && Number(row.budget2026) > 0 && !row.budget2026Rate) warnings.push('建议补充 2026年预算执行率');
@@ -3063,8 +3360,10 @@ function validateTransitionRow(input) {
       orgOffice: row.orgOffice,
       projectType: row.projectType,
     });
-    if (!hit) warnings.push('层级/渠道/司局/项目类型组合不在合法路径表内');
-  } else if (row.projectType && !liveResolveOffice(row.projectType)) {
+    if (!hit && !rowMatchesPendingChannel(row, opts.pendingChannels)) {
+      warnings.push('层级/渠道/司局/项目类型组合不在合法路径表内');
+    }
+  } else if (row.projectType && !liveResolveOffice(row.projectType) && !rowMatchesPendingChannel(row, opts.pendingChannels)) {
     warnings.push('项目类型未配置司局路径');
   }
   if (row.major1 || row.major2) {
@@ -3274,8 +3573,113 @@ function makeSimpleTransitionWorkbook(rows) {
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 }
 
-async function makeTransitionTemplateWorkbook(rows) {
-  const fields = ledgerTransitionFields();
+function nowExportStamp() {
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date());
+  const g = (type) => (parts.find((p) => p.type === type) || {}).value || '';
+  return `${g('year')}${g('month')}${g('day')}-${g('hour')}${g('minute')}${g('second')}`;
+}
+
+function safeExportToken(value, max = 36) {
+  const text = String(value || '')
+    .replace(/[\\/:*?"<>|\s]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+  return (text || '未命名').slice(0, max);
+}
+
+function yuyanExportFilename({ kind, scope, count, ext = 'xlsx', stamp }) {
+  const parts = ['预研项目', kind];
+  if (scope) parts.push(safeExportToken(scope));
+  parts.push(stamp || nowExportStamp());
+  if (count != null && count !== '') parts.push(`${Number(count)}条`);
+  return `${parts.join('_')}.${ext}`;
+}
+
+function setDownloadName(res, filename, ascii = 'srpm-export.bin') {
+  res.setHeader('Content-Disposition', `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`);
+}
+
+function monthKeyExport(value) {
+  const m = String(value || '').trim().match(/^(\d{4})[.\-/年](\d{1,2})/);
+  if (!m) return null;
+  const month = Number(m[2]);
+  if (month < 1 || month > 12) return null;
+  return Number(m[1]) * 12 + month - 1;
+}
+
+function filterExportRows(user, query) {
+  let rows = filterTransitionRowsForUser(user, getTransitionRows());
+  const q = query || {};
+  if (q.projectType) rows = rows.filter((x) => x.projectType === String(q.projectType));
+  if (q.level) rows = rows.filter((x) => x.level === String(q.level));
+  if (q.channel) rows = rows.filter((x) => (x.sourceChannel || x.channel) === String(q.channel));
+  if (q.unit) {
+    const unit = String(q.unit);
+    rows = rows.filter((x) => x.responsibleUnit === unit || x.demandUnit === unit);
+  }
+  if (q.status) rows = rows.filter((x) => x.projectStatus === String(q.status));
+  const keyword = String(q.q || '').trim().toLowerCase();
+  if (keyword) {
+    rows = rows.filter((x) => [x.serial, x.name, x.code, x.id].map((v) => String(v || '').toLowerCase()).join(' ').includes(keyword));
+  }
+  const startFrom = monthKeyExport(q.startFrom);
+  const endTo = monthKeyExport(q.endTo);
+  if (startFrom != null) {
+    rows = rows.filter((x) => {
+      const k = monthKeyExport(x.startMonth);
+      return k == null || k >= startFrom;
+    });
+  }
+  if (endTo != null) {
+    rows = rows.filter((x) => {
+      const k = monthKeyExport(x.endMonth);
+      return k == null || k <= endTo;
+    });
+  }
+  const bmin = q.budgetMin === '' || q.budgetMin == null ? null : Number(q.budgetMin);
+  const bmax = q.budgetMax === '' || q.budgetMax == null ? null : Number(q.budgetMax);
+  if (bmin != null && !Number.isNaN(bmin)) rows = rows.filter((x) => Number(x.totalBudget) >= bmin);
+  if (bmax != null && !Number.isNaN(bmax)) rows = rows.filter((x) => Number(x.totalBudget) <= bmax);
+  const adv = String(q.advanced || '');
+  if (adv === 'invalid') rows = rows.filter((x) => !validateTransitionRow(x).ok);
+  if (adv === 'valid') rows = rows.filter((x) => validateTransitionRow(x).ok);
+  if (adv === 'delay') rows = rows.filter((x) => /延期|逾期/.test(String(x.projectStatus || '')));
+  if (adv === 'done') rows = rows.filter((x) => /完成|结题|验收/.test(String(x.projectStatus || '')));
+  let colFilter = q.colFilter;
+  if (typeof colFilter === 'string' && colFilter) {
+    try { colFilter = JSON.parse(colFilter); } catch { colFilter = null; }
+  }
+  if (colFilter && typeof colFilter === 'object') {
+    for (const [code, val] of Object.entries(colFilter)) {
+      if (!val) continue;
+      rows = rows.filter((x) => String(x[code] ?? '') === String(val));
+    }
+  }
+  return rows;
+}
+
+function resolveExportFields(columnCodes) {
+  const ledger = ledgerTransitionFields();
+  const wanted = Array.isArray(columnCodes)
+    ? columnCodes
+    : String(columnCodes || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (!wanted.length) return ledger;
+  const byCode = new Map(ledger.map((f) => [f.code, f]));
+  const picked = wanted.map((c) => byCode.get(c)).filter(Boolean);
+  return (picked.length ? picked : ledger).map((f, index) => ({ ...f, index }));
+}
+
+async function makeTransitionTemplateWorkbook(rows, columnCodes) {
+  const fields = resolveExportFields(columnCodes);
   try {
     return await buildStyledTransitionWorkbookBuffer(
       rows,
@@ -3420,6 +3824,375 @@ function mergeTransitionRows(existingRows, incomingRows, userName, mode = 'merge
   };
 }
 
+const FORM_BACKUP_DIR = join(__dirname, '..', 'backups');
+
+function snapshotTransitionLedger(reason = 'checkpoint') {
+  mkdirSync(FORM_BACKUP_DIR, { recursive: true });
+  const stamp = nowDateTime().replace(/[-: ]/g, '').slice(0, 15);
+  const file = join(FORM_BACKUP_DIR, `form_${reason}_${stamp}.json`);
+  writeFileSync(file, JSON.stringify(getTransitionRows()), 'utf8');
+  return file;
+}
+
+function classifyIssueText(text) {
+  const t = String(text || '').trim();
+  if (/专业|major/i.test(t)) return '专业';
+  if (/总经费|国拨|自筹|经费/.test(t) && /等于|大于|小于|之和|相差/.test(t)) return '经费';
+  if (/必须为数字|须为数字|应为数字|不是数字/.test(t)) return '数值';
+  if (/格式应为|YYYY|年月|年度/.test(t)) return '日期';
+  if (/必填|不能为空|缺少/.test(t)) return '必填';
+  if (/渠道|项目类型|字典|下拉|路径/.test(t)) return '字典';
+  return '其他';
+}
+
+function issueCategoriesOf(validation, extra = '') {
+  const parts = [
+    ...(validation?.missing || []).map((x) => `${x}必填`),
+    ...(validation?.warnings || []),
+    ...String(extra || '').split(/[；;]\s*/),
+  ].map((x) => x.trim()).filter(Boolean);
+  return [...new Set(parts.map(classifyIssueText))];
+}
+
+function parsePersonHint(token) {
+  const t = String(token || '').trim();
+  if (!t) return null;
+  const emp = (t.match(/(\d{6})/) || [])[1] || '';
+  const name = t
+    .replace(/[（(]\s*\d{6}\s*[)）]/g, ' ')
+    .replace(/\d{6}/g, ' ')
+    .replace(/[（）()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!name && !emp) return null;
+  return { name, emp_no: emp, raw: t };
+}
+
+function collectUnknownPeopleFromRows(rows) {
+  const map = new Map();
+  for (const row of rows || []) {
+    const tokens = String(row.owner || '').split(/[、，,;；/|]+/).map((x) => x.trim()).filter(Boolean);
+    for (const token of tokens) {
+      const hint = parsePersonHint(token);
+      if (!hint) continue;
+      const hit = resolvePerson(hint.emp_no || hint.raw) || (hint.name ? resolvePerson(hint.name) : null);
+      if (hit) continue;
+      const key = hint.emp_no || `name:${hint.name}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          name: hint.name,
+          emp_no: hint.emp_no,
+          raw: hint.raw,
+          field: '负责人',
+          projects: [],
+          rows: [],
+        });
+      }
+      const item = map.get(key);
+      if (row.name && item.projects.length < 8) item.projects.push(row.name);
+      if (row.sourceRow && item.rows.length < 8) item.rows.push(row.sourceRow);
+    }
+  }
+  return [...map.values()];
+}
+
+function pendingChannelKey(item) {
+  return `${cellText(item.level)}|${cellText(item.sourceChannel)}|${cellText(item.projectType)}`;
+}
+
+function rowMatchesPendingChannel(row, pending) {
+  const key = pendingChannelKey(row);
+  if (!key || key === '||') return false;
+  return (pending || []).some((p) => pendingChannelKey(p) === key);
+}
+
+function collectPendingChannelPaths(rows) {
+  const pending = [];
+  const seen = new Set();
+  for (const row of rows || []) {
+    const level = cellText(row.level);
+    const source = cellText(row.sourceChannel);
+    const type = cellText(row.projectType);
+    const office = cellText(row.orgOffice);
+    if (!LEVELS.includes(level) || !source || !type) continue;
+    const pathKey = `${level}::${source}::${office}::${type}`;
+    if (seen.has(pathKey)) {
+      const hit = pending.find((p) => `${p.level}::${p.sourceChannel}::${p.orgOffice || ''}::${p.projectType}` === pathKey);
+      if (hit) {
+        if (row.name && hit.projects.length < 8) hit.projects.push(row.name);
+        if (row.sourceRow && hit.rows.length < 8) hit.rows.push(row.sourceRow);
+      }
+      continue;
+    }
+    seen.add(pathKey);
+    if (liveFindPath({ level, sourceChannel: source, orgOffice: office || undefined, projectType: type })) continue;
+    const chHit = listLedgerChannels().find((x) => x.name === source && x.level === level)
+      || listLedgerChannels().find((x) => x.name === source);
+    let kind = 'channel';
+    if (chHit && (chHit.projectTypes || []).includes(type)) kind = 'path';
+    else if (chHit) kind = 'type';
+    pending.push({
+      kind,
+      level,
+      sourceChannel: source,
+      projectType: type,
+      orgOffice: office || chHit?.orgOffice || '相关处室',
+      projects: row.name ? [row.name] : [],
+      rows: row.sourceRow ? [row.sourceRow] : [],
+    });
+  }
+  return pending;
+}
+
+function applyPendingChannelPaths(pending, userName) {
+  const created = [];
+  for (const item of pending || []) {
+    const level = cellText(item.level);
+    const source = cellText(item.sourceChannel);
+    const type = cellText(item.projectType);
+    const office = cellText(item.orgOffice) || '相关处室';
+    if (!LEVELS.includes(level) || !source || !type) {
+      throw new Error(`待确认渠道信息不完整：${[level, source, type].filter(Boolean).join(' / ') || '空'}`);
+    }
+    if (liveFindPath({ level, sourceChannel: source, orgOffice: office, projectType: type })
+      || liveFindPath({ level, sourceChannel: source, projectType: type })) {
+      continue;
+    }
+    const chHit = listLedgerChannels().find((x) => x.name === source && x.level === level)
+      || listLedgerChannels().find((x) => x.name === source);
+    if (!chHit) {
+      addLedgerChannel(source, { level, projectTypes: [type], orgOffice: office });
+      created.push({ kind: 'channel', level, sourceChannel: source, projectType: type, orgOffice: office });
+      audit(userName, '字典维护', '渠道字典', `表单上传确认新增渠道「${source}」·${level} / 项目类型「${type}」，已同步配置中心与全平台级联`);
+    } else if (!(chHit.projectTypes || []).includes(type)) {
+      addProjectTypesToChannel(chHit.name, { level: chHit.level, projectTypes: [type], orgOffice: office || chHit.orgOffice });
+      created.push({ kind: 'type', level: chHit.level, sourceChannel: chHit.name, projectType: type, orgOffice: office || chHit.orgOffice });
+      audit(userName, '字典维护', '渠道字典', `表单上传确认为渠道「${chHit.name}」新增项目类型「${type}」，已同步全平台`);
+    } else {
+      insertTypeRow({ name: type, level: chHit.level, sourceChannel: chHit.name, orgOffice: office });
+      ledgerCascadeCache = null;
+      created.push({ kind: 'path', level: chHit.level, sourceChannel: chHit.name, projectType: type, orgOffice: office });
+      audit(userName, '字典维护', '渠道字典', `表单上传确认新增路径「${chHit.level}/${chHit.name}/${office}/${type}」`);
+    }
+  }
+  return created;
+}
+
+function insertConfirmedPeople(people, actor) {
+  const created = [];
+  for (const p of people || []) {
+    const emp = String(p.emp_no || '').trim();
+    const name = cellText(p.name);
+    if (!name || !isEmpNo(emp)) {
+      throw new Error(`人员「${name || p.raw || emp || '未命名'}」须填写姓名和六位工号后再确认新增`);
+    }
+    const exists = db.prepare('SELECT id FROM users WHERE id=? OR emp_no=?').get(emp, emp);
+    if (exists) continue;
+    db.prepare(`INSERT INTO users (id,name,role,scope,unit_id,title,status,password_hash,emp_no,form_access,form_scope,form_scope_keys)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(emp, name, 'team', 'self', null, cellText(p.title) || '项目负责人', '在岗', hashPassword(emp), emp, 0, null, null);
+    created.push({ emp_no: emp, name });
+    audit(actor?.name, '成员管理', name, `表单上传确认新增人员 ${name}（${emp}），初始密码为工号`);
+  }
+  return created;
+}
+
+function fieldDiff(before, after) {
+  const a = normalizeTransitionRow(before || {});
+  const b = normalizeTransitionRow(after || {});
+  const out = [];
+  for (const f of ledgerTransitionFields()) {
+    const left = a[f.code] == null ? '' : String(a[f.code]);
+    const right = b[f.code] == null ? '' : String(b[f.code]);
+    if (left !== right) out.push({ code: f.code, field: f.label, before: left, after: right });
+  }
+  return out;
+}
+
+function buildPreviewRows(existingRows, incomingRows, mode, user, opts = {}) {
+  const pendingChannels = opts.pendingChannels || [];
+  const index = new Map();
+  for (const row of existingRows) {
+    const key = transitionIdentity(row);
+    if (key) index.set(key, row);
+  }
+  const seen = new Set();
+  const preview = [];
+  let seq = 1;
+  for (const incoming of incomingRows) {
+    const key = transitionIdentity(incoming);
+    const inScope = assertRowInScope(user, incoming);
+    const before = key ? index.get(key) : null;
+    const validation = validateTransitionRow(incoming, { pendingChannels });
+    const issue = [...(validation.missing || []).map((x) => `${x}必填`), ...(validation.warnings || [])].join('；');
+    let action = 'add';
+    let diff = [];
+    if (!key) action = 'skip';
+    else if (!inScope) action = 'skip';
+    else if (seen.has(key)) action = 'skip';
+    else if (before) {
+      diff = fieldDiff(before, incoming);
+      action = diff.length ? 'update' : 'keep';
+    }
+    if (key) seen.add(key);
+    preview.push({
+      id: seq,
+      rowNo: incoming.sourceRow || seq,
+      identityKey: key,
+      projectType: incoming.projectType || '',
+      projectName: incoming.name || '',
+      action,
+      row: incoming,
+      validation,
+      diff,
+      issue,
+      issueCategories: issueCategoriesOf(validation),
+    });
+    seq += 1;
+  }
+  if (mode === 'replace' && canReplaceAllTransition(user)) {
+    for (const old of existingRows) {
+      const key = transitionIdentity(old);
+      if (key && seen.has(key)) continue;
+      preview.push({
+        id: seq,
+        rowNo: null,
+        identityKey: key,
+        projectType: old.projectType || '',
+        projectName: old.name || '',
+        action: 'delete',
+        row: old,
+        validation: { ok: true, missing: [], warnings: [] },
+        diff: [],
+        issue: '',
+        issueCategories: [],
+      });
+      seq += 1;
+    }
+  }
+  return preview;
+}
+
+function previewStats(preview) {
+  const added = preview.filter((x) => x.action === 'add').length;
+  const updated = preview.filter((x) => x.action === 'update').length;
+  const skipped = preview.filter((x) => x.action === 'skip').length;
+  const issue_count = preview.filter((x) => x.issue || x.action === 'skip').length;
+  return { added, updated, skipped, issue_count, parsed: preview.length };
+}
+
+function hydrateImportBatch(raw, withRows = true) {
+  if (!raw) return null;
+  const rows = withRows ? J(raw.rows_json, []) : [];
+  return {
+    id: raw.id,
+    orig_name: raw.orig_name,
+    file: raw.orig_name,
+    mode: raw.mode,
+    status: raw.status || '已入库',
+    uploaded_at: raw.uploaded_at,
+    uploader_name: raw.uploader_name,
+    uploader_emp_no: raw.uploader_emp_no,
+    parsed: raw.parsed,
+    added: raw.added,
+    updated: raw.updated,
+    skipped: raw.skipped,
+    issue_count: raw.issue_count,
+    upload_id: raw.upload_id,
+    confirmed_at: raw.confirmed_at,
+    confirmed_by: raw.confirmed_by,
+    createdChannels: J(raw.meta_json, {}).createdChannels || [],
+    pendingChannels: J(raw.meta_json, {}).pendingChannels || [],
+    pendingPeople: J(raw.meta_json, {}).pendingPeople || [],
+    rows,
+  };
+}
+
+function getImportBatchRow(id) {
+  ensureTransitionImportBatches(db);
+  return db.prepare('SELECT * FROM transition_import_batches WHERE id=?').get(Number(id));
+}
+
+function applyPreviewToLedger(preview, existing, mode, userName) {
+  const keepDeletes = new Set(preview.filter((x) => x.action === 'delete').map((x) => x.identityKey).filter(Boolean));
+  let rows = existing.map((x) => normalizeTransitionRow(x));
+  if (mode === 'replace') rows = [];
+  else rows = rows.filter((x) => !keepDeletes.has(transitionIdentity(x)));
+  const index = new Map();
+  rows.forEach((row, i) => {
+    const key = transitionIdentity(row);
+    if (key) index.set(key, i);
+  });
+  for (const item of preview) {
+    if (!['add', 'update'].includes(item.action)) continue;
+    const next = normalizeTransitionRow({ ...item.row, updatedBy: userName, updatedAt: TODAY() });
+    const key = transitionIdentity(next);
+    if (!key) continue;
+    if (index.has(key)) {
+      const idx = index.get(key);
+      rows[idx] = { ...rows[idx], ...next, id: rows[idx].id };
+    } else {
+      rows.push(next);
+      index.set(key, rows.length - 1);
+    }
+  }
+  return rows;
+}
+
+function insertChangeLogs({ action, before, after, user, batchId = null }) {
+  const emp = String(user?.emp_no || '').trim();
+  const actor = user?.name || '';
+  const at = nowDateTime();
+  if (action === 'delete' && before) {
+    db.prepare(`
+      INSERT INTO transition_change_logs
+        (action, project_type, project_name, field, before_val, after_val, actor, emp_no, changed_at, batch_id, undone, row_id, before_json, after_json)
+      VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?,?)
+    `).run(action, before.projectType || '', before.name || '', '（整行）', before.name || before.id, '', actor, emp, at, batchId, before.id || '', JSON.stringify(before), null);
+    return;
+  }
+  const diffs = fieldDiff(before, after);
+  if (!diffs.length && action === 'add' && after) {
+    db.prepare(`
+      INSERT INTO transition_change_logs
+        (action, project_type, project_name, field, before_val, after_val, actor, emp_no, changed_at, batch_id, undone, row_id, before_json, after_json)
+      VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?,?)
+    `).run('add', after.projectType || '', after.name || '', '（整行）', '', after.name || after.id, actor, emp, at, batchId, after.id || '', null, JSON.stringify(after));
+    return;
+  }
+  const ins = db.prepare(`
+    INSERT INTO transition_change_logs
+      (action, project_type, project_name, field, before_val, after_val, actor, emp_no, changed_at, batch_id, undone, row_id, before_json, after_json)
+    VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?,?)
+  `);
+  for (const d of diffs) {
+    ins.run(action, (after || before)?.projectType || '', (after || before)?.name || '', d.field, d.before, d.after, actor, emp, at, batchId, (after || before)?.id || '', before ? JSON.stringify(before) : null, after ? JSON.stringify(after) : null);
+  }
+}
+
+function listChangeLogs(limit = 80) {
+  try {
+    ensureTransitionImportBatches(db);
+    return db.prepare(`
+      SELECT id, action, project_type, project_name, field, before_val, after_val, actor, emp_no, changed_at, batch_id, undone
+      FROM transition_change_logs
+      ORDER BY id DESC
+      LIMIT ?
+    `).all(limit);
+  } catch {
+    return [];
+  }
+}
+
+function getTypeOwners() {
+  return J(db.prepare("SELECT value FROM kv WHERE key='transition.typeOwners'").get()?.value, []);
+}
+
+function setTypeOwners(list) {
+  db.prepare("INSERT INTO kv (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+    .run('transition.typeOwners', JSON.stringify(list || []));
+}
+
 function exportTransitionValue(row, field) {
   return exportTransitionFieldValue(row, field, normalizeTransitionRow) ?? '';
 }
@@ -3463,15 +4236,22 @@ r.get('/transition-tool', (req, res) => {
   if (!canAccessFormTool(user)) return res.status(403).json({ error: '无权访问表单维护' });
   const allRows = getTransitionRows();
   const rows = filterTransitionRowsForUser(user, allRows);
-  const enriched = rows.map((x) => ({ ...x, validation: validateTransitionRow(x) }));
-  const invalid = enriched.filter((x) => !x.validation.ok).length;
   const access = formAccessMeta(user);
+  const enriched = rows.map((x) => ({
+    ...x,
+    validation: validateTransitionRow(x),
+    canWriteRow: !!access.canFormMaintain && assertRowInScope(user, x),
+  }));
+  const invalid = enriched.filter((x) => !x.validation.ok).length;
   res.json({
     fields: ledgerTransitionFields(),
     cascade: cascadePayload(),
     rows: enriched,
     subtables: transitionSubtables(rows),
+    typeOwners: getTypeOwners(),
     access,
+    importBatches: listImportBatches(),
+    changeLogs: listChangeLogs(),
     summary: {
       total: rows.length,
       valid: rows.length - invalid,
@@ -3482,7 +4262,6 @@ r.get('/transition-tool', (req, res) => {
       centralGrant: Math.round(rows.reduce((s, x) => s + (cellNumber(x.centralGrant) || 0), 0) * 100) / 100,
       selfFund: Math.round(rows.reduce((s, x) => s + (cellNumber(x.selfFund) || 0), 0) * 100) / 100,
     },
-    pending: ['分表模板锁定和下拉选项最终口径', '内网机 IP/端口/安装权限', '安全审查、病毒查杀和备份策略'],
   });
 });
 
@@ -3510,10 +4289,14 @@ r.post('/transition-tool/records', (req, res) => {
   const idx = rows.findIndex((x) => x.id === id);
   if (idx >= 0 && !assertRowInScope(user, rows[idx])) return res.status(403).json({ error: '无权修改该条台账' });
   if (!assertRowInScope(user, next)) return res.status(403).json({ error: '保存后的数据超出您的表单维护范围' });
+  const validation = validateTransitionRow(next);
+  if (!validation.ok) return res.status(400).json({ error: validation.missing.concat(validation.warnings).join('；') });
+  const before = idx >= 0 ? rows[idx] : null;
   if (idx >= 0) rows[idx] = next; else rows.push(next);
   setTransitionRows(rows);
+  insertChangeLogs({ action: before ? 'manual' : 'add', before, after: next, user });
   audit(user.name, '表单维护', '分表维护', `保存 ${next.projectType || '专项分表'}：${next.name || next.code}${next.orgOffice ? `（司局/处室 ${next.orgOffice}）` : ''}`);
-  res.json({ ok: true, row: { ...next, validation: validateTransitionRow(next) } });
+  res.json({ ok: true, row: { ...next, validation, canWriteRow: true } });
 });
 
 r.post('/transition-tool/import-demo', (req, res) => {
@@ -3541,13 +4324,262 @@ r.post('/transition-tool/import-upload', (req, res) => {
   if (!['.xlsx', '.xls'].includes(ext)) return res.status(400).json({ error: '仅支持上传 .xlsx / .xls 表格文件' });
   const storedPath = join(UPLOAD_DIR, up.stored_name);
   if (!existsSync(storedPath)) return res.status(410).json({ error: '上传文件已被清理，请重新上传' });
-  const parsed = parseTransitionWorkbook(storedPath, up.orig_name, user.name);
-  const incoming = (parsed.rows || []).filter((row) => assertRowInScope(user, row));
-  if (!incoming.length) return res.status(400).json({ error: parsed.issues[0]?.issue || '未解析到您权限范围内的有效项目记录' });
-  const merged = mergeTransitionRows(getTransitionRows(), incoming, user.name, mode);
-  setTransitionRows(merged.rows);
-  audit(user.name, '表单维护', mode === 'replace' ? '重新导入总表' : '批量上传分表', `${up.orig_name}：解析 ${parsed.rows.length} 行，范围内 ${incoming.length} 行，新增 ${merged.report.added} 行，更新 ${merged.report.updated} 行，跳过 ${merged.report.skipped} 行`);
-  res.json({ ok: true, file: up.orig_name, mode, issues: parsed.issues, scoped: incoming.length, ...merged.report });
+  const who = uploaderMeta(user);
+  const uploadedAt = nowDateTime();
+  let parsed;
+  try {
+    parsed = parseTransitionWorkbook(storedPath, up.orig_name, user.name);
+  } catch (err) {
+    return res.status(400).json({ error: String(err.message || err), importBatches: listImportBatches() });
+  }
+  if (!parsed.rows.length) {
+    return res.status(400).json({ error: parsed.issues[0]?.issue || '未解析到有效项目记录，请检查表头和数据起始行（第 6 行）' });
+  }
+  const existing = getTransitionRows();
+  const pendingChannels = collectPendingChannelPaths(parsed.rows);
+  const pendingPeople = collectUnknownPeopleFromRows(parsed.rows);
+  const preview = buildPreviewRows(existing, parsed.rows, mode, user, { pendingChannels });
+  const stats = previewStats(preview);
+  const status = preview.some((x) => x.issue && x.action !== 'skip' && x.action !== 'keep') ? '待修正' : '待确认';
+  const batchId = recordImportBatch({
+    orig_name: up.orig_name,
+    mode,
+    uploaded_at: uploadedAt,
+    uploader_name: who.name,
+    uploader_emp_no: who.emp_no,
+    upload_id: up.id,
+    parsed: parsed.rows.length,
+    added: stats.added,
+    updated: stats.updated,
+    skipped: stats.skipped,
+    issue_count: stats.issue_count,
+    status,
+    rows_json: JSON.stringify(preview),
+    snapshot_json: JSON.stringify(existing),
+    meta_json: JSON.stringify({ pendingChannels, pendingPeople }),
+  });
+  audit(user.name, '表单维护', '上传预校验', `${up.orig_name}：解析 ${parsed.rows.length} 行，待确认入库（尚未写入台账）${pendingChannels.length ? `；识别新渠道/类型 ${pendingChannels.length} 项待确认` : ''}${pendingPeople.length ? `；待确认人员 ${pendingPeople.length} 人` : ''}`);
+  res.json({
+    ok: true,
+    batchId,
+    file: up.orig_name,
+    mode,
+    status,
+    pendingChannels,
+    pendingPeople,
+    importBatches: listImportBatches(),
+  });
+});
+
+function requirePendingBatch(req, res) {
+  const user = req.user || requireUser(req, res);
+  if (!user) return null;
+  if (!canAccessFormTool(user)) {
+    res.status(403).json({ error: '无权操作导入批次' });
+    return null;
+  }
+  const raw = getImportBatchRow(req.params.id);
+  if (!raw) {
+    res.status(404).json({ error: '导入批次不存在' });
+    return null;
+  }
+  return { user, raw, batch: hydrateImportBatch(raw, true) };
+}
+
+r.get('/transition-tool/import-batches/:id', (req, res) => {
+  const ctx = requirePendingBatch(req, res);
+  if (!ctx) return;
+  res.json({ ...ctx.batch, cascade: cascadePayload() });
+});
+
+r.post('/transition-tool/import-batches/:id/rows/:rowId', (req, res) => {
+  const ctx = requirePendingBatch(req, res);
+  if (!ctx) return;
+  const { user, raw, batch } = ctx;
+  if (!['待确认', '待修正'].includes(batch.status)) {
+    return res.status(400).json({ error: '仅待确认/待修正批次可在线修正' });
+  }
+  const rowId = Number(req.params.rowId);
+  const item = (batch.rows || []).find((x) => Number(x.id) === rowId);
+  if (!item) return res.status(404).json({ error: '批次行不存在' });
+  const patch = req.body || {};
+  const nextRow = normalizeTransitionRow({ ...item.row, ...patch });
+  item.row = nextRow;
+  const pendingChannels = collectPendingChannelPaths((batch.rows || []).map((x) => x.row));
+  const pendingPeople = collectUnknownPeopleFromRows((batch.rows || []).map((x) => x.row));
+  const validation = validateTransitionRow(nextRow, { pendingChannels });
+  const issue = [...(validation.missing || []).map((x) => `${x}必填`), ...(validation.warnings || [])].join('；');
+  item.projectName = nextRow.name || item.projectName;
+  item.projectType = nextRow.projectType || item.projectType;
+  item.validation = validation;
+  item.issue = issue;
+  item.issueCategories = issueCategoriesOf(validation);
+  const key = transitionIdentity(nextRow);
+  item.identityKey = key || item.identityKey;
+  const before = getTransitionRows().find((x) => transitionIdentity(x) === item.identityKey);
+  item.diff = before ? fieldDiff(before, nextRow) : [];
+  if (item.action !== 'delete') {
+    if (!key || !assertRowInScope(user, nextRow)) item.action = 'skip';
+    else item.action = before ? (item.diff.length ? 'update' : 'keep') : 'add';
+  }
+  const stats = previewStats(batch.rows);
+  const status = batch.rows.some((x) => x.issue && x.action !== 'skip' && x.action !== 'keep') ? '待修正' : '待确认';
+  db.prepare(`
+    UPDATE transition_import_batches
+    SET rows_json=?, added=?, updated=?, skipped=?, issue_count=?, status=?, meta_json=?
+    WHERE id=?
+  `).run(JSON.stringify(batch.rows), stats.added, stats.updated, stats.skipped, stats.issue_count, status, JSON.stringify({ pendingChannels, pendingPeople }), raw.id);
+  audit(user.name, '表单维护', '在线修正导入行', `批次 ${raw.id} · 行 ${rowId}`);
+  res.json(hydrateImportBatch(getImportBatchRow(raw.id), true));
+});
+
+r.post('/transition-tool/import-batches/:id/cancel', (req, res) => {
+  const ctx = requirePendingBatch(req, res);
+  if (!ctx) return;
+  const { user, raw, batch } = ctx;
+  if (!['待确认', '待修正'].includes(batch.status)) {
+    return res.status(400).json({ error: '当前状态不可取消' });
+  }
+  db.prepare("UPDATE transition_import_batches SET status='已取消' WHERE id=?").run(raw.id);
+  audit(user.name, '表单维护', '取消导入批次', String(raw.id));
+  res.json({ ok: true, importBatches: listImportBatches() });
+});
+
+r.post('/transition-tool/import-batches/:id/confirm', (req, res) => {
+  const ctx = requirePendingBatch(req, res);
+  if (!ctx) return;
+  const { user, raw, batch } = ctx;
+  if (!['待确认', '待修正'].includes(batch.status)) {
+    return res.status(400).json({ error: '当前状态不可确认入库' });
+  }
+  const problemRows = (batch.rows || []).filter((x) => x.action === 'skip' || (x.validation && x.validation.ok === false) || x.issue);
+  if (problemRows.length && !req.body?.forceDespiteIssues) {
+    return res.status(422).json({
+      error: `存在 ${problemRows.length} 行校验问题。请在预览中在线修正，或勾选「已知晓问题仍确认入库」后强制入库`,
+    });
+  }
+  const pendingChannels = Array.isArray(batch.pendingChannels) ? batch.pendingChannels : [];
+  if (pendingChannels.length) {
+    if (!req.body?.confirmNewChannels) {
+      return res.status(422).json({
+        error: `表格中识别到 ${pendingChannels.length} 条新渠道/项目类型，请先核对并确认新增后再入库。确认前不会写入配置中心。`,
+        pendingChannels,
+      });
+    }
+    try {
+      applyPendingChannelPaths(pendingChannels, user.name);
+    } catch (err) {
+      return res.status(400).json({ error: String(err.message || err), pendingChannels });
+    }
+  }
+  const pendingPeople = Array.isArray(batch.pendingPeople) ? batch.pendingPeople : [];
+  if (pendingPeople.length) {
+    if (!req.body?.confirmNewPeople) {
+      return res.status(422).json({
+        error: `表格中识别到 ${pendingPeople.length} 名平台尚未收录的人员，请先核对姓名和工号并确认新增后再入库。`,
+        pendingPeople,
+      });
+    }
+    const incoming = Array.isArray(req.body?.people) && req.body.people.length ? req.body.people : pendingPeople;
+    try {
+      insertConfirmedPeople(incoming, user);
+    } catch (err) {
+      return res.status(400).json({ error: String(err.message || err), pendingPeople: incoming });
+    }
+  }
+  snapshotTransitionLedger('pre-confirm');
+  const existing = getTransitionRows();
+  const nextRows = applyPreviewToLedger(batch.rows || [], existing, batch.mode, user.name);
+  setTransitionRows(nextRows);
+  insertChangeLogs({
+    action: 'import',
+    before: { projectType: '', name: batch.orig_name, id: `batch-${raw.id}` },
+    after: { projectType: '', name: `入库 ${batch.rows?.length || 0} 行`, id: `batch-${raw.id}` },
+    user,
+    batchId: raw.id,
+  });
+  db.prepare("UPDATE transition_import_batches SET status='已入库', confirmed_at=?, confirmed_by=? WHERE id=?")
+    .run(nowDateTime(), user.name, raw.id);
+  audit(user.name, '表单维护', batch.mode === 'replace' ? '确认入库总表' : '确认入库分表', `${batch.orig_name} · 批次 ${raw.id}`);
+  res.json({ ok: true, importBatches: listImportBatches(), cascade: cascadePayload() });
+});
+
+r.post('/transition-tool/import-batches/:id/undo', (req, res) => {
+  const ctx = requirePendingBatch(req, res);
+  if (!ctx) return;
+  const { user, raw, batch } = ctx;
+  if (batch.status !== '已入库') return res.status(400).json({ error: '仅已入库批次可撤回本批' });
+  const snap = J(raw.snapshot_json, null);
+  if (!Array.isArray(snap)) return res.status(400).json({ error: '本批没有可恢复快照' });
+  snapshotTransitionLedger('pre-undo-batch');
+  setTransitionRows(snap);
+  db.prepare("UPDATE transition_import_batches SET status='已撤回' WHERE id=?").run(raw.id);
+  db.prepare('UPDATE transition_change_logs SET undone=1 WHERE batch_id=?').run(raw.id);
+  audit(user.name, '表单维护', '撤回导入批次', String(raw.id));
+  res.json({ ok: true, importBatches: listImportBatches() });
+});
+
+r.get('/transition-tool/import-batches/:id/export.xlsx', async (req, res, next) => {
+  try {
+    const ctx = requirePendingBatch(req, res);
+    if (!ctx) return;
+    const rows = (ctx.batch.rows || []).filter((x) => x.action !== 'skip' && x.action !== 'delete').map((x) => x.row);
+    if (!rows.length) return res.status(400).json({ error: '该批次没有可导出的数据行' });
+    const buf = await makeTransitionTemplateWorkbook(rows);
+    const orig = String(ctx.batch.orig_name || ctx.batch.file || '').replace(/\.[^.]+$/, '');
+    const filename = yuyanExportFilename({
+      kind: '导入批次修正',
+      scope: orig || `批次${ctx.batch.id}`,
+      count: rows.length,
+    });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    setDownloadName(res, filename, 'srpm-batch.xlsx');
+    res.send(buf);
+  } catch (err) {
+    next(err);
+  }
+});
+
+r.post('/transition-tool/change-logs/:id/undo', (req, res) => {
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  if (!canAccessFormTool(user)) return res.status(403).json({ error: '无权撤回变更' });
+  const log = db.prepare('SELECT * FROM transition_change_logs WHERE id=?').get(Number(req.params.id));
+  if (!log) return res.status(404).json({ error: '变更记录不存在' });
+  if (log.undone) return res.status(400).json({ error: '该步已撤回' });
+  if (log.batch_id) return res.status(400).json({ error: '批次变更请到「批量上传」撤回本批' });
+  const before = J(log.before_json, null);
+  const after = J(log.after_json, null);
+  const rows = getTransitionRows();
+  if (log.action === 'delete' && before) {
+    if (!rows.some((x) => x.id === before.id)) rows.push(normalizeTransitionRow(before));
+    setTransitionRows(rows);
+  } else if (log.action === 'add' && after) {
+    setTransitionRows(rows.filter((x) => x.id !== after.id && transitionIdentity(x) !== transitionIdentity(after)));
+  } else if (before) {
+    const idx = rows.findIndex((x) => x.id === before.id || transitionIdentity(x) === transitionIdentity(before));
+    if (idx >= 0) rows[idx] = normalizeTransitionRow(before);
+    setTransitionRows(rows);
+  } else {
+    return res.status(400).json({ error: '该步缺少可恢复快照' });
+  }
+  db.prepare('UPDATE transition_change_logs SET undone=1 WHERE id=?').run(log.id);
+  audit(user.name, '表单维护', '撤回字段变更', String(log.id));
+  res.json({ ok: true });
+});
+
+r.post('/transition-tool/type-owners', (req, res) => {
+  const user = req.user || requireUser(req, res);
+  if (!user) return;
+  if (!canReplaceAllTransition(user)) return res.status(403).json({ error: '仅总部/系统管理员可维护主管分工' });
+  const list = Array.isArray(req.body?.owners) ? req.body.owners : [];
+  const next = list.map((x) => ({
+    projectType: String(x.projectType || x.name || '').trim(),
+    owner: String(x.owner || '').trim(),
+  })).filter((x) => x.projectType);
+  setTypeOwners(next);
+  audit(user.name, '表单维护', '主管分工', `${next.length} 条`);
+  res.json({ ok: true, typeOwners: next });
 });
 
 r.post('/transition-tool/records/delete', (req, res) => {
@@ -3559,7 +4591,9 @@ r.post('/transition-tool/records/delete', (req, res) => {
   const hit = rows.find((x) => x.id === id);
   if (!hit) return res.status(404).json({ error: '记录不存在' });
   if (!assertRowInScope(user, hit)) return res.status(403).json({ error: '无权删除该条台账' });
+  snapshotTransitionLedger('pre-delete-record');
   setTransitionRows(rows.filter((x) => x.id !== id));
+  insertChangeLogs({ action: 'delete', before: hit, after: null, user });
   audit(user.name, '表单维护', '删除', hit.name || hit.serial || id);
   res.json({ ok: true, deleted: 1 });
 });
@@ -3568,9 +4602,11 @@ r.post('/transition-tool/records/delete-bulk', (req, res) => {
   const user = req.user || requireUser(req, res);
   if (!user) return;
   if (!canAccessFormTool(user)) return res.status(403).json({ error: '无权删除表单记录' });
+  snapshotTransitionLedger(req.body?.all ? 'pre-clear' : 'pre-delete-bulk');
   if (req.body?.all) {
     if (!canReplaceAllTransition(user)) return res.status(403).json({ error: '仅系统管理员或总部全部台账权限可清空全部项目' });
     const n = getTransitionRows().length;
+    for (const hit of getTransitionRows()) insertChangeLogs({ action: 'delete', before: hit, after: null, user });
     setTransitionRows([]);
     audit(user.name, '表单维护', '清空', `清空 ${n} 条`);
     return res.json({ ok: true, deleted: n });
@@ -3581,6 +4617,7 @@ r.post('/transition-tool/records/delete-bulk', (req, res) => {
   let deleted = 0;
   for (const row of rows) {
     if (ids.has(String(row.id)) && assertRowInScope(user, row)) {
+      insertChangeLogs({ action: 'delete', before: row, after: null, user });
       deleted += 1;
       continue;
     }
@@ -3591,17 +4628,65 @@ r.post('/transition-tool/records/delete-bulk', (req, res) => {
   res.json({ ok: true, deleted });
 });
 
-r.get('/transition-tool/export.xlsx', async (req, res, next) => {
+function pickExportRows(user, query, body) {
+  const q = { ...(query || {}), ...(body || {}) };
+  const all = filterTransitionRowsForUser(user, getTransitionRows());
+  const ids = Array.isArray(q.ids) ? q.ids.map(String) : String(q.ids || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (ids.length) {
+    const index = new Map(all.map((row) => [String(row.id), row]));
+    return ids.map((id) => index.get(id)).filter(Boolean);
+  }
+  return filterExportRows(user, q);
+}
+
+async function sendTransitionExportXlsx(req, res, next) {
   try {
     const user = req.user || requireUser(req, res);
     if (!user) return;
     if (!canAccessFormTool(user)) return res.status(403).json({ error: '无权导出表单维护数据' });
-    const rows = filterTransitionRowsForUser(user, getTransitionRows());
-    const buf = await makeTransitionTemplateWorkbook(rows);
-    const filename = `预研项目总表.xlsx`;
+    const payload = { ...(req.query || {}), ...(req.body || {}) };
+    const rows = pickExportRows(user, req.query, req.body);
+    const buf = await makeTransitionTemplateWorkbook(rows, payload.columns);
+    const kind = (payload.exportKind === '专项分表' || payload.projectType) ? '专项分表' : '总表';
+    const scope = payload.exportScope
+      || payload.projectType
+      || (payload.ids ? '当前视图' : '全部');
+    const filename = yuyanExportFilename({ kind, scope, count: rows.length });
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="yuyan-zongbiao.xlsx"; filename*=UTF-8''${encodeURIComponent(filename)}`);
+    setDownloadName(res, filename, 'srpm-ledger.xlsx');
     res.send(buf);
+  } catch (err) {
+    next(err);
+  }
+}
+
+r.get('/transition-tool/export.xlsx', sendTransitionExportXlsx);
+r.post('/transition-tool/export.xlsx', sendTransitionExportXlsx);
+
+r.get('/transition-tool/export-package.zip', async (req, res, next) => {
+  try {
+    const user = req.user || requireUser(req, res);
+    if (!user) return;
+    if (!canAccessFormTool(user)) return res.status(403).json({ error: '无权导出表单维护数据' });
+    const rows = filterExportRows(user, req.query || {});
+    const zip = new JSZip();
+    const groups = new Map();
+    for (const row of rows) {
+      const name = row.projectType || '未分类';
+      if (!groups.has(name)) groups.set(name, []);
+      groups.get(name).push(row);
+    }
+    if (!groups.size) return res.status(400).json({ error: '当前筛选无数据' });
+    const stamp = nowExportStamp();
+    for (const [name, list] of groups) {
+      const buf = await makeTransitionTemplateWorkbook(list);
+      zip.file(yuyanExportFilename({ kind: '专项分表', scope: name, count: list.length, stamp }), buf);
+    }
+    const out = await zip.generateAsync({ type: 'nodebuffer' });
+    const zipName = yuyanExportFilename({ kind: '专项分表筛选包', scope: `${groups.size}类`, count: rows.length, ext: 'zip', stamp });
+    res.setHeader('Content-Type', 'application/zip');
+    setDownloadName(res, zipName, 'srpm-pack.zip');
+    res.send(out);
   } catch (err) {
     next(err);
   }
@@ -3653,7 +4738,7 @@ r.get('/meta/stage-fields', (_req, res) => {
   try { majors = majorPayload(); } catch (_) {}
   res.json({
     stages: [
-      { id: 'declaration', name: '立项·申报', filler: '项目联系人', note: '级别/渠道、名称、目标、周期、总经费、专业、牵头分工、联系人·负责人·技术负责人及渠道材料' },
+      { id: 'declaration', name: '立项·申报', filler: '项目联系人', note: '级别/渠道、名称、目标、周期、总经费、专业、牵头分工、申报岗位（技术团队/责任专家/管理团队/财务团队，均须姓名及工号）及渠道材料' },
       { id: 'baseinfo', name: '实施·基本信息', filler: '项目团队', note: '补全主管/总师/管理财务等；审过回写台账' },
       { id: 'system', name: '系统生成', filler: '系统', note: '项目编号、预警、成果转化状态' },
     ],
@@ -3684,10 +4769,10 @@ r.get('/projects/:id/field-checklist', (req, res) => {
   if (!team.contact) declMiss.push('项目联系人');
   if (!team.owner) declMiss.push('项目负责人');
   if (!team.tech) declMiss.push('技术负责人');
-  const baseMiss = [];
-  for (const [k, lab] of [['pm','项目主管'],['chief1','一级总师'],['chief2','二级总师'],['unitDeptHead','单位科技部长']]) {
-    if (!team[k]) baseMiss.push(lab);
+  for (const [k, lab] of [['pm','项目主管'],['chief1','一级总师'],['chief2','二级总师'],['hqHead','总部处室处长'],['hqStaff','总部处室主管'],['unitDeptHead','单位科技部长'],['unitStaff','单位科技主管'],['finHq','总部财务主管'],['finHead','单位财务部长'],['finStaff','单位财务主管']]) {
+    if (!team[k]) declMiss.push(lab);
   }
+  const baseMiss = [];
   res.json({
     projectId: p.id, status: p.status,
     declaration: { complete: declMiss.length === 0, missing: declMiss },
@@ -3849,10 +4934,10 @@ r.post('/contracts/:id/accept', (req, res) => {
   audit(user.name, '外协合同验收', c.pname, `${c.contract_no}，协作评价30日倒计时启动`); res.json({ ok: true, evaluationDeadline: addDays(TODAY(), 30) });
 });
 
-/** 申报审签结束后的立项/不立项正式决策。 */
+/** 申报审签结束后的立项/不立项正式决策（系统管理员，或被分配立项审批结果权限的人员）。 */
 r.post('/projects/:id/decision', (req, res) => {
   const user = currentUser(req);
-  if (!requireRoles(user, res, ['admin'], '仅超级管理员可依据正式文件登记立项决策')) return;
+  if (!canDeclareResult(user)) return res.status(403).json({ error: '仅系统管理员或获授权人员可登记审批结果' });
   const p = db.prepare('SELECT * FROM projects WHERE id=?').get(req.params.id);
   if (!p) return res.status(404).json({ error: 'not found' });
   if (p.status !== '待立项确认') return res.status(400).json({ error: '仅申报审签通过、待确认项目可登记决策' });
@@ -4445,7 +5530,7 @@ function listLedgerChannels() {
   const hidden = new Set(ext.hiddenChannels || []);
   const templateKeys = templateChannelKeys();
   const byKey = new Map();
-  const rows = db.prepare('SELECT * FROM channels ORDER BY level, source_channel, name').all();
+  const rows = db.prepare('SELECT * FROM channels WHERE enabled=1 ORDER BY level, source_channel, name').all();
   for (const r of rows) {
     const name = cellText(r.source_channel);
     if (!name) continue;
@@ -4866,7 +5951,8 @@ r.post('/rbac/duty-perms/reset', (req, res) => {
 r.get('/me/project-duties', (req, res) => {
   const user = req.user || requireUser(req, res);
   if (!user) return;
-  res.json({ rows: listUserProjectDuties(user) });
+  const rows = listUserProjectDuties(user);
+  res.json({ rows, dutySummary: summarizeDutyRows(rows) });
 });
 
 r.get('/admin/users/:id/project-duties', (req, res) => {
@@ -4884,7 +5970,8 @@ r.get('/admin/users', (req, res) => {
     ...publicUser(u),
     ...formAccessMeta(u),
   }));
-  res.json({ users });
+  const sums = bulkDutySummaries(users);
+  res.json({ users: users.map((u) => ({ ...u, dutySummary: sums[u.id] || dutySummaryPayload(0, {}) })) });
 });
 
 r.post('/admin/users', (req, res) => {
@@ -4912,8 +5999,8 @@ r.post('/admin/users', (req, res) => {
   if (form.error) return res.status(400).json({ error: form.error });
   const password = String(req.body?.password || id);
   const password_hash = hashPassword(password);
-  db.prepare(`INSERT INTO users (id,name,role,scope,unit_id,title,status,password_hash,emp_no,form_access,form_scope,form_scope_keys)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, name, role, scope, unit_id, title || null, status, password_hash, id, form.form_access, form.form_scope, form.form_scope_keys);
+  db.prepare(`INSERT INTO users (id,name,role,scope,unit_id,title,status,password_hash,emp_no,form_access,form_scope,form_scope_keys,declare_result_access)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, name, role, scope, unit_id, title || null, status, password_hash, id, form.form_access, form.form_scope, form.form_scope_keys, role === 'admin' ? 1 : (req.body?.declare_result_access === true || req.body?.declare_result_access === 1 || req.body?.declare_result_access === '1' ? 1 : 0));
   audit(admin.name, '成员管理', name, `新增成员 ${id}（角色 ${role}/${scope}${form.form_access ? `，表单维护 ${FORM_SCOPE_LABEL[form.form_scope]}` : ''}），初始密码已设置`);
   res.json({ ok: true, user: publicUser(db.prepare('SELECT * FROM users WHERE id=?').get(id)), initialPassword: password });
 });
@@ -4946,9 +6033,10 @@ r.put('/admin/users/:id', (req, res) => {
   }
   const form = normalizeFormAccess(req.body || {}, unit_id, u);
   if (form.error) return res.status(400).json({ error: form.error });
-  db.prepare('UPDATE users SET name=?, role=?, scope=?, unit_id=?, title=?, status=?, form_access=?, form_scope=?, form_scope_keys=? WHERE id=?')
-    .run(name, role, scope, unit_id, title || null, status, form.form_access, form.form_scope, form.form_scope_keys, id);
-  audit(admin.name, '成员管理', name, `编辑成员 ${id}${form.form_access ? `（表单维护 ${FORM_SCOPE_LABEL[form.form_scope]}）` : ''}`);
+  const declareResult = role === 'admin' ? 1 : (req.body?.declare_result_access === true || req.body?.declare_result_access === 1 || req.body?.declare_result_access === '1' ? 1 : (Object.prototype.hasOwnProperty.call(req.body || {}, 'declare_result_access') ? 0 : Number(u.declare_result_access || 0)));
+  db.prepare('UPDATE users SET name=?, role=?, scope=?, unit_id=?, title=?, status=?, form_access=?, form_scope=?, form_scope_keys=?, declare_result_access=? WHERE id=?')
+    .run(name, role, scope, unit_id, title || null, status, form.form_access, form.form_scope, form.form_scope_keys, declareResult, id);
+  audit(admin.name, '成员管理', name, `编辑成员 ${id}${form.form_access ? `（表单维护 ${FORM_SCOPE_LABEL[form.form_scope]}）` : ''}${declareResult ? '，已分配立项审批结果权限' : ''}`);
   res.json({ ok: true, user: publicUser(db.prepare('SELECT * FROM users WHERE id=?').get(id)) });
 });
 

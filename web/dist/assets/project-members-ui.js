@@ -57,9 +57,15 @@
 .pm-tag{height:22px;padding:0 8px;border-radius:4px;font-size:12px;line-height:22px;background:#E6F0FF;color:#0048A0;white-space:nowrap;flex-shrink:0}
 .pm-tag.fill{background:#FFF7E6;color:#D46B08}
 .pm-empty{font-size:13px;color:#8C8C8C;padding:8px 0}
-#pm-slot-panel{margin:0 0 16px;padding:8px 16px;min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff;border:1px solid #E8E8E8;border-radius:4px}
+#pm-slot-panel{margin:0 0 16px;padding:12px 16px;min-height:48px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;background:#fff;border:1px solid #E8E8E8;border-radius:4px}
 #pm-slot-panel h3{margin:0;font-size:14px;color:#1F1F1F;font-weight:600}
-#pm-slot-panel .pm-sub{margin:0;font-size:12px;color:#8C8C8C}
+#pm-slot-panel .pm-sub{margin:6px 0 0;font-size:12px;color:#8C8C8C;line-height:1.6}
+#pm-slot-panel .pm-mine{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+#pm-slot-panel .pm-chip.muted{background:#F5F7FA;color:#8C8C8C}
+#pm-inbox-bar .pm-duty-line{margin:0 0 8px;font-size:12px;color:#0048A0;line-height:1.6}
+#pm-inbox-bar .pm-duty-list{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+#pm-inbox-bar .pm-duty-list a{height:28px;padding:0 10px;border:1px solid #91CAFF;border-radius:4px;background:#E6F4FF;color:#0048A0;font-size:12px;line-height:26px;text-decoration:none;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#pm-inbox-bar .pm-duty-list a:hover{border-color:#0064EF}
 .pm-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px}
 .pm-grid .pm-g{grid-column:1/-1;margin:4px 0 0;font-size:12px;color:#8C8C8C}
 .pm-grid label{display:flex;flex-direction:column;gap:8px;font-size:12px;color:#8C8C8C;min-width:0}
@@ -229,6 +235,13 @@
     const foot = mask.querySelector('.pm-appr-foot');
     const acting = typeof a.canAct === 'boolean' ? a.canAct : a.status === '审批中';
     foot.hidden = !acting;
+    const denyBtn = foot.querySelector('[data-act="deny"]');
+    const apprBtn = foot.querySelector('[data-act="approve"]');
+    const rejBtn = foot.querySelector('[data-act="reject"]');
+    const resultStep = !!a.isDeclareResultStep || (steps[a.current_step]?.title === '审批结果');
+    if (denyBtn) denyBtn.hidden = !(acting && resultStep);
+    if (apprBtn) apprBtn.textContent = resultStep ? '通过' : '签署同意';
+    if (rejBtn) rejBtn.textContent = resultStep ? '驳回' : '驳回退改';
     if (!acting) {
       const note = mask.querySelector('.pm-appr-note');
       if (!note) {
@@ -246,7 +259,7 @@
         btn.disabled = true;
         try {
           const updated = await api(`/approvals/${a.id}/act`, { method: 'POST', body: { action, comment: ta.value.trim() } });
-          toast(action === 'approve' ? '已签署同意，流转图已更新' : '已驳回，退回填报节点');
+          toast(action === 'approve' ? (resultStep ? '审批结果：通过，已同步台账' : '已签署同意，流转图已更新') : action === 'deny' ? '审批结果：不立项' : '已驳回，退回填报节点');
           let nextProj = proj;
           if (updated?.project_id) {
             try { nextProj = await api(`/projects/${updated.project_id}`); } catch (_) {}
@@ -282,6 +295,7 @@
           <textarea placeholder="审批意见（选填）…"></textarea>
           <div class="pm-actions">
             <button type="button" class="pm-btn danger" data-act="reject">驳回退改</button>
+            <button type="button" class="pm-btn ghost" data-act="deny" hidden>不立项</button>
             <button type="button" class="pm-btn primary" data-act="approve">签署同意</button>
           </div>
         </div>
@@ -362,7 +376,9 @@
     let data;
     try { data = await api('/inbox'); } catch { return; }
     const items = Array.isArray(data.items) ? data.items : [];
-    if (!items.length) {
+    const summary = data.dutySummary || {};
+    const dutyRows = Array.isArray(data.dutyRows) ? data.dutyRows : [];
+    if (!items.length && !summary.projectCount) {
       $('#pm-inbox-bar')?.remove();
       return;
     }
@@ -372,11 +388,12 @@
     const shownTracks = tracks.slice(0, 3);
     const shown = [...shownPending, ...shownTracks];
     const extra = pending.length - shownPending.length;
-    const tagOf = (it) => (it.kind === 'fill' ? ['fill', '去填报'] : it.kind === 'track' ? ['track', '查看流转'] : ['', '去审批']);
+    const tagOf = (it) => (it.kind === 'fill' || it.kind === 'assign' ? ['fill', it.kind === 'assign' ? '打开档案' : '去办理'] : it.kind === 'track' ? ['track', '查看流转'] : ['', '去审批']);
     const rows = shown.map((it) => {
       const [cls, text] = tagOf(it);
+      const goProject = it.kind === 'fill' || it.kind === 'assign';
       return `
-        <a class="pm-inbox-item" href="${esc(it.kind === 'fill' ? (it.href || '#') : '#')}" data-kind="${esc(it.kind || '')}" data-appr="${esc(it.approvalId || '')}">
+        <a class="pm-inbox-item" href="${esc(goProject ? (it.href || '#') : '#')}" data-kind="${esc(it.kind || '')}" data-appr="${esc(it.approvalId || '')}">
           <div>
             <b title="${esc(it.title || '')}">${esc(it.title || '')}</b>
             <span class="pm-meta">${esc([it.projectCode, it.projectName, it.stepTitle].filter(Boolean).join(' · '))}</span>
@@ -384,24 +401,32 @@
           <span class="pm-tag ${cls}">${text}</span>
         </a>`;
     }).join('');
-    const title = pending.length ? `待办 ${pending.length} 件` : '已办流转';
+    const title = pending.length ? `待办 ${pending.length} 件` : (summary.projectCount ? '我的项目岗位' : '已办流转');
+    const dutyLine = summary.projectCount
+      ? `跨项目任职 ${summary.projectCount} 个项目：${summary.text || ''}`
+      : '尚未绑定项目岗位；指定后按本项目岗位办理，不随登录身份固定职能';
+    const dutyLinks = dutyRows.slice(0, 8).map((r) =>
+      `<a href="/projects/${esc(r.projectId)}" title="${esc((r.labels || []).join('、'))}">${esc(r.name)} · ${esc((r.labels || []).join('、'))}</a>`
+    ).join('');
     const sub = pending.length
       ? (tracks.length ? '签署后右侧流程图仍可点开查看' : '点条目即可在本页签署，不必再进审批中心一层层打开')
-      : '您已办结的审签流转仍可查看';
+      : '同一人可在不同项目担任不同岗位，待办按任职聚合';
     const bar = placeTop(`
       <section>
         <div class="pm-head">
           <div>
             <h3>${title}</h3>
-            <div class="pm-sub">${sub}</div>
+            <div class="pm-sub">${esc(sub)}</div>
           </div>
           <a class="pm-more" href="/approvals">进入审批中心</a>
         </div>
-        <div class="pm-inbox-list">${rows}${extra > 0 ? `<div class="pm-empty">另有 ${extra} 件待办，请在审批中心查看</div>` : ''}</div>
+        <p class="pm-duty-line">${esc(dutyLine)}</p>
+        ${dutyLinks ? `<div class="pm-duty-list">${dutyLinks}</div>` : ''}
+        ${rows ? `<div class="pm-inbox-list">${rows}${extra > 0 ? `<div class="pm-empty">另有 ${extra} 件待办，请在审批中心查看</div>` : ''}</div>` : ''}
       </section>`, 'pm-inbox-bar');
     bar?.querySelector('.pm-inbox-list')?.addEventListener('click', (e) => {
       const item = e.target.closest('.pm-inbox-item');
-      if (!item || item.dataset.kind === 'fill') return;
+      if (!item || item.dataset.kind === 'fill' || item.dataset.kind === 'assign') return;
       e.preventDefault();
       openApprovalDrawer(item.dataset.appr);
     });
@@ -533,11 +558,18 @@
     const members = data.members || [];
     const filled = duties.filter((d) => members.some((m) => m.key === d.key && m.name)).length;
     const editable = !!data.editable;
+    const mine = data.myDutyLabels || [];
+    const mineHtml = mine.length
+      ? mine.map((l) => `<span class="pm-chip">${esc(l)}</span>`).join('')
+      : (data.loginRole === 'admin'
+        ? '<span class="pm-chip">系统管理员（可代办全部岗位）</span>'
+        : '<span class="pm-chip muted">未担任本项目岗位</span>');
     const bar = placeTop(`
       <section>
         <div>
-          <h3>项目岗位</h3>
-          <div class="pm-sub">已指定 ${filled}/${duties.length || 0} · 点右侧在抽屉中调整，审签流转可随时查看</div>
+          <h3>本项目岗位</h3>
+          <div class="pm-sub">当前登录在本项目的职能如下，与登录身份无关。已指定 ${filled}/${duties.length || 0}。同一人可在其他项目担任不同岗位。</div>
+          <div class="pm-mine">${mineHtml}</div>
         </div>
         <div class="pm-actions">
           <button type="button" class="pm-btn" id="pm-flow-open">查看审签流转</button>
@@ -585,12 +617,13 @@
       closeSlotDrawer();
     }
     const inboxOk = shouldShowInbox(path) && $('#pm-inbox-bar');
-    if (!force && path === lastPath && inboxOk) return;
+    const onProject = /^\/projects\/\d+/.test(path);
+    if (!force && path === lastPath && inboxOk && (!onProject || $('#pm-slot-panel'))) return;
     lastPath = path;
     try { await renderInbox(); } catch (e) { console.warn('inbox', e); }
     const m = path.match(/^\/projects\/(\d+)/);
     if (m) {
-      $('#pm-slot-panel')?.remove();
+      try { await renderMembers(m[1]); } catch (e) { console.warn('members', e); }
     } else {
       closeSlotDrawer();
       $('#pm-slot-panel')?.remove();
@@ -603,7 +636,7 @@
   };
   new MutationObserver(() => {
     if (location.pathname !== lastPath) schedule();
-    else if (shouldShowInbox(location.pathname) && token() && !$('#pm-inbox-bar')) schedule();
+    else if (token() && ((shouldShowInbox(location.pathname) && !$('#pm-inbox-bar')) || (/^\/projects\/\d+/.test(location.pathname) && !$('#pm-slot-panel')))) schedule();
   }).observe(document.body, { childList: true, subtree: true });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => run());
   else run();

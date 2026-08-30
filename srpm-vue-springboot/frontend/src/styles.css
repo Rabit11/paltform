@@ -1,0 +1,10 @@
+:root {
+  --title-bar: #0048a0;
+  --primary: #0064ef;
+  --page: #f5f7fa;
+  --text: #1f1f1f;
+  --muted: #8c8c8c;
+  --line: #e8e8e8;
+}
+html, body, #app { height: 100%; margin: 0; }
+body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; color: var(--text); background: var(--page); }

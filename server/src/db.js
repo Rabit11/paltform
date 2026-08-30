@@ -336,5 +336,81 @@ export function createSchema(db) {
     ip_address TEXT,
     user_agent TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS transition_import_batches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    orig_name TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    uploaded_at TEXT NOT NULL,
+    uploader_name TEXT,
+    uploader_emp_no TEXT,
+    parsed INTEGER NOT NULL DEFAULT 0,
+    added INTEGER NOT NULL DEFAULT 0,
+    updated INTEGER NOT NULL DEFAULT 0,
+    skipped INTEGER NOT NULL DEFAULT 0,
+    issue_count INTEGER NOT NULL DEFAULT 0,
+    upload_id INTEGER
+  );
+  `);
+  ensureTransitionImportBatches(db);
+}
+
+/** 表单维护每次上传：文件名、时间、上传人姓名/工号。旧库补表补列。 */
+export function ensureTransitionImportBatches(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS transition_import_batches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      orig_name TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      uploaded_at TEXT NOT NULL,
+      uploader_name TEXT,
+      uploader_emp_no TEXT,
+      parsed INTEGER NOT NULL DEFAULT 0,
+      added INTEGER NOT NULL DEFAULT 0,
+      updated INTEGER NOT NULL DEFAULT 0,
+      skipped INTEGER NOT NULL DEFAULT 0,
+      issue_count INTEGER NOT NULL DEFAULT 0,
+      upload_id INTEGER
+    );
+  `);
+  const cols = db.prepare('pragma table_info(transition_import_batches)').all().map((c) => c.name);
+  const add = (name, spec) => {
+    if (!cols.includes(name)) db.prepare(`ALTER TABLE transition_import_batches ADD COLUMN ${name} ${spec}`).run();
+  };
+  add('orig_name', 'TEXT');
+  add('mode', "TEXT NOT NULL DEFAULT 'merge'");
+  add('uploaded_at', 'TEXT');
+  add('uploader_name', 'TEXT');
+  add('uploader_emp_no', 'TEXT');
+  add('parsed', 'INTEGER NOT NULL DEFAULT 0');
+  add('added', 'INTEGER NOT NULL DEFAULT 0');
+  add('updated', 'INTEGER NOT NULL DEFAULT 0');
+  add('skipped', 'INTEGER NOT NULL DEFAULT 0');
+  add('issue_count', 'INTEGER NOT NULL DEFAULT 0');
+  add('upload_id', 'INTEGER');
+  add('status', "TEXT NOT NULL DEFAULT '已入库'");
+  add('rows_json', 'TEXT');
+  add('snapshot_json', 'TEXT');
+  add('confirmed_at', 'TEXT');
+  add('confirmed_by', 'TEXT');
+  add('meta_json', 'TEXT');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS transition_change_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      action TEXT,
+      project_type TEXT,
+      project_name TEXT,
+      field TEXT,
+      before_val TEXT,
+      after_val TEXT,
+      actor TEXT,
+      emp_no TEXT,
+      changed_at TEXT,
+      batch_id INTEGER,
+      undone INTEGER NOT NULL DEFAULT 0,
+      row_id TEXT,
+      before_json TEXT,
+      after_json TEXT
+    );
   `);
 }

@@ -58,7 +58,17 @@
 .lc-drawer .node.approved,.lc-drawer .node.done{background:#f0fdf4}
 .lc-drawer .node.rejected{background:#fff1f2}
 .lc-drawer button.close{margin-top:12px;padding:8px 14px;border:0;border-radius:5px;background:#0759a6;color:#fff;cursor:pointer}
-.lc-hint{margin:0 0 12px;padding:10px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;color:#1e40af;font-size:12px;line-height:1.55}
+.lc-hint{display:none!important}
+.lc-ch-flow{margin:0 0 16px;padding:16px 20px;background:#fff;border:1px solid #E8E8E8;border-radius:4px}
+.lc-ch-flow .hd{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 12px;margin-bottom:12px}
+.lc-ch-flow .hd b{font-size:14px;color:#262626;font-weight:600}
+.lc-ch-flow .hd span{font-size:12px;color:#8C8C8C}
+.lc-ch-steps{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0;padding:0}
+.lc-ch-steps > span{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 12px;border:1px solid #E8E8E8;border-radius:4px;background:#FAFAFA;font-size:13px;color:#262626}
+.lc-ch-steps > span .n{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:9px;background:#F0F2F5;color:#8C8C8C;font-size:11px}
+.lc-ch-steps > span.cur{border-color:#0064EF;background:#F0F5FF;color:#0064EF;font-weight:600}
+.lc-ch-steps > span.cur .n{background:#0064EF;color:#fff}
+.lc-ch-steps .arr{color:#BFBFBF;font-size:12px;padding:0 2px}
 .lc-panel{margin:0 0 14px;padding:14px 16px;background:#fff;border:1px solid #d9e4f2;border-left:4px solid #0759a6;border-radius:8px}
 .lc-panel h3{margin:0 0 10px;font-size:14px;color:#143b66}
 .lc-grid{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px}
@@ -193,13 +203,81 @@
     hd.appendChild(btn);
   }
 
-  async function renderDeclareHints() {
-    if ($('#lc-declare-hint')) return;
-    try {
-      const meta = await api('/meta/stage-fields');
-      const lines = (meta.stages || []).map((s) => `【${s.name}】${s.filler}：${s.note || ''}`).join('<br/>');
-      placeTop(`<div class="lc-hint" id="lc-declare-hint"><b>V19 填表分工</b><br/>${lines}<br/>本页为<strong>立项·申报</strong>：须填级别/渠道、名称、目标、起止日期、总经费、负责人·技术负责人及渠道材料。主管/总师等在实施·基本信息补全。</div>`, 'lc-declare-hint');
-    } catch (_) { /* ignore */ }
+  let bootCache = null;
+  async function loadBoot() {
+    if (!bootCache) bootCache = await api('/bootstrap');
+    return bootCache;
+  }
+
+  function selectedDeclareChannelName() {
+    const nodes = [...document.querySelectorAll('div,h2,h3,span,p,strong,b')];
+    for (const el of nodes) {
+      if (el.querySelector('div,h2,h3')) continue;
+      const t = (el.textContent || '').trim().replace(/\s+/g, '');
+      const m = t.match(/^申报材料[（(]([^)）]+)[)）]/);
+      if (m) return m[1].trim();
+    }
+    return '';
+  }
+
+  function findDeclareChannel(name) {
+    const list = bootCache?.channels || [];
+    if (!name) return null;
+    const exact = list.filter((c) => c.enabled !== 0 && (c.name === name || `${c.source_channel}/${c.name}` === name));
+    if (exact.length) return exact[0];
+    return list.find((c) => c.name === name)
+      || list.find((c) => c.enabled !== 0 && (name.includes(c.name) || c.name.includes(name)))
+      || null;
+  }
+
+  function channelFlowSteps(ch) {
+    const raw = Array.isArray(ch?.flow) ? ch.flow : [];
+    return raw.map((x) => String(x || '').trim()).filter(Boolean);
+  }
+
+  function currentFlowIndex(steps) {
+    const i = steps.findIndex((s) => /申报|建议书|申请书/.test(s) && !/评审|批复|评估/.test(s));
+    if (i >= 0) return i;
+    const j = steps.findIndex((s) => /申报|建议书|申请书/.test(s));
+    return j >= 0 ? j : 0;
+  }
+
+  function findDeclareInsertHost() {
+    const labels = [...document.querySelectorAll('div,span,p')];
+    const step = labels.find((n) => {
+      const t = (n.textContent || '').replace(/\s+/g, '');
+      return t === '选择立项渠道' && !n.querySelector('div');
+    });
+    if (step) {
+      let p = step.parentElement;
+      for (let i = 0; i < 8 && p; i++) {
+        const txt = (p.textContent || '').replace(/\s+/g, '');
+        if (txt.includes('选择立项渠道') && txt.includes('填报') && p.parentElement) {
+          return p.parentElement;
+        }
+        p = p.parentElement;
+      }
+    }
+    return $('main') || document.querySelector('[class*="content"]');
+  }
+
+  function setDeclareFlowBox(html) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    const next = tmp.firstElementChild;
+    if (!next) return null;
+    next.id = 'lc-declare-hint';
+    const existing = document.getElementById('lc-declare-hint');
+    if (existing && existing.innerHTML === next.innerHTML && existing.className === next.className) return existing;
+    const host = findDeclareInsertHost();
+    if (!host) return existing || null;
+    if (existing) existing.remove();
+    host.insertBefore(next, host.firstChild);
+    return next;
+  }
+
+  async function renderDeclareChannelFlow() {
+    document.getElementById('lc-declare-hint')?.remove();
   }
 
   async function renderMilestonePanels() {
@@ -279,8 +357,19 @@
     };
   }
 
+  function stripDutyHints() {
+    document.querySelectorAll('.lc-hint').forEach((el) => el.remove());
+    const hits = [...document.querySelectorAll('div,section,aside')].filter((el) => {
+      const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      return t.startsWith('V19 填表分工') && t.length < 1600;
+    });
+    hits.sort((a, b) => (a.contains(b) ? 1 : b.contains(a) ? -1 : 0));
+    hits.forEach((el) => { if (el.isConnected && !el.closest('.lc-ch-flow')) el.remove(); });
+  }
+
   let last = '';
   async function run() {
+    stripDutyHints();
     if (!token()) return;
     ensureStyle();
     const path = location.pathname;
@@ -289,11 +378,14 @@
 
     if (!m) {
       $('#lc-stage-owners')?.remove();
+      if (path.startsWith('/declare')) {
+        last = path;
+        try { await renderDeclareChannelFlow(); } catch (_) {}
+        return;
+      }
+      document.getElementById('lc-declare-hint')?.remove();
       if (path === last) return;
       last = path;
-      if (path.startsWith('/declare')) {
-        try { await renderDeclareHints(); } catch (_) {}
-      }
       if (path.startsWith('/milestones')) {
         try { await renderMilestonePanels(); } catch (e) { console.warn('milestone panels', e); }
       }

@@ -6,19 +6,19 @@
   <title>表单维护 · 科研预研信息管理平台</title>
   <style>
     :root {
-      --bg: #f0f2f5;
+      --bg: #f5f7fa;
       --card: #fff;
-      --line: #e5eaf2;
-      --line2: #d9e2ef;
-      --text: #1f2a37;
+      --line: #e8e8e8;
+      --line2: #d9d9d9;
+      --text: #262626;
       --muted: #8c8c8c;
       --accent: #0064ef;
       --comac: #0048a0;
-      --green: #059669;
-      --red: #e11d48;
-      --orange: #d97706;
-      --row-delay: #fff1f2;
-      --head: #f7f9fc;
+      --green: #52c41a;
+      --red: #ff4d4f;
+      --orange: #fa8c16;
+      --row-delay: #fff7e6;
+      --head: #fafafa;
     }
     * { box-sizing: border-box; }
     html, body { height: 100%; }
@@ -29,15 +29,17 @@
       color: var(--text);
       font-size: 13px;
     }
-    body.embed { background: #fff; }
+    body.embed { background: var(--bg); }
+    body.embed .hd { display: none; }
     .page { display: flex; flex-direction: column; height: 100%; min-height: 0; }
     .hd {
-      display: flex; justify-content: space-between; align-items: flex-start;
-      padding: 16px 20px 10px; background: #fff; border-bottom: 1px solid var(--line);
+      position: relative;
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 20px; background: #fff; border-bottom: 1px solid var(--line);
     }
-    .hd h1 { margin: 0; font-size: 22px; font-weight: 700; color: #111; }
-    .hd .sub { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
-    .hd-right { display: flex; align-items: center; gap: 10px; }
+    .hd h1 { margin: 0; font-size: 16px; font-weight: 600; color: var(--text); }
+    .hd .sub { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+    .hd-right { display: flex; align-items: center; gap: 8px; }
     .perm { color: var(--muted); font-size: 12px; }
     .btn {
       height: 32px; padding: 0 12px; border-radius: 4px; border: 1px solid var(--line2);
@@ -47,76 +49,121 @@
     .btn:hover { border-color: var(--accent); color: var(--accent); }
     .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
     .btn.primary:hover { filter: brightness(1.05); color: #fff; }
-    .btn.ghost { background: transparent; }
-    .toolbar, .filters {
-      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-      padding: 10px 20px; background: #f7f8fa; border-bottom: 1px solid var(--line);
+    .btn.ghost { background: transparent; border-color: transparent; color: var(--text); }
+    .btn.ghost:hover { color: var(--accent); background: #f0f5ff; }
+    .chrome {
+      background: #fff; border-bottom: 1px solid var(--line); flex-shrink: 0;
     }
-    .toolbar .lab, .filters .lab { color: var(--muted); font-size: 12px; margin-right: 2px; }
+    .toolbar, .filters {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      padding: 8px 20px;
+    }
+    .toolbar { padding-top: 12px; }
+    .toolbar-spacer { flex: 1; min-width: 8px; }
+    .filters { padding-bottom: 12px; }
+    .filters.more { display: none; padding-top: 0; border-top: 1px dashed var(--line); }
+    .filters.more.show { display: flex; }
     .search {
       display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px;
-      border: 1px solid var(--line2); border-radius: 4px; background: #fff; min-width: 220px;
+      border: 1px solid var(--line2); border-radius: 4px; background: #fff; width: 260px;
     }
+    .search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(0,100,239,.12); }
     .search input {
       border: 0; outline: none; width: 100%; font-size: 13px; background: transparent;
     }
-    select.sel {
+    select.sel, input.sel {
       height: 32px; border: 1px solid var(--line2); border-radius: 4px; padding: 0 8px;
-      background: #fff; color: var(--text); font-size: 13px; max-width: 140px;
+      background: #fff; color: var(--text); font-size: 13px; max-width: 148px;
     }
+    select.sel:focus, input.sel:focus { outline: none; border-color: var(--accent); }
     .tabs {
-      display: flex; gap: 0; padding: 10px 20px 0; background: #fff; border-bottom: 1px solid var(--line);
+      display: flex; gap: 8px; padding: 0 20px; background: #fff;
+      border-bottom: 1px solid var(--line); flex-shrink: 0;
     }
     .tab {
-      height: 34px; padding: 0 16px; border: 1px solid transparent; border-bottom: none;
-      border-radius: 6px 6px 0 0; background: transparent; cursor: pointer; color: var(--muted);
-      display: inline-flex; align-items: center; gap: 6px; font-size: 13px;
+      height: 46px; padding: 0 8px; border: 0; border-radius: 0; background: transparent;
+      cursor: pointer; color: var(--text); display: inline-flex; align-items: center; gap: 6px;
+      font-size: 14px; position: relative;
     }
-    .tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .tab:hover { color: var(--accent); }
+    .tab.active { color: var(--accent); font-weight: 600; background: transparent; }
+    .tab.active::after {
+      content: ""; position: absolute; left: 8px; right: 8px; bottom: 0; height: 2px;
+      background: var(--accent); border-radius: 1px;
+    }
     .badge {
-      min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px;
-      background: #f59e0b; color: #fff; font-size: 10px; line-height: 16px; text-align: center;
+      min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+      background: #fa8c16; color: #fff; font-size: 11px; line-height: 18px; text-align: center;
     }
-    .tab.active .badge { background: rgba(255,255,255,.28); }
+    .tab.active .badge { background: var(--accent); }
     .meta {
-      display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
-      padding: 12px 20px 8px; background: #fff;
+      display: flex; justify-content: space-between; align-items: center; gap: 16px;
+      padding: 12px 20px 8px; background: transparent;
     }
-    .meta-title { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
-    .stats { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 10px 14px; color: var(--muted); font-size: 12px; }
-    .stats b { color: var(--text); font-weight: 600; }
-    .stats .blue { color: var(--accent); }
-    .stats .green { color: var(--green); }
-    .stats .red { color: var(--red); }
-    .meta-right { text-align: right; }
-    .meta-right .hint { margin-top: 6px; color: var(--muted); font-size: 11px; }
+    .meta-title { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; color: var(--text); }
+    .stats {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+      gap: 8px; flex: 1; min-width: 0;
+    }
+    .stat {
+      background: #fff; border: 1px solid var(--line); border-radius: 4px;
+      padding: 8px 12px; min-width: 0; text-align: left; font: inherit;
+    }
+    .stat .l { color: var(--muted); font-size: 12px; line-height: 1.2; }
+    .stat .v { margin-top: 4px; font-size: 16px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+    .stat.blue .v { color: var(--accent); }
+    .stat.green .v { color: #389e0d; }
+    .stat.red .v { color: var(--red); }
+    .stat.click { cursor: pointer; }
+    .stat.click:hover { border-color: var(--accent); }
+    .stat.on { border-color: var(--accent); background: #f0f5ff; }
+    .meta-right { text-align: right; flex-shrink: 0; }
+    .meta-right .hint { margin-top: 6px; color: var(--muted); font-size: 12px; max-width: 220px; }
+    .more-wrap { position: relative; }
+    .more-menu {
+      display: none; position: absolute; right: 0; top: 36px; min-width: 160px;
+      background: #fff; border: 1px solid var(--line); border-radius: 4px;
+      box-shadow: 0 6px 16px rgba(0,0,0,.08); z-index: 30; padding: 4px;
+    }
+    .more-menu.show { display: block; }
+    .more-menu button {
+      width: 100%; height: 32px; border: 0; background: transparent; text-align: left;
+      padding: 0 12px; cursor: pointer; font-size: 13px; border-radius: 2px; color: var(--text);
+    }
+    .more-menu button:hover { background: #f5f5f5; }
+    .more-menu button.danger { color: var(--red); }
     .group-bar { display: none; }
     .table-wrap {
-      flex: 1; min-height: 0; overflow: auto; background: #fff; margin: 0 20px 16px;
-      border: 1px solid var(--line); border-radius: 6px;
+      flex: 1; min-height: 0; overflow: auto; background: #fff; margin: 0 20px 20px;
+      border: 1px solid var(--line); border-radius: 4px;
     }
     table.sheet {
       border-collapse: separate; border-spacing: 0; min-width: 100%;
-      font-size: 12px;
+      font-size: 13px;
     }
     table.sheet th, table.sheet td {
       border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
       padding: 0; vertical-align: middle; background: #fff;
     }
     table.sheet thead th {
-      position: sticky; z-index: 4; font-weight: 600; color: #0f172a;
+      position: sticky; z-index: 4; font-weight: 600; color: var(--text);
     }
-    table.sheet thead tr.letter-row th { top: 0; height: 22px; background: #eef2f7; z-index: 6; }
-    table.sheet thead tr.group-row th { top: 22px; height: 28px; background: #d6e6f2; z-index: 5; text-align: center; }
-    table.sheet thead tr.mid-row th { top: 50px; height: 28px; background: #e8f1f8; z-index: 5; text-align: center; }
-    table.sheet thead tr.leaf-row th { top: 78px; height: 32px; background: #f7f9fc; z-index: 5; }
+    table.sheet thead tr.letter-row th { top: 0; height: 18px; background: #fafafa; z-index: 6; }
+    table.sheet thead tr.group-row th { top: 18px; height: 28px; background: #e6f4ff; z-index: 5; text-align: center; color: var(--comac); font-size: 12px; }
+    table.sheet thead tr.mid-row th { top: 46px; height: 28px; background: #f0f5ff; z-index: 5; text-align: center; }
+    table.sheet thead tr.leaf-row th { top: 74px; height: 40px; background: #fafafa; z-index: 5; }
+    table.sheet th.check, table.sheet td.check {
+      position: sticky; left: 0; z-index: 8; background: #fff;
+      box-shadow: 1px 0 0 var(--line);
+    }
+    table.sheet thead th.check { z-index: 9; background: #fafafa; }
     table.sheet th .col-letter {
-      display: block; text-align: center; font-size: 11px; color: var(--muted); font-weight: 500;
-      height: 22px; line-height: 22px;
+      display: block; text-align: center; font-size: 10px; color: #bfbfbf; font-weight: 500;
+      height: 18px; line-height: 18px;
     }
     table.sheet th .col-title {
       display: flex; align-items: center; justify-content: space-between; gap: 4px;
-      padding: 0 8px; min-height: 28px; white-space: nowrap;
+      padding: 0 10px; min-height: 36px; white-space: nowrap;
     }
     table.sheet th .funnel {
       border: 0; background: transparent; color: var(--muted); cursor: pointer; padding: 0 2px;
@@ -124,30 +171,31 @@
     }
     table.sheet th .funnel.on { color: var(--accent); }
     table.sheet td .cell {
-      display: block; padding: 8px 10px; min-height: 40px; white-space: nowrap;
+      display: block; padding: 12px 12px; min-height: 48px; line-height: 22px; white-space: nowrap;
       max-width: 280px; overflow: hidden; text-overflow: ellipsis;
     }
     table.sheet tr.delay td { background: var(--row-delay); }
     table.sheet tr.delay td .cell { background: transparent; }
-    table.sheet tr:hover td .cell { background: #f8fbff; }
+    table.sheet tr:hover td { background: #f5f9ff; }
+    table.sheet tr:hover td .cell { background: transparent; }
     table.sheet td.num .cell { text-align: right; font-variant-numeric: tabular-nums; }
     .panel {
-      display: none; margin: 0 20px 16px; padding: 16px; background: #fff;
-      border: 1px solid var(--line); border-radius: 6px; min-height: 240px;
+      display: none; margin: 16px 20px 20px; padding: 16px 20px; background: #fff;
+      border: 1px solid var(--line); border-radius: 4px; min-height: 240px; overflow: auto;
     }
     .panel.active { display: block; }
-    .panel h3 { margin: 0 0 10px; font-size: 14px; }
-    .subgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+    .panel h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+    .subgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
     .subcard {
-      border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: #fafbfd;
+      border: 1px solid var(--line); border-radius: 4px; padding: 16px; background: #fff;
     }
-    .subcard .n { font-size: 18px; font-weight: 700; color: var(--accent); }
+    .subcard .n { font-size: 22px; font-weight: 600; color: var(--accent); }
     .msg {
-      margin: 8px 20px 0; padding: 8px 12px; border-radius: 6px; font-size: 12px; display: none;
+      margin: 8px 20px 0; padding: 8px 12px; border-radius: 4px; font-size: 13px; display: none;
     }
     .msg.show { display: block; }
-    .msg.ok { background: #ecfdf5; color: var(--green); }
-    .msg.err { background: #fff1f2; color: var(--red); }
+    .msg.ok { background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; }
+    .msg.err { background: #fff2f0; color: #cf1322; border: 1px solid #ffccc7; }
     .drop {
       border: 1px dashed var(--line2); border-radius: 8px; padding: 24px; text-align: center;
       color: var(--muted); background: #fafbfd;
@@ -156,13 +204,73 @@
     .issues li { margin: 4px 0; color: #9a3412; }
     .mask {
       position: fixed; inset: 0; background: rgba(15,23,42,.4); display: none;
-      align-items: center; justify-content: center; z-index: 50; padding: 16px;
+      align-items: center; justify-content: center; z-index: 200;
+      padding: 16px;
     }
     .mask.show { display: flex; }
+    .mask.preview-mask {
+      padding: 10px;
+      align-items: stretch;
+      justify-content: stretch;
+    }
+    .kpi-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin-bottom: 8px; }
+    .kpi { background: #f7f9fc; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+    .kpi .l { color: var(--muted); font-size: 11px; }
+    .kpi .v { font-size: 18px; font-weight: 700; margin-top: 2px; }
+    .kpi .s { font-size: 11px; color: var(--muted); font-weight: 400; margin-top: 2px; line-height: 1.3; }
+    .kpi.red .v { color: var(--red); }
+    .kpi.green .v { color: var(--green); }
+    .kpi.blue .v { color: var(--accent); }
+    .status-stack { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; }
+    .tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; line-height: 16px; }
+    .tag.red { background: #fff1f2; color: #e11d48; }
+    .tag.yellow { background: #fff7ed; color: #c2410c; }
+    .tag.green { background: #ecfdf5; color: #047857; }
+    .tag.blue { background: #eff6ff; color: #1d4ed8; }
+    .tag.dim { background: #f1f5f9; color: #64748b; }
+    .prob-box { border: 1px solid #fed7aa; background: #fff7ed; border-radius: 8px; padding: 8px 10px; margin: 6px 0; flex-shrink: 0; }
+    .chan-box { border: 1px solid #bfdbfe; background: #eff6ff; border-radius: 8px; padding: 8px 10px; margin: 6px 0; flex-shrink: 0; font-size: 12px; }
+    .people-box { border: 1px solid #fde68a; background: #fffbeb; border-radius: 8px; padding: 8px 10px; margin: 6px 0; flex-shrink: 0; }
+    .people-box table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+    .people-box th, .people-box td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #f3e8c8; }
+    .people-box input.sel { width: 110px; }
+    .prob-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; max-height: 128px; overflow: auto; }
+    .prob-card { text-align: left; border: 1px solid var(--line2); background: #fff; border-radius: 6px; padding: 8px 10px; cursor: pointer; }
+    .prob-card.on { border-color: var(--accent); background: #eff6ff; }
+    .gate { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: #9a3412; margin: 8px 0; }
+    .edit-panel { background: #f7f9fc; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px; margin: 6px 0; }
+    .edit-panel label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+    .edit-panel .sel { max-width: none; width: 100%; }
     .dialog {
       width: min(480px, 100%); background: #fff; border-radius: 10px; padding: 16px;
       box-shadow: 0 18px 40px rgba(15,23,42,.2);
     }
+    .dialog.preview-dialog {
+      width: 100%;
+      max-width: none;
+      height: 100%;
+      max-height: none;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      padding: 14px 16px 0;
+      border-radius: 8px;
+    }
+    .dialog.preview-dialog h2 { flex-shrink: 0; margin-bottom: 8px; font-size: 16px; }
+    .preview-scroll { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+    .preview-table-wrap { flex: 1; min-height: 240px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+    .preview-table-wrap table.sheet thead tr.leaf-row th {
+      top: 0; height: 36px; position: sticky; z-index: 6;
+    }
+    @media (max-width: 1100px) {
+      .kpi-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .prob-grid { grid-template-columns: 1fr 1fr; }
+    }
+    .preview-foot {
+      flex-shrink: 0; border-top: 1px solid var(--line); margin: 0 -16px 0;
+      padding: 8px 16px 12px; background: #fff;
+    }
+    .preview-foot .dialog-actions { margin-top: 8px; }
     .dialog h2 { margin: 0 0 10px; font-size: 15px; }
     .cols { max-height: 360px; overflow: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
     .cols label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); }
@@ -178,6 +286,17 @@
     input[type=file] { display: none; }
     td.check, th.check { width: 36px; text-align: center; }
     .cell.edit { outline: 2px solid #2563eb; background: #fff; }
+    .batch-list { list-style: none; margin: 12px 0 0; padding: 0; }
+    .batch-item {
+      padding: 12px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .batch-item:last-child { border-bottom: 0; }
+    .batch-file { color: var(--text); font-weight: 600; font-size: 14px; word-break: break-all; }
+    .batch-stats { margin-top: 4px; color: var(--muted); font-size: 13px; }
+    .batch-meta { margin-top: 4px; color: var(--muted); font-size: 12px; }
   </style>
 </head>
 <body>
@@ -185,69 +304,80 @@
     <div class="hd">
       <div>
         <h1>表单维护</h1>
-        <div class="sub">维护对象：公司全部预研项目总表 / 分表</div>
+        <div class="sub">公司全部预研项目总表 / 分表</div>
       </div>
       <div class="hd-right">
         <span class="perm" id="permText">总部总维护 · 读写全部</span>
-        <button class="btn" id="btnPerm">权限说明 ▾</button>
+        <button class="btn ghost" id="btnPerm">权限说明</button>
       </div>
       <div class="perm-pop" id="permPop">
         表单维护权限由系统管理员在「配置中心 → 成员管理」中分配。<br/>
         系统管理员 / 总部（全部台账）：可编辑、上传总表与分表、导出、校验、删除。<br/>
-        本单位 / 指定渠道 / 项目类型：只能维护授权范围内的台账，总表覆盖导入不可用。
+        本单位 / 指定渠道 / 项目类型：只能维护授权范围内的台账，总表覆盖导入不可用。<br/>
+        上传后须在预览中确认才会入库；已入库批次可撤回。
       </div>
-    </div>
-
-    <div class="toolbar">
-      <span class="lab">操作</span>
-      <button class="btn" id="btnUploadMain">☁ 上传总表</button>
-      <button class="btn" id="btnUploadSub">☁ 上传分表</button>
-      <button class="btn primary" id="btnExport">⬇ 导出 Excel</button>
-      <button class="btn" id="btnExportFilter">⬇ 导出筛选包</button>
-      <button class="btn danger" id="btnDelSel">删除所选</button>
-      <button class="btn danger" id="btnClearAll">清空全部项目</button>
-      <input type="file" id="fileMain" accept=".xlsx,.xls" />
-      <input type="file" id="fileSub" accept=".xlsx,.xls" />
-    </div>
-
-    <div class="filters">
-      <span class="lab">筛选</span>
-      <div class="search">
-        <span>🔍</span>
-        <input id="q" placeholder="序号 / 项目名称 / 编号" />
-      </div>
-      <select class="sel" id="fLevel"><option value="">全部层级</option></select>
-      <select class="sel" id="fChannel"><option value="">全部渠道</option></select>
-      <select class="sel" id="fType"><option value="">全部项目类型</option></select>
-      <select class="sel" id="fUnit"><option value="">全部单位</option></select>
-      <select class="sel" id="fStatus"><option value="">全部状态</option></select>
-      <select class="sel" id="fAdvanced">
-        <option value="">高级筛选</option>
-        <option value="invalid">仅校验未通过</option>
-        <option value="valid">仅校验通过</option>
-        <option value="delay">仅延期</option>
-        <option value="done">仅已完成</option>
-      </select>
     </div>
 
     <div class="tabs">
-      <button class="tab active" data-tab="main">总表管理</button>
-      <button class="tab" data-tab="split">分表拆分</button>
-      <button class="tab" data-tab="batch">批量上传 <span class="badge" id="batchBadge">0</span></button>
-      <button class="tab" data-tab="report">校验报告</button>
+      <button class="tab active" data-tab="main" type="button">总表管理</button>
+      <button class="tab" data-tab="split" type="button">分表拆分</button>
+      <button class="tab" data-tab="batch" type="button">批量上传 <span class="badge" id="batchBadge">0</span></button>
+      <button class="tab" data-tab="report" type="button">校验报告</button>
+    </div>
+
+    <div class="chrome" id="chromeBar">
+      <div class="toolbar">
+        <button class="btn" id="btnUploadMain">上传总表</button>
+        <button class="btn" id="btnUploadSub">上传分表</button>
+        <button class="btn primary" id="btnExport">导出 Excel</button>
+        <button class="btn" id="btnExportFilter">导出筛选包</button>
+        <span class="toolbar-spacer"></span>
+        <div class="more-wrap">
+          <button class="btn" type="button" id="btnMoreOps">更多</button>
+          <div class="more-menu" id="moreOps">
+            <button type="button" class="danger" id="btnDelSel">删除所选</button>
+            <button type="button" class="danger" id="btnClearAll">清空全部项目</button>
+          </div>
+        </div>
+        <input type="file" id="fileMain" accept=".xlsx,.xls" />
+        <input type="file" id="fileSub" accept=".xlsx,.xls" />
+      </div>
+      <div class="filters" id="filterBar">
+        <div class="search">
+          <span style="color:var(--muted)">⌕</span>
+          <input id="q" placeholder="搜索序号 / 名称 / 编号" />
+        </div>
+        <select class="sel" id="fLevel"><option value="">全部层级</option></select>
+        <select class="sel" id="fChannel"><option value="">全部渠道</option></select>
+        <select class="sel" id="fType"><option value="">全部项目类型</option></select>
+        <select class="sel" id="fUnit"><option value="">全部单位</option></select>
+        <select class="sel" id="fStatus"><option value="">全部状态</option></select>
+        <button class="btn ghost" type="button" id="btnFilterMore">更多筛选</button>
+        <button class="btn ghost" type="button" id="btnFilterReset">重置</button>
+      </div>
+      <div class="filters more" id="filterMore">
+        <input class="sel" id="fStartFrom" placeholder="开始 ≥ YYYY.M" style="width:128px;max-width:none" />
+        <input class="sel" id="fEndTo" placeholder="结束 ≤ YYYY.M" style="width:128px;max-width:none" />
+        <input class="sel" id="fBudgetMin" placeholder="经费 ≥ 万" style="width:110px;max-width:none" />
+        <input class="sel" id="fBudgetMax" placeholder="经费 ≤ 万" style="width:110px;max-width:none" />
+        <select class="sel" id="fAdvanced" style="max-width:160px">
+          <option value="">校验 / 进度</option>
+          <option value="invalid">仅校验未通过</option>
+          <option value="valid">仅校验通过</option>
+          <option value="delay">仅延期</option>
+          <option value="done">仅已完成</option>
+        </select>
+      </div>
     </div>
 
     <div class="msg" id="msg"></div>
 
     <div id="viewMain" class="main-view" style="display:flex;flex-direction:column;flex:1;min-height:0;">
       <div class="meta">
-        <div>
-          <div class="meta-title">☰ 预先研究项目信息</div>
-          <div class="stats" id="stats"></div>
-        </div>
+        <div class="stats" id="stats"></div>
         <div class="meta-right">
-          <button class="btn" id="btnCols">列配置 <span id="colCount">0</span> 列 ▾</button>
-          <div class="hint">表头漏斗可按列筛选，导出完整表头</div>
+          <button class="btn" id="btnCols">列配置 <span id="colCount">0</span></button>
+          <div class="hint">漏斗按列筛选；导出为当前视图</div>
         </div>
       </div>
       <div class="group-bar"><span id="groupLabel">项目基本信息</span></div>
@@ -260,20 +390,27 @@
     </div>
 
     <div class="panel" id="viewSplit">
-      <h3>按项目类型拆分分表</h3>
+      <h3>按项目类型拆分专项分表</h3>
+      <p style="color:var(--muted);margin:0 0 12px">专项分表与总表是同一套数据。改分表即改总表对应行。可下载单表或打包当前可见分表。</p>
+      <div style="margin-bottom:12px"><button class="btn" id="btnPackVisible">打包当前可见分表</button></div>
       <div class="subgrid" id="subgrid"></div>
+      <h3 style="margin-top:20px">主管分工与分发表规则</h3>
+      <p style="color:var(--muted);font-size:12px;margin:0 0 8px">项目类型主管只写本类型。名称须与字典项目类型完全一致。</p>
+      <div id="ownerBox"></div>
     </div>
     <div class="panel" id="viewBatch">
       <h3>批量上传</h3>
-      <div class="drop">支持 .xlsx / .xls。总表=覆盖导入，分表=合并导入。可多次上传，结果写入平台库。</div>
-      <div style="margin-top:12px;display:flex;gap:8px;">
+      <div class="drop">上传后先预校验、确认无误再入库。总表=替换预览（仅总部/管理员），分表=合并预览。权威模板 Sheet 名「总表」，数据自第 6 行，按项目类型拆分。</div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn primary" id="btnBatchMain">上传总表</button>
         <button class="btn" id="btnBatchSub">上传分表</button>
       </div>
-      <ul class="issues" id="batchIssues"></ul>
+      <h3 style="margin-top:20px">最近导入批次</h3>
+      <ul class="batch-list" id="batchIssues"></ul>
     </div>
     <div class="panel" id="viewReport">
-      <h3>校验报告</h3>
+      <h3>校验报告 / 字段变更明细</h3>
+      <p style="color:var(--muted);font-size:12px">入库批次请到「批量上传」撤回本批。此处可撤回单步手工变更。</p>
       <div id="reportBox"></div>
     </div>
   </div>
@@ -290,8 +427,60 @@
     </div>
   </div>
 
+  <div class="mask" id="editMask">
+    <div class="dialog" style="width:min(860px,96vw);max-height:90vh;overflow:auto">
+      <h2>维护专项分表记录</h2>
+      <div id="editForm"></div>
+      <div class="dialog-actions">
+        <button class="btn danger" id="btnEditDel">删除本项目</button>
+        <button class="btn" id="btnEditClose">取消</button>
+        <button class="btn primary" id="btnEditSave">保存并留痕</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="mask preview-mask" id="previewMask">
+    <div class="dialog preview-dialog">
+      <h2>导入批次校验预览</h2>
+      <div class="preview-scroll">
+        <div id="previewKpis" class="kpi-row"></div>
+        <div id="previewMeta" style="font-size:12px;margin-bottom:6px;flex-shrink:0"></div>
+        <div id="previewDict"></div>
+        <div id="previewProblems"></div>
+        <div class="preview-table-wrap">
+          <table class="sheet" style="min-width:100%" id="previewTable">
+            <thead>
+              <tr class="leaf-row">
+                <th>状态</th><th>行号</th><th>项目类型</th><th>项目名称</th><th>问题摘要</th><th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="previewBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="preview-foot">
+        <div id="previewGates"></div>
+        <div class="dialog-actions">
+          <button class="btn" id="btnPreviewExport">导出修正后表格</button>
+          <button class="btn" id="btnPreviewCancel">取消批次</button>
+          <button class="btn" id="btnPreviewClose">关闭</button>
+          <button class="btn primary" id="btnPreviewConfirm">确认入库</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
-    const token = localStorage.getItem('srpm.user') || sessionStorage.getItem('srpm.user') || '';
+    function sessionToken() {
+      const raw = localStorage.getItem('srpm.user') || sessionStorage.getItem('srpm.user') || '';
+      if (!raw) return '';
+      try {
+        const o = JSON.parse(raw);
+        if (o && typeof o === 'object') return o.sessionToken || o.token || raw;
+      } catch { /* raw token */ }
+      return raw;
+    }
+    const token = sessionToken();
     if (new URLSearchParams(location.search).get('embed') === '1') document.body.classList.add('embed');
 
     const state = {
@@ -303,6 +492,20 @@
       visible: null,
       colFilter: {},
       batchLogs: [],
+      importBatches: [],
+      changeLogs: [],
+      typeOwners: [],
+      editId: null,
+      previewBatch: null,
+      previewCat: '',
+      previewProblemsOnly: true,
+      previewExpanded: new Set(),
+      previewEditId: null,
+      previewForce: false,
+      previewReviewed: false,
+      previewConfirmPeople: false,
+      previewConfirmChannels: false,
+      previewPeople: [],
       selected: new Set(),
       access: { canFormMaintain: true, canReplaceAll: true },
     };
@@ -322,7 +525,7 @@
     }
 
     async function api(path, opts = {}) {
-      const headers = { 'x-session': token, ...(opts.headers || {}) };
+      const headers = { 'x-session': token, Authorization: 'Bearer ' + token, ...(opts.headers || {}) };
       let body = opts.body;
       if (body && !(body instanceof FormData)) {
         headers['Content-Type'] = 'application/json';
@@ -330,7 +533,11 @@
       }
       const res = await fetch('/api' + path, { ...opts, headers, body });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || ('请求失败 ' + res.status));
+      if (!res.ok) {
+        const err = new Error(data.error || ('请求失败 ' + res.status));
+        err.payload = data;
+        throw err;
+      }
       return data;
     }
 
@@ -388,6 +595,14 @@
       return /执行|实施|进行/.test(String(row.projectStatus || ''));
     }
 
+    function monthKey(value) {
+      const m = String(value || '').trim().match(/^(\d{4})[.\-/年](\d{1,2})/);
+      if (!m) return null;
+      const month = Number(m[2]);
+      if (month < 1 || month > 12) return null;
+      return Number(m[1]) * 12 + month - 1;
+    }
+
     function filteredRows() {
       const q = $('q').value.trim().toLowerCase();
       const level = $('fLevel').value;
@@ -396,6 +611,10 @@
       const unit = $('fUnit').value;
       const status = $('fStatus').value;
       const adv = $('fAdvanced').value;
+      const startFrom = monthKey($('fStartFrom')?.value);
+      const endTo = monthKey($('fEndTo')?.value);
+      const bmin = $('fBudgetMin')?.value === '' ? null : Number($('fBudgetMin').value);
+      const bmax = $('fBudgetMax')?.value === '' ? null : Number($('fBudgetMax').value);
       return state.rows.filter((r) => {
         if (level && r.level !== level) return false;
         if (channel && r.sourceChannel !== channel) return false;
@@ -406,6 +625,17 @@
         if (adv === 'valid' && r.validation?.ok !== true) return false;
         if (adv === 'delay' && !isDelay(r)) return false;
         if (adv === 'done' && !isDone(r)) return false;
+        if (startFrom != null) {
+          const k = monthKey(r.startMonth);
+          if (k != null && k < startFrom) return false;
+        }
+        if (endTo != null) {
+          const k = monthKey(r.endMonth);
+          if (k != null && k > endTo) return false;
+        }
+        const budget = Number(r.totalBudget);
+        if (bmin != null && !Number.isNaN(bmin) && (Number.isNaN(budget) || budget < bmin)) return false;
+        if (bmax != null && !Number.isNaN(bmax) && (Number.isNaN(budget) || budget > bmax)) return false;
         if (q) {
           const blob = [r.serial, r.name, r.code, r.id].map((x) => String(x || '').toLowerCase()).join(' ');
           if (!blob.includes(q)) return false;
@@ -418,27 +648,43 @@
       });
     }
 
+    function extraFilterCount() {
+      return ['fStartFrom', 'fEndTo', 'fBudgetMin', 'fBudgetMax', 'fAdvanced']
+        .filter((id) => String($(id)?.value || '').trim()).length;
+    }
+    function syncFilterMoreLabel() {
+      const btn = $('btnFilterMore');
+      if (!btn) return;
+      const n = extraFilterCount();
+      const open = $('filterMore')?.classList.contains('show');
+      btn.textContent = open ? '收起筛选' : (n ? `更多筛选 (${n})` : '更多筛选');
+    }
     function renderStats(rows) {
-      const s = state.summary || {};
       const delay = rows.filter(isDelay).length;
       const done = rows.filter(isDone).length;
       const running = rows.filter(isRunning).length;
-      const types = unique(rows.map((r) => r.projectType)).length;
       const invalid = rows.filter((r) => r.validation && !r.validation.ok).length;
       const totalBudget = rows.reduce((a, r) => a + (Number(r.totalBudget) || 0), 0);
       const grant = rows.reduce((a, r) => a + (Number(r.centralGrant) || 0), 0);
       const self = rows.reduce((a, r) => a + (Number(r.selfFund) || 0), 0);
+      const adv = $('fAdvanced')?.value || '';
+      const card = (l, v, cls, filter) => {
+        const on = filter && adv === filter ? 'on' : '';
+        const attrs = filter ? `data-adv="${filter}"` : 'disabled style="cursor:default"';
+        return `<button type="button" class="stat ${cls} ${filter ? 'click' : ''} ${on}" ${attrs}>
+          <div class="l">${l}</div><div class="v">${v}</div></button>`;
+      };
       $('stats').innerHTML = [
-        `项目 <b>${rows.length}</b>`,
-        `类型 <b>${types}</b>`,
-        `总经费 <b class="blue">${fmtNum(totalBudget)} 万</b>`,
-        `国拨 <b>${fmtNum(grant)}</b>`,
-        `自筹 <b>${fmtNum(self)}</b>`,
-        `执行中 <b>${running || '—'}</b>`,
-        `已完成 <b class="green">${done}</b>`,
-        `延期 <b class="red">${delay}</b>`,
-        invalid ? `校验未通过 <b class="red">${invalid}</b>` : `校验通过 <b class="green">${s.valid ?? rows.length}</b>`,
-      ].join('<span>·</span>');
+        card('项目', rows.length, ''),
+        card('总经费（万）', fmtNum(totalBudget), 'blue'),
+        card('国拨', fmtNum(grant), ''),
+        card('自筹', fmtNum(self), ''),
+        card('执行中', running, ''),
+        card('已完成', done, 'green', 'done'),
+        card('延期', delay, 'red', 'delay'),
+        card(invalid ? '校验未通过' : '校验通过', invalid || rows.length, invalid ? 'red' : 'green', invalid ? 'invalid' : 'valid'),
+      ].join('');
+      syncFilterMoreLabel();
     }
 
     function catalogFields() {
@@ -520,7 +766,7 @@
         return;
       }
       $('tbody').innerHTML = rows.map((r) => {
-        const cls = isDelay(r) ? 'delay' : '';
+        const cls = [isDelay(r) ? 'delay' : '', (r.validation && !r.validation.ok) ? 'invalid' : ''].filter(Boolean).join(' ');
         const checked = state.selected.has(r.id) ? 'checked' : '';
         return `<tr class="${cls}" data-id="${esc(r.id)}"><td class="check"><input type="checkbox" class="row-chk" data-id="${esc(r.id)}" ${checked}/></td>${fields.map((f) => {
           const raw = r[f.code];
@@ -530,29 +776,157 @@
       }).join('');
     }
 
+    function exportQuery() {
+      const p = new URLSearchParams();
+      if ($('q')?.value.trim()) p.set('q', $('q').value.trim());
+      if ($('fType').value) p.set('projectType', $('fType').value);
+      if ($('fLevel').value) p.set('level', $('fLevel').value);
+      if ($('fChannel').value) p.set('channel', $('fChannel').value);
+      if ($('fUnit').value) p.set('unit', $('fUnit').value);
+      if ($('fStatus').value) p.set('status', $('fStatus').value);
+      if ($('fAdvanced').value) p.set('advanced', $('fAdvanced').value);
+      if ($('fStartFrom')?.value) p.set('startFrom', $('fStartFrom').value);
+      if ($('fEndTo')?.value) p.set('endTo', $('fEndTo').value);
+      if ($('fBudgetMin')?.value) p.set('budgetMin', $('fBudgetMin').value);
+      if ($('fBudgetMax')?.value) p.set('budgetMax', $('fBudgetMax').value);
+      const cf = Object.entries(state.colFilter || {}).filter(([, v]) => v);
+      if (cf.length) p.set('colFilter', JSON.stringify(Object.fromEntries(cf)));
+      const s = p.toString();
+      return s ? ('?' + s) : '';
+    }
+
+    function currentExportScope() {
+      const type = $('fType')?.value || '';
+      const extra = [
+        $('q')?.value, $('fLevel')?.value, $('fChannel')?.value, $('fUnit')?.value,
+        $('fStatus')?.value, $('fAdvanced')?.value, $('fStartFrom')?.value, $('fEndTo')?.value,
+        $('fBudgetMin')?.value, $('fBudgetMax')?.value,
+      ].some((v) => String(v || '').trim());
+      const col = Object.values(state.colFilter || {}).some(Boolean);
+      const colsChanged = visibleFields().length !== catalogFields().length;
+      if (type && !extra && !col && !colsChanged) return type;
+      if (type || extra || col || colsChanged) return '筛选';
+      return '全部';
+    }
+
+    function filenameFromHeader(res, fallback) {
+      const cd = res.headers.get('Content-Disposition') || '';
+      const star = cd.match(/filename\*=UTF-8''([^;]+)/i);
+      if (star) {
+        try { return decodeURIComponent(star[1]); } catch { /* ignore */ }
+      }
+      const plain = cd.match(/filename="([^"]+)"/i);
+      return plain ? plain[1] : fallback;
+    }
+
+    async function downloadApi(path, filename, opts = {}) {
+      const headers = { 'x-session': token, Authorization: 'Bearer ' + token };
+      let body;
+      if (opts.body) {
+        headers['Content-Type'] = 'application/json';
+        body = JSON.stringify(opts.body);
+      }
+      const res = await fetch('/api' + path, { method: opts.method || 'GET', headers, body });
+      if (!res.ok) {
+        let msg = '下载失败';
+        try { msg = (await res.json()).error || msg; } catch {}
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filenameFromHeader(res, filename);
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
     function renderSplit() {
       const list = state.subtables || [];
-      if (!list.length) { $('subgrid').innerHTML = '<div class="empty">暂无分表</div>'; return; }
-      $('subgrid').innerHTML = list.map((x) => `
+      if (!list.length) { $('subgrid').innerHTML = '<div class="empty">暂无分表</div>'; }
+      else $('subgrid').innerHTML = list.map((x) => `
         <div class="subcard">
           <div style="font-weight:600;margin-bottom:6px">${esc(x.name)}</div>
           <div class="n">${x.count}</div>
           <div style="color:var(--muted);margin-top:4px">总经费 ${fmtNum(x.totalBudget)} 万 · 异常 ${x.invalid || 0}</div>
+          <div style="margin-top:8px"><button class="btn" data-dl-type="${esc(x.name)}">下载本分表</button></div>
         </div>`).join('');
+      const types = unique((state.rows || []).map((r) => r.projectType));
+      const owners = new Map((state.typeOwners || []).map((x) => [x.projectType, x.owner || '']));
+      if (!$('ownerBox')) return;
+      if (!types.length) { $('ownerBox').innerHTML = '<div class="empty">暂无项目类型</div>'; return; }
+      $('ownerBox').innerHTML = types.map((t) => `
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+          <span style="min-width:180px">${esc(t)}</span>
+          <input class="sel owner-input" data-type="${esc(t)}" value="${esc(owners.get(t) || '')}" placeholder="主管姓名/工号" style="max-width:none;flex:1"/>
+        </div>`).join('') + (state.access.canReplaceAll ? '<button class="btn primary" id="btnSaveOwners" style="margin-top:8px">保存主管分工</button>' : '<div class="empty" style="padding:8px 0">仅总部/管理员可改主管分工</div>');
     }
 
     function renderReport() {
+      const logs = state.changeLogs || [];
       const bad = state.rows.filter((r) => r.validation && !r.validation.ok);
-      if (!bad.length) { $('reportBox').innerHTML = '<div class="empty" style="color:var(--green)">全部校验通过</div>'; return; }
-      $('reportBox').innerHTML = `<div style="margin-bottom:8px;color:var(--red)">共 ${bad.length} 条未通过</div>` +
-        bad.map((r) => {
-          const miss = (r.validation.missing || []).join('、');
-          const warn = (r.validation.warnings || []).join('；');
-          return `<div style="border:1px solid var(--line);border-radius:6px;padding:10px;margin-bottom:8px">
-            <b>${esc(r.name || r.serial || r.id)}</b>
-            <div style="color:var(--muted);margin-top:4px">${esc(miss || warn || '校验未通过')}</div>
-          </div>`;
-        }).join('');
+      const issues = bad.length
+        ? `<div style="margin-bottom:12px;color:var(--red)">当前台账 ${bad.length} 条未通过校验</div>` +
+          bad.map((r) => {
+            const miss = (r.validation.missing || []).join('、');
+            const warn = (r.validation.warnings || []).join('；');
+            return `<div style="border:1px solid var(--line);border-radius:6px;padding:10px;margin-bottom:8px">
+              <b>${esc(r.name || r.serial || r.id)}</b>
+              <div style="color:var(--muted);margin-top:4px">${esc(miss || warn || '校验未通过')}</div>
+            </div>`;
+          }).join('')
+        : '<div class="empty" style="color:var(--green);padding:12px 0">当前可见台账校验通过</div>';
+      const table = logs.length
+        ? `<table class="sheet" style="width:100%"><thead><tr class="leaf-row">
+            <th>动作</th><th>项目类型</th><th>项目名称</th><th>字段</th><th>变更前</th><th>变更后</th><th>操作人</th><th>时间</th><th></th>
+          </tr></thead><tbody>${logs.map((log) => `<tr>
+            <td><span class="cell">${esc(log.action)}</span></td>
+            <td><span class="cell">${esc(log.project_type)}</span></td>
+            <td><span class="cell">${esc(log.project_name)}</span></td>
+            <td><span class="cell">${esc(log.field)}</span></td>
+            <td><span class="cell">${esc(log.before_val)}</span></td>
+            <td><span class="cell">${esc(log.after_val)}</span></td>
+            <td><span class="cell">${esc([log.actor, log.emp_no].filter(Boolean).join(' '))}</span></td>
+            <td><span class="cell">${esc(log.changed_at)}</span></td>
+            <td><span class="cell">${log.undone ? '已撤回' : (log.batch_id ? '请撤回本批' : `<button class="btn" data-undo-log="${log.id}">撤回</button>`)}</span></td>
+          </tr>`).join('')}</tbody></table>`
+        : '<div class="empty">暂无字段变更明细</div>';
+      $('reportBox').innerHTML = issues + '<h3 style="margin:16px 0 8px;font-size:14px">字段变更明细</h3>' + table;
+    }
+
+    function batchModeLabel(mode) {
+      return mode === 'replace' ? '总表' : '分表';
+    }
+
+    function renderBatches() {
+      const logs = state.importBatches || [];
+      $('batchBadge').textContent = String(logs.length || 0);
+      if (!logs.length) {
+        $('batchIssues').innerHTML = '<li class="empty" style="padding:24px 0">暂无导入批次</li>';
+        return;
+      }
+      $('batchIssues').innerHTML = logs.map((x) => {
+        const file = x.orig_name || x.file || '';
+        const parsed = x.parsed ?? 0;
+        const added = x.added ?? 0;
+        const updated = x.updated ?? 0;
+        const issues = x.issue_count ?? 0;
+        const st = x.status || '已入库';
+        const name = x.uploader_name || x.uploaderName || '';
+        const emp = x.uploader_emp_no || x.uploaderEmpNo || '';
+        const at = x.uploaded_at || x.at || '';
+        const who = [name, emp].filter(Boolean).join(' ');
+        const pending = st === '待确认' || st === '待修正';
+        const canUndo = st === '已入库';
+        return `<li class="batch-item">
+          <div class="batch-file">${esc(file)} · ${esc(batchModeLabel(x.mode))} · ${esc(st)}</div>
+          <div class="batch-stats">解析 ${parsed} · 新增 ${added} · 更新 ${updated} · 问题 ${issues}</div>
+          <div class="batch-meta">${esc(who)}${who && at ? ' · ' : ''}${esc(at)}</div>
+          <div style="margin-top:6px;display:flex;gap:6px">
+            ${pending ? `<button class="btn primary" data-open-batch="${x.id}">打开预览</button>` : ''}
+            ${canUndo ? `<button class="btn" data-undo-batch="${x.id}">撤回本批</button>` : ''}
+          </div>
+        </li>`;
+      }).join('');
     }
 
     function renderAll() {
@@ -560,7 +934,7 @@
       renderBody();
       renderSplit();
       renderReport();
-      $('batchBadge').textContent = String(state.batchLogs.length || 0);
+      renderBatches();
     }
 
     function switchTab(name) {
@@ -569,6 +943,7 @@
       ['split', 'batch', 'report'].forEach((k) => {
         $('view' + k[0].toUpperCase() + k.slice(1)).classList.toggle('active', name === k);
       });
+      if ($('chromeBar')) $('chromeBar').style.display = (name === 'main' || name === 'split') ? '' : 'none';
     }
 
     async function load() {
@@ -578,6 +953,9 @@
       state.summary = data.summary || {};
       state.subtables = data.subtables || [];
       state.cascade = data.cascade || null;
+      state.importBatches = data.importBatches || [];
+      state.changeLogs = data.changeLogs || [];
+      state.typeOwners = data.typeOwners || [];
       if (data.access && $('permText')) {
         state.access = data.access;
         $('permText').textContent = data.access.form_scope_label || '表单维护';
@@ -590,57 +968,319 @@
         if ($('btnUploadMain')) $('btnUploadMain').style.display = canAll ? '' : 'none';
       }
       state.visible = defaultVisible(state.fields);
-      fillSelect($('fLevel'), unique(state.rows.map((r) => r.level)), '全部层级');
-      fillSelect($('fChannel'), unique(state.rows.map((r) => r.sourceChannel)), '全部渠道');
-      fillSelect($('fType'), unique(state.rows.map((r) => r.projectType)), '全部项目类型');
+      fillSelect($('fLevel'), unique([...(state.cascade?.levels || []), ...state.rows.map((r) => r.level)]), '全部层级');
+      fillSelect($('fChannel'), unique([
+        ...Object.values(state.cascade?.sourcesByLevel || {}).flat(),
+        ...state.rows.map((r) => r.sourceChannel),
+      ]), '全部渠道');
+      fillSelect($('fType'), unique([
+        ...Object.values(state.cascade?.typesByLevel || {}).flat(),
+        ...state.rows.map((r) => r.projectType),
+      ]), '全部项目类型');
       fillSelect($('fUnit'), unique(state.rows.flatMap((r) => [r.responsibleUnit, r.demandUnit])), '全部单位');
       fillSelect($('fStatus'), unique(state.rows.map((r) => r.projectStatus)), '全部状态');
       renderAll();
       showMsg(`已加载 ${state.rows.length} 条预研项目`, true);
     }
 
+    function actionLabel(a) {
+      return ({ add: '待新增', update: '待更新', keep: '无字段变化', skip: '无法入库', delete: '将删除' })[a] || a;
+    }
+    function actionTone(a) {
+      return ({ add: 'green', update: 'yellow', keep: 'dim', skip: 'yellow', delete: 'red' })[a] || 'dim';
+    }
+    function splitIssueTexts(raw) {
+      return String(raw || '').split(/[；;]\s*/).map((x) => x.trim()).filter(Boolean);
+    }
+    function majorCanonicalHint(text) {
+      const majors = state.cascade?.majors?.major1 || [];
+      const t = String(text || '');
+      if (/一级专业必填/.test(t)) return '须选附件1完整值，如 10-总体气动、20-机体';
+      if (/二级专业必填/.test(t)) return '先选一级，再选四位编码，如 1001-总体与气动';
+      const quoted = t.match(/[「『“"]([^」』”"]+)[」』”"]/);
+      const name = quoted ? quoted[1].trim() : '';
+      if (!name) return /附件1|专业字典/.test(t) ? '须用编码+名称，如 20-机体' : '';
+      const hit = majors.find((x) => {
+        const s = String(x);
+        const cn = s.replace(/^\d+-/, '');
+        return s === name || s.endsWith('-' + name) || cn === name || name.includes(cn);
+      });
+      if (hit) return '请改为 ' + hit;
+      const fallback = { 总体气动: '10-总体气动', 机体: '20-机体', 系统: '30-系统', 制造: '40-制造', 复合材料: '50-复合材料', 飞行: '60-飞行', 运行支持: '70-运行支持', 通用基础: '80-通用基础' };
+      return fallback[name] ? '请改为 ' + fallback[name] : '须用编码+名称，如 20-机体';
+    }
+    function classifyIssueAtom(text) {
+      const t = String(text || '').trim();
+      const hint = majorCanonicalHint(t);
+      if (/专业|major/i.test(t)) return { category: '专业', text: t, short: t.slice(0, 36), hint };
+      if (/总经费|国拨|自筹|经费/.test(t) && /等于|大于|小于|之和|相差/.test(t)) return { category: '经费', text: t, short: t.slice(0, 28), hint: '' };
+      if (/必须为数字|须为数字|应为数字|不是数字/.test(t)) return { category: '数值', text: t, short: '数值须为数字', hint: '' };
+      if (/格式应为|YYYY|年月|年度/.test(t)) return { category: '日期', text: t, short: '日期格式错误', hint: '支持 YYYY / YYYY.M / YYYY-MM' };
+      if (/必填|不能为空|缺少/.test(t)) return { category: '必填', text: t, short: t.slice(0, 24), hint };
+      if (/渠道|项目类型|字典|下拉|路径/.test(t)) return { category: '字典', text: t, short: t.slice(0, 24), hint: '' };
+      return { category: '其他', text: t, short: t.slice(0, 28), hint: '' };
+    }
+    function rowIssueAtoms(row) {
+      const raw = [
+        ...(row.validation?.missing || []).map((x) => `${x}必填`),
+        ...(row.validation?.warnings || []),
+        ...splitIssueTexts(row.issue || ''),
+      ];
+      const seen = new Set();
+      const out = [];
+      for (const item of raw) {
+        for (const part of splitIssueTexts(item)) {
+          if (seen.has(part)) continue;
+          seen.add(part);
+          out.push(classifyIssueAtom(part));
+        }
+      }
+      return out;
+    }
+    function isProblemRow(x) {
+      return x.action === 'skip' || (x.validation && x.validation.ok === false) || !!x.issue;
+    }
+    function catTone(cat) {
+      if (cat === '经费' || cat === '专业' || cat === '必填') return 'red';
+      if (cat === '数值' || cat === '日期') return 'yellow';
+      if (cat === '字典') return 'blue';
+      return 'dim';
+    }
+    function previewEditFormHtml(x) {
+      const r = x.row || {};
+      const majors = state.cascade?.majors?.major1 || [];
+      const m2 = major2Of(r.major1);
+      const grant = Number(r.centralGrant) || 0;
+      const self = Number(r.selfFund) || 0;
+      const total = r.totalBudget;
+      const sum = grant + self;
+      const ok = total == null || Math.abs(Number(total) - sum) <= 0.01;
+      return `<div class="edit-panel" data-edit-wrap="${x.id}">
+        <div style="font-weight:600;color:var(--accent);margin-bottom:8px">在线修正本行（保存后写回批次并重校验）</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:8px">一级/二级专业须用附件1完整值（含编码），如 20-机体、2001-材料与工艺，不能只写「机体」。</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+          <label>项目名称<input class="sel" data-f="name" value="${esc(r.name || '')}"/></label>
+          <label>一级专业<select class="sel" data-f="major1">${optList(majors, r.major1)}</select></label>
+          <label>二级专业<select class="sel" data-f="major2">${optList(m2, r.major2)}</select></label>
+          <label>总经费(万元)<input class="sel" data-f="totalBudget" type="number" value="${esc(r.totalBudget ?? '')}"/></label>
+          <label>国拨经费<input class="sel" data-f="centralGrant" type="number" value="${esc(r.centralGrant ?? '')}"/></label>
+          <label>自筹经费<input class="sel" data-f="selfFund" type="number" value="${esc(r.selfFund ?? '')}"/></label>
+          <label>其中内部国拨<input class="sel" data-f="internalGrant" type="number" value="${esc(r.internalGrant ?? '')}"/></label>
+          <label>其中内部自筹<input class="sel" data-f="internalSelfFund" type="number" value="${esc(r.internalSelfFund ?? '')}"/></label>
+          <label>累计支出<input class="sel" data-f="spent" type="number" value="${esc(r.spent ?? '')}"/></label>
+          <label>立项年月<input class="sel" data-f="approvalMonth" placeholder="YYYY.M" value="${esc(r.approvalMonth || '')}"/></label>
+          <label>开始年月<input class="sel" data-f="startMonth" placeholder="YYYY.M" value="${esc(r.startMonth || '')}"/></label>
+          <label>结束年月<input class="sel" data-f="endMonth" placeholder="YYYY.M" value="${esc(r.endMonth || '')}"/></label>
+          <label>责任单位<input class="sel" data-f="responsibleUnit" value="${esc(r.responsibleUnit || '')}"/></label>
+          <label>项目类型<input class="sel" data-f="projectType" value="${esc(r.projectType || '')}"/></label>
+        </div>
+        <div style="margin-top:8px;font-size:12px;color:${ok ? 'var(--muted)' : 'var(--red)'}">
+          合计核对：国拨 ${grant} + 自筹 ${self} = ${sum}；须等于总经费 ${total ?? '—'}
+        </div>
+        <div class="dialog-actions"><button class="btn primary" data-save-row="${x.id}">保存修正并重校验</button></div>
+      </div>`;
+    }
+
+    function renderPreview() {
+      const b = state.previewBatch;
+      if (!b) return;
+      const rows = b.rows || [];
+      const added = rows.filter((x) => x.action === 'add').length;
+      const updated = rows.filter((x) => x.action === 'update').length;
+      const keep = rows.filter((x) => x.action === 'keep').length;
+      const removed = rows.filter((x) => x.action === 'delete').length;
+      const problems = rows.filter(isProblemRow);
+      const keepProblems = rows.filter((x) => x.action === 'keep' && isProblemRow(x)).length;
+      $('previewKpis').innerHTML = [
+        ['解析记录', rows.length, '', ''],
+        ['待新增', added, added ? 'green' : '', ''],
+        ['待更新', updated, updated ? 'blue' : '', ''],
+        ['相对总表无变化', keep, '', keepProblems ? `其中校验未通过 ${keepProblems}` : (keep ? '字段与总表一致' : '')],
+        ['待删除', removed, removed ? 'red' : '', ''],
+        ['校验未通过', problems.length, problems.length ? 'red' : 'green', problems.length ? '须修正后再入库' : '可核对后入库'],
+      ].map(([l, v, t, s]) => `<div class="kpi ${t}"><div class="l">${l}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`).join('');
+      $('previewMeta').innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <b>${esc(b.orig_name || b.file_name || '')}</b>
+        <span class="tag ${b.mode === 'replace' ? 'yellow' : 'blue'}">${esc(batchModeLabel(b.mode))}</span>
+        <span class="tag ${b.status === '待修正' ? 'yellow' : 'blue'}">${esc(b.status || '')}</span>
+      </div>
+      <div style="color:var(--muted);margin-top:4px">上传人：${esc([b.uploader_name, b.uploader_emp_no].filter(Boolean).join(' '))} · ${esc(b.uploaded_at || '')}
+      · 「无字段变化」只表示与总表现有值相同，不代表校验通过。点问题卡片可筛选；点「在线修正」改本行。新渠道和新人员都须在下方确认后才会写入平台。</div>`;
+
+      const pendingCh = b.pendingChannels || [];
+      const people = state.previewPeople || [];
+      const kindLabel = { channel: '新渠道', type: '新项目类型', path: '新路径' };
+      $('previewDict').innerHTML = [
+        pendingCh.length ? `<div class="people-box">
+          <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center">
+            <b>待确认新增渠道（${pendingCh.length}）</b>
+            <span style="color:#92400e;font-size:12px">识别后不会立刻写入字典，须勾选确认才同步配置中心 / 申报级联 / 筛选下拉</span>
+          </div>
+          <table><thead><tr><th>识别</th><th>层级</th><th>渠道</th><th>项目类型</th><th>示例</th></tr></thead>
+          <tbody>${pendingCh.map((c) => `<tr>
+            <td><span class="tag blue">${esc(kindLabel[c.kind] || '新路径')}</span></td>
+            <td>${esc(c.level || '')}</td>
+            <td>${esc(c.sourceChannel || '')}</td>
+            <td>${esc(c.projectType || '')}</td>
+            <td>第 ${(c.rows || []).join('、') || '—'} 行</td>
+          </tr>`).join('')}</tbody></table>
+        </div>` : '',
+        people.length ? `<div class="people-box">
+          <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center">
+            <b>待确认新增人员（${people.length}）</b>
+            <span style="color:#92400e;font-size:12px">不会自动写入成员管理，须核对工号后勾选确认</span>
+          </div>
+          <table><thead><tr><th>姓名</th><th>工号（6位）</th><th>来源</th><th>示例项目</th></tr></thead>
+          <tbody>${people.map((p, i) => `<tr>
+            <td><input class="sel" data-people-name="${i}" value="${esc(p.name || '')}" style="width:120px"/></td>
+            <td><input class="sel" data-people-emp="${i}" value="${esc(p.emp_no || '')}" placeholder="必填" maxlength="6"/></td>
+            <td>${esc(p.field || '负责人')} · 第 ${(p.rows || []).join('、') || '—'} 行</td>
+            <td title="${esc((p.projects || []).join('、'))}">${esc((p.projects || []).slice(0, 2).join('、') || '—')}</td>
+          </tr>`).join('')}</tbody></table>
+        </div>` : '',
+      ].join('');
+
+      const groups = new Map();
+      for (const x of problems) {
+        for (const a of rowIssueAtoms(x)) {
+          const key = a.category + '|' + a.text;
+          const g = groups.get(key) || { category: a.category, text: a.text, short: a.short, count: 0, samples: [], hint: a.hint || '' };
+          g.count += 1;
+          if (g.samples.length < 3) g.samples.push(x.rowNo || x.id);
+          if (!g.hint) g.hint = a.hint || '';
+          groups.set(key, g);
+        }
+      }
+      const groupList = [...groups.values()].sort((a, b) => b.count - a.count);
+      if (problems.length) {
+        $('previewProblems').innerHTML = `<div class="prob-box">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+            <b>问题归类（${problems.length} 行）</b>
+            <label style="font-size:12px;display:flex;gap:6px;align-items:center">
+              <input type="checkbox" id="chkProblemsOnly" ${state.previewProblemsOnly ? 'checked' : ''}/> 仅显示问题行
+            </label>
+          </div>
+          <div class="prob-grid">${groupList.map((g) => {
+            const key = g.category + '|' + g.text;
+            const on = state.previewCat === key;
+            return `<button type="button" class="prob-card ${on ? 'on' : ''}" data-cat="${esc(key)}">
+              <span class="tag ${catTone(g.category)}">${esc(g.category)}</span>
+              <span class="tag yellow">${g.count} 行</span>
+              ${on ? '<span class="tag blue">筛选中</span>' : ''}
+              <div style="margin-top:4px">${esc(g.short)}</div>
+              ${g.hint || majorCanonicalHint(g.text) ? `<div style="color:var(--accent);font-size:11px;margin-top:2px">${esc(g.hint || majorCanonicalHint(g.text))}</div>` : ''}
+              <div style="color:var(--muted);font-size:11px;margin-top:2px">例：${g.samples.map((s) => '第' + s + '行').join('、')}</div>
+            </button>`;
+          }).join('') || '<div style="color:var(--muted)">未解析到行级问题明细</div>'}</div>
+        </div>`;
+      } else {
+        $('previewProblems').innerHTML = '<div style="color:var(--green);margin:8px 0">本批无问题行，可核对后确认入库。</div>';
+      }
+
+      let vis = rows.slice();
+      if (state.previewProblemsOnly && problems.length) vis = vis.filter(isProblemRow);
+      if (state.previewCat) vis = vis.filter((x) => rowIssueAtoms(x).some((a) => (a.category + '|' + a.text) === state.previewCat));
+      $('previewBody').innerHTML = vis.slice(0, 300).map((x) => {
+        const atoms = rowIssueAtoms(x);
+        const problem = isProblemRow(x);
+        const expanded = state.previewExpanded.has(Number(x.id));
+        const cats = [...new Set(atoms.map((a) => a.category))];
+        const summary = problem
+          ? `<div>${cats.map((c) => `<span class="tag ${catTone(c)}">${esc(c)}</span>`).join(' ')} <span style="color:var(--muted)">${atoms.length || 1} 项</span>
+             <div style="color:#475569;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(atoms.map((a) => a.text).join('；'))}">${esc(atoms[0]?.short || '校验未通过')}${atoms.length > 1 ? ' 等' + atoms.length + '项' : ''}</div></div>`
+          : `<span style="color:var(--muted)">${x.action === 'update' ? (x.diff || []).length + ' 项字段变化' : x.action === 'add' ? '将新增到总表' : x.action === 'keep' ? '与总表字段相同' : x.action === 'delete' ? '确认后从总表删除' : '—'}</span>`;
+        const opLabel = expanded ? '收起' : (problem ? '在线修正' : (x.action === 'update' ? '查看差异' : '查看'));
+        const detail = expanded ? `<tr><td colspan="6" style="background:#f7f9fc;padding:8px 12px">
+          ${problem ? `<div style="margin-bottom:8px"><b>校验问题明细</b><ul style="margin:6px 0 0 18px;color:#c2410c">${
+            (atoms.length ? atoms : [{ category: '其他', text: '校验未通过' }]).map((a) => `<li>[${esc(a.category)}] ${esc(a.text)}${a.hint ? ' — ' + esc(a.hint) : ''}</li>`).join('')
+          }</ul></div>` : ''}
+          ${x.action === 'update' && (x.diff || []).length ? `<div style="margin-bottom:8px"><b>相对总表的字段变化</b><ul style="margin:6px 0 0 18px">${
+            x.diff.map((d) => `<li>${esc(d.field || d.code)}：${esc(d.before || '（空）')} → ${esc(d.after || '（空）')}</li>`).join('')
+          }</ul></div>` : ''}
+          ${x.action !== 'delete' ? previewEditFormHtml(x) : '<div style="color:var(--muted)">该行将删除，无需在线修正</div>'}
+        </td></tr>` : '';
+        return `<tr>
+          <td><div class="status-stack">
+            <span class="tag ${actionTone(x.action)}">${esc(actionLabel(x.action))}</span>
+            <span class="tag ${problem ? 'red' : 'green'}">${problem ? '校验未通过' : '校验通过'}</span>
+          </div></td>
+          <td><span class="cell">${esc(x.rowNo || '—')}</span></td>
+          <td><span class="cell">${esc(x.projectType || '未分类')}</span></td>
+          <td><span class="cell" title="${esc(x.projectName || x.row?.name || '')}">${esc(x.projectName || x.row?.name || '—')}</span></td>
+          <td>${summary}</td>
+          <td><button class="btn ${problem && !expanded ? 'primary' : ''}" data-toggle-row="${x.id}">${opLabel}</button></td>
+        </tr>${detail}`;
+      }).join('') || '<tr><td class="empty" colspan="6">无匹配行</td></tr>';
+
+      const needReview = updated > 0 || removed > 0;
+      $('previewGates').innerHTML = `
+        ${problems.length ? `<label class="gate"><input type="checkbox" id="chkForce" ${state.previewForce ? 'checked' : ''}/>
+          管理员强制：以当前内容写入台账（含仍未通过校验的 ${problems.length} 行）。正确做法是先在线修正，例如专业改为 20-机体。</label>` : ''}
+        ${needReview ? `<label class="gate"><input type="checkbox" id="chkReviewed" ${state.previewReviewed ? 'checked' : ''}/>
+          我已逐项检查有变化的项目及字段，确认以上更新${removed ? '和删除' : ''}内容。</label>` : ''}
+        ${pendingCh.length ? `<label class="gate"><input type="checkbox" id="chkChannels" ${state.previewConfirmChannels ? 'checked' : ''}/>
+          确认将以上 ${pendingCh.length} 条新渠道/项目类型写入平台字典并全平台同步。未勾选则不能入库。</label>` : ''}
+        ${people.length ? `<label class="gate"><input type="checkbox" id="chkPeople" ${state.previewConfirmPeople ? 'checked' : ''}/>
+          确认将以上 ${people.length} 人新增到平台成员名录（工号须 6 位，初始密码为工号）。未勾选则不能入库。</label>` : ''}`;
+      const channelOk = !pendingCh.length || state.previewConfirmChannels;
+      const peopleOk = !people.length || (state.previewConfirmPeople && people.every((p) => /^\d{6}$/.test(String(p.emp_no || '')) && String(p.name || '').trim()));
+      const canConfirm = ['待确认', '待修正'].includes(b.status)
+        && (!problems.length || state.previewForce)
+        && (!needReview || state.previewReviewed)
+        && channelOk
+        && peopleOk;
+      $('btnPreviewConfirm').disabled = !canConfirm;
+      $('btnPreviewConfirm').title = canConfirm ? '确认后写入总表' : (!channelOk ? '请先勾选确认新增渠道' : (!peopleOk ? '请核对新增人员姓名/工号并勾选确认' : (problems.length && !state.previewForce ? '请先在线修正问题行，或勾选强制入库' : '请先勾选已检查变更')));
+    }
+
+    async function openBatch(id) {
+      const data = await api('/transition-tool/import-batches/' + id);
+      const b = data && data.rows ? data : (data && data.batch) || data;
+      if (!b || !Array.isArray(b.rows)) throw new Error('预览数据不完整，请重新上传后再打开');
+      state.previewBatch = b;
+      state.previewCat = '';
+      state.previewProblemsOnly = true;
+      state.previewExpanded = new Set();
+      state.previewForce = false;
+      state.previewReviewed = false;
+      state.previewConfirmPeople = false;
+      state.previewConfirmChannels = false;
+      state.previewPeople = (b.pendingPeople || []).map((p) => ({ ...p }));
+      if (b.cascade) state.cascade = b.cascade;
+      renderPreview();
+      const mask = $('previewMask');
+      if (!mask) throw new Error('预览窗口未加载，请强制刷新页面后重试');
+      mask.classList.add('show');
+    }
+
     async function doImport(file, mode) {
       if (!file) return;
-      showMsg('正在上传并解析…');
+      showMsg('正在上传并预校验（尚未入库）…');
       try {
         const up = await uploadFile(file);
         const ret = await api('/transition-tool/import-upload', {
           method: 'POST',
           body: { uploadId: up.id, mode },
         });
-        state.batchLogs.unshift({
-          at: new Date().toLocaleString(),
-          file: ret.file || file.name,
-          mode,
-          text: `解析新增 ${ret.added || 0} / 更新 ${ret.updated || 0} / 跳过 ${ret.skipped || 0}`,
-          issues: ret.issues || [],
-        });
-        $('batchIssues').innerHTML = state.batchLogs.map((x) =>
-          `<li>[${esc(x.at)}] ${esc(x.file)}（${x.mode === 'replace' ? '总表覆盖' : '分表合并'}）${esc(x.text)}</li>`
-        ).join('');
-        await load();
-        showMsg(`${mode === 'replace' ? '总表' : '分表'}导入完成：新增 ${ret.added || 0}，更新 ${ret.updated || 0}`, true);
+        if (Array.isArray(ret.importBatches)) state.importBatches = ret.importBatches;
+        if (ret.cascade) state.cascade = ret.cascade;
+        renderBatches();
+        switchTab('batch');
+        if (ret.batchId) await openBatch(ret.batchId);
+        showMsg('已生成预览批次，请核对后确认入库', true);
       } catch (e) {
+        if (Array.isArray(e.payload?.importBatches)) {
+          state.importBatches = e.payload.importBatches;
+          renderBatches();
+        }
         showMsg(e.message || String(e), false);
       }
     }
 
     function exportFilteredCsv() {
-      const fields = state.fields;
-      const rows = filteredRows();
-      const lines = [fields.map((f) => f.label).join(',')];
-      for (const r of rows) {
-        lines.push(fields.map((f) => {
-          const v = r[f.code] == null ? '' : String(r[f.code]);
-          return `"${v.replace(/"/g, '""')}"`;
-        }).join(','));
-      }
-      const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `预研筛选包-${rows.length}条.csv`;
-      a.click();
-      URL.revokeObjectURL(a.href);
+      downloadApi('/transition-tool/export-package.zip' + exportQuery(), '预研项目_专项分表筛选包.zip')
+        .then(() => showMsg('已导出当前筛选分表包', true))
+        .catch((e) => showMsg(e.message, false));
     }
 
     function openCols() {
@@ -649,6 +1289,91 @@
         <label><input type="checkbox" value="${esc(f.code)}" ${state.visible.includes(f.code) ? 'checked' : ''}/> ${esc(f.label)}</label>
       `).join('');
       $('colMask').classList.add('show');
+    }
+
+    function optList(values, selected) {
+      return `<option value=""></option>` + values.map((v) => `<option value="${esc(v)}" ${v === selected ? 'selected' : ''}>${esc(v)}</option>`).join('');
+    }
+
+    function major2Of(major1) {
+      const map = state.cascade?.majors?.major2ByMajor1 || state.cascade?.major2ByMajor1 || {};
+      return major1 ? (map[major1] || []) : [];
+    }
+
+    function channelsOf(level) {
+      const map = state.cascade?.sourcesByLevel || {};
+      return level ? (map[level] || []) : unique(state.rows.map((r) => r.sourceChannel));
+    }
+
+    function typesOf(level, channel) {
+      const nested = state.cascade?.typesByLevelSource || {};
+      if (level && channel && nested[level] && nested[level][channel]) return nested[level][channel];
+      return unique(state.rows.map((r) => r.projectType));
+    }
+
+    function openEdit(id) {
+      const row = state.rows.find((r) => r.id === id);
+      if (!row) return;
+      state.editId = id;
+      const levels = state.cascade?.levels || ['国家级', '地方级', '公司级'];
+      const majors = state.cascade?.majors?.major1 || [];
+      $('editForm').innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <label>项目名称<input class="sel" id="ed_name" value="${esc(row.name || '')}" style="width:100%;max-width:none"/></label>
+          <label>序号<input class="sel" id="ed_serial" value="${esc(row.serial || '')}" style="width:100%;max-width:none"/></label>
+          <label>级别<select class="sel" id="ed_level" style="width:100%;max-width:none">${optList(levels, row.level)}</select></label>
+          <label>项目来源/渠道<select class="sel" id="ed_channel" style="width:100%;max-width:none">${optList(channelsOf(row.level), row.sourceChannel)}</select></label>
+          <label>项目类型<select class="sel" id="ed_type" style="width:100%;max-width:none">${optList(typesOf(row.level, row.sourceChannel), row.projectType)}</select></label>
+          <label>一级专业<select class="sel" id="ed_m1" style="width:100%;max-width:none">${optList(majors, row.major1)}</select></label>
+          <label>二级专业<select class="sel" id="ed_m2" style="width:100%;max-width:none">${optList(major2Of(row.major1), row.major2)}</select></label>
+          <label>责任单位<input class="sel" id="ed_unit" value="${esc(row.responsibleUnit || '')}" style="width:100%;max-width:none"/></label>
+          <label>项目状态<input class="sel" id="ed_status" value="${esc(row.projectStatus || '')}" style="width:100%;max-width:none"/></label>
+          <label>总经费（万元）<input class="sel" id="ed_total" value="${esc(row.totalBudget ?? '')}" style="width:100%;max-width:none"/></label>
+          <label>国拨经费<input class="sel" id="ed_grant" value="${esc(row.centralGrant ?? '')}" style="width:100%;max-width:none"/></label>
+          <label>自筹经费<input class="sel" id="ed_self" value="${esc(row.selfFund ?? '')}" style="width:100%;max-width:none"/></label>
+          <label>其中内部国拨<input class="sel" id="ed_igrant" value="${esc(row.internalGrant ?? '')}" style="width:100%;max-width:none"/></label>
+          <label>其中内部自筹<input class="sel" id="ed_iself" value="${esc(row.internalSelfFund ?? '')}" style="width:100%;max-width:none"/></label>
+          <label>开始年月<input class="sel" id="ed_start" value="${esc(row.startMonth || '')}" placeholder="YYYY.M" style="width:100%;max-width:none"/></label>
+          <label>结束年月<input class="sel" id="ed_end" value="${esc(row.endMonth || '')}" placeholder="YYYY.M" style="width:100%;max-width:none"/></label>
+          <label style="grid-column:1/-1">成果名称（多行用逗号/换行，不拆项目）<textarea id="ed_results" class="sel" style="width:100%;max-width:none;height:64px;padding:8px">${esc(row.resultNames || '')}</textarea></label>
+        </div>`;
+      $('ed_level').onchange = () => {
+        const lv = $('ed_level').value;
+        $('ed_channel').innerHTML = optList(channelsOf(lv), '');
+        $('ed_type').innerHTML = optList(typesOf(lv, $('ed_channel').value), '');
+      };
+      $('ed_channel').onchange = () => {
+        $('ed_type').innerHTML = optList(typesOf($('ed_level').value, $('ed_channel').value), '');
+      };
+      $('ed_m1').onchange = () => {
+        $('ed_m2').innerHTML = optList(major2Of($('ed_m1').value), '');
+      };
+      $('editMask').classList.add('show');
+    }
+
+    function collectEdit() {
+      const row = state.rows.find((r) => r.id === state.editId);
+      const num = (v) => (v === '' ? null : Number(v));
+      return {
+        ...row,
+        name: $('ed_name').value,
+        serial: $('ed_serial').value,
+        level: $('ed_level').value,
+        sourceChannel: $('ed_channel').value,
+        projectType: $('ed_type').value,
+        major1: $('ed_m1').value,
+        major2: $('ed_m2').value,
+        responsibleUnit: $('ed_unit').value,
+        projectStatus: $('ed_status').value,
+        totalBudget: num($('ed_total').value),
+        centralGrant: num($('ed_grant').value),
+        selfFund: num($('ed_self').value),
+        internalGrant: num($('ed_igrant').value),
+        internalSelfFund: num($('ed_iself').value),
+        startMonth: $('ed_start').value,
+        endMonth: $('ed_end').value,
+        resultNames: $('ed_results').value,
+      };
     }
 
     async function saveRowField(id, code, value) {
@@ -702,7 +1427,34 @@
 
     // events
     document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => switchTab(t.dataset.tab)));
-    ['q', 'fLevel', 'fChannel', 'fType', 'fUnit', 'fStatus', 'fAdvanced'].forEach((id) => {
+    $('stats').addEventListener('click', (e) => {
+      const card = e.target.closest('[data-adv]');
+      if (!card) return;
+      const next = card.getAttribute('data-adv');
+      const more = $('filterMore');
+      if (more && !more.classList.contains('show')) more.classList.add('show');
+      $('fAdvanced').value = $('fAdvanced').value === next ? '' : next;
+      renderBody();
+    });
+    $('btnFilterMore')?.addEventListener('click', () => {
+      $('filterMore').classList.toggle('show');
+      syncFilterMoreLabel();
+    });
+    $('btnFilterReset')?.addEventListener('click', () => {
+      ['q', 'fLevel', 'fChannel', 'fType', 'fUnit', 'fStatus', 'fAdvanced', 'fStartFrom', 'fEndTo', 'fBudgetMin', 'fBudgetMax']
+        .forEach((id) => { if ($(id)) $(id).value = ''; });
+      state.colFilter = {};
+      $('filterMore')?.classList.remove('show');
+      renderAll();
+    });
+    $('btnMoreOps')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      $('moreOps').classList.toggle('show');
+    });
+    document.addEventListener('click', () => $('moreOps')?.classList.remove('show'));
+    $('moreOps')?.addEventListener('click', (e) => e.stopPropagation());
+    ['q', 'fLevel', 'fChannel', 'fType', 'fUnit', 'fStatus', 'fAdvanced', 'fStartFrom', 'fEndTo', 'fBudgetMin', 'fBudgetMax'].forEach((id) => {
+      if (!$(id)) return;
       $(id).addEventListener('input', renderBody);
       $(id).addEventListener('change', renderBody);
     });
@@ -713,24 +1465,22 @@
     $('fileMain').onchange = (e) => { doImport(e.target.files?.[0], 'replace'); e.target.value = ''; };
     $('fileSub').onchange = (e) => { doImport(e.target.files?.[0], 'merge'); e.target.value = ''; };
     $('btnExport').onclick = () => {
-      fetch('/api/transition-tool/export.xlsx', { headers: { 'x-session': token } })
-        .then(async (r) => {
-          if (!r.ok) {
-            const t = await r.text();
-            let msg = '导出失败';
-            try { msg = JSON.parse(t).error || msg; } catch {}
-            throw new Error(msg);
-          }
-          const blob = await r.blob();
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url; a.download = '预研项目总表.xlsx'; a.click();
-          URL.revokeObjectURL(url);
-          showMsg('导出完成', true);
-        })
+      const rows = filteredRows();
+      if (!rows.length) return showMsg('当前筛选无数据，无法导出', false);
+      const n = rows.length;
+      downloadApi('/transition-tool/export.xlsx', '预研项目_总表.xlsx', {
+        method: 'POST',
+        body: {
+          ids: rows.map((r) => r.id),
+          columns: visibleFields().map((f) => f.code),
+          exportKind: '总表',
+          exportScope: currentExportScope(),
+        },
+      })
+        .then(() => showMsg(`已导出当前 ${n} 条、${visibleFields().length} 列`, true))
         .catch((e) => showMsg(e.message, false));
     };
-    $('btnExportFilter').onclick = () => { exportFilteredCsv(); showMsg('已导出当前筛选结果', true); };
+    $('btnExportFilter').onclick = () => { exportFilteredCsv(); };
     $('btnDelSel').onclick = async () => {
       const ids = [...state.selected];
       if (!ids.length) return showMsg('请先勾选要删除的行', false);
@@ -743,7 +1493,8 @@
       } catch (e) { showMsg(e.message, false); }
     };
     $('btnClearAll').onclick = async () => {
-      if (!confirm('确定清空全部项目？此操作不可恢复。')) return;
+      if (!confirm('确定清空全部项目？删除前会自动备份，可在校验报告中逐条撤回。')) return;
+      if (!confirm('再次确认：真的要清空全部项目吗？')) return;
       try {
         const ret = await api('/transition-tool/records/delete-bulk', { method: 'POST', body: { all: true } });
         state.selected.clear();
@@ -785,7 +1536,10 @@
     });
     $('tbody').addEventListener('dblclick', (e) => {
       const cell = e.target.closest('.cell');
-      if (cell) startCellEdit(cell);
+      if (!cell) return;
+      const row = state.rows.find((r) => r.id === cell.dataset.id);
+      if (row && row.canWriteRow === false) return showMsg('无权修改该行', false);
+      openEdit(cell.dataset.id);
     });
     $('thead').addEventListener('click', (e) => {
       const btn = e.target.closest('.funnel');
@@ -799,6 +1553,220 @@
       else state.colFilter[code] = pick;
       renderAll();
     });
+
+    $('subgrid').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-dl-type]');
+      if (!btn) return;
+      const t = btn.getAttribute('data-dl-type');
+      downloadApi('/transition-tool/export.xlsx?projectType=' + encodeURIComponent(t) + '&exportKind=' + encodeURIComponent('专项分表') + '&exportScope=' + encodeURIComponent(t), `预研项目_专项分表_${t}.xlsx`)
+        .then(() => showMsg('已下载专项分表', true))
+        .catch((err) => showMsg(err.message, false));
+    });
+    $('batchIssues').addEventListener('click', async (e) => {
+      const open = e.target.closest('[data-open-batch]');
+      const undo = e.target.closest('[data-undo-batch]');
+      try {
+        if (open) await openBatch(open.getAttribute('data-open-batch'));
+        if (undo) {
+          if (!confirm('确认撤回本批已入库变更？台账将恢复为本批确认前快照。')) return;
+          await api('/transition-tool/import-batches/' + undo.getAttribute('data-undo-batch') + '/undo', { method: 'POST', body: {} });
+          await load();
+          showMsg('已撤回本批', true);
+        }
+      } catch (err) { showMsg(err.message, false); }
+    });
+    $('reportBox').addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-undo-log]');
+      if (!btn) return;
+      if (!confirm('确认撤回该步变更？')) return;
+      try {
+        await api('/transition-tool/change-logs/' + btn.getAttribute('data-undo-log') + '/undo', { method: 'POST', body: {} });
+        await load();
+        switchTab('report');
+        showMsg('已撤回该步', true);
+      } catch (err) { showMsg(err.message, false); }
+    });
+    $('previewProblems').addEventListener('click', (e) => {
+      const chk = e.target.closest('#chkProblemsOnly');
+      if (chk) {
+        state.previewProblemsOnly = chk.checked;
+        renderPreview();
+        return;
+      }
+      const btn = e.target.closest('[data-cat]');
+      if (!btn) return;
+      const key = btn.getAttribute('data-cat') || '';
+      state.previewCat = state.previewCat === key ? '' : key;
+      renderPreview();
+    });
+    $('previewDict').addEventListener('input', (e) => {
+      const nameEl = e.target.closest('[data-people-name]');
+      const empEl = e.target.closest('[data-people-emp]');
+      const idx = Number((nameEl || empEl)?.getAttribute(nameEl ? 'data-people-name' : 'data-people-emp'));
+      if (!Number.isFinite(idx) || !state.previewPeople[idx]) return;
+      if (nameEl) state.previewPeople[idx].name = nameEl.value.trim();
+      if (empEl) state.previewPeople[idx].emp_no = empEl.value.trim();
+      const btn = $('btnPreviewConfirm');
+      if (btn) {
+        const people = state.previewPeople;
+        const peopleOk = !people.length || (state.previewConfirmPeople && people.every((p) => /^\d{6}$/.test(String(p.emp_no || '')) && String(p.name || '').trim()));
+        btn.disabled = btn.disabled || !peopleOk;
+        if (!peopleOk) btn.title = '请核对新增人员姓名/工号并勾选确认';
+      }
+    });
+    $('previewGates').addEventListener('change', (e) => {
+      if (e.target.id === 'chkForce') state.previewForce = e.target.checked;
+      if (e.target.id === 'chkReviewed') state.previewReviewed = e.target.checked;
+      if (e.target.id === 'chkPeople') state.previewConfirmPeople = e.target.checked;
+      if (e.target.id === 'chkChannels') state.previewConfirmChannels = e.target.checked;
+      renderPreview();
+    });
+    $('previewBody').addEventListener('click', async (e) => {
+      const tog = e.target.closest('[data-toggle-row]');
+      const edit = e.target.closest('[data-edit-row]');
+      const save = e.target.closest('[data-save-row]');
+      if (tog) {
+        const id = Number(tog.getAttribute('data-toggle-row'));
+        if (state.previewExpanded.has(id)) state.previewExpanded.delete(id);
+        else state.previewExpanded.add(id);
+        renderPreview();
+        return;
+      }
+      if (edit) {
+        const id = Number(edit.getAttribute('data-edit-row'));
+        state.previewExpanded.add(id);
+        renderPreview();
+        return;
+      }
+      if (!save || !state.previewBatch) return;
+      const wrap = save.closest('[data-edit-wrap]');
+      if (!wrap) return;
+      const id = save.getAttribute('data-save-row');
+      const num = (v) => (v === '' ? null : Number(v));
+      const val = (f) => wrap.querySelector(`[data-f="${f}"]`)?.value ?? '';
+      try {
+        const next = await api(`/transition-tool/import-batches/${state.previewBatch.id}/rows/${id}`, {
+          method: 'POST',
+          body: {
+            name: val('name'),
+            major1: val('major1'),
+            major2: val('major2'),
+            totalBudget: num(val('totalBudget')),
+            centralGrant: num(val('centralGrant')),
+            selfFund: num(val('selfFund')),
+            internalGrant: num(val('internalGrant')),
+            internalSelfFund: num(val('internalSelfFund')),
+            spent: num(val('spent')),
+            approvalMonth: val('approvalMonth'),
+            startMonth: val('startMonth'),
+            endMonth: val('endMonth'),
+            responsibleUnit: val('responsibleUnit'),
+            projectType: val('projectType'),
+          },
+        });
+        state.previewBatch = next.rows ? next : (next.batch || next);
+        state.previewPeople = (state.previewBatch.pendingPeople || []).map((p) => ({ ...p }));
+        showMsg('已修正并重新校验', true);
+        renderPreview();
+      } catch (err) { showMsg(err.message, false); }
+    });
+    $('previewBody').addEventListener('change', (e) => {
+      const sel = e.target.closest('select[data-f="major1"]');
+      if (!sel) return;
+      const wrap = sel.closest('[data-edit-wrap]');
+      const m2 = wrap?.querySelector('select[data-f="major2"]');
+      if (!m2) return;
+      m2.innerHTML = optList(major2Of(sel.value), '');
+    });
+    $('btnPreviewClose').onclick = () => $('previewMask').classList.remove('show');
+    $('btnPreviewCancel').onclick = async () => {
+      if (!state.previewBatch) return;
+      try {
+        await api('/transition-tool/import-batches/' + state.previewBatch.id + '/cancel', { method: 'POST', body: {} });
+        $('previewMask').classList.remove('show');
+        await load();
+        showMsg('已取消批次', true);
+      } catch (err) { showMsg(err.message, false); }
+    };
+    $('btnPreviewConfirm').onclick = async () => {
+      if (!state.previewBatch) return;
+      const problems = (state.previewBatch.rows || []).filter(isProblemRow);
+      if (problems.length && !state.previewForce) {
+        return showMsg('存在问题行，请先在线修正或勾选「已知晓问题仍确认入库」', false);
+      }
+      const pendingCh = state.previewBatch.pendingChannels || [];
+      if (pendingCh.length && !state.previewConfirmChannels) {
+        return showMsg('请先核对识别出的新渠道并勾选确认写入字典', false);
+      }
+      const people = state.previewPeople || [];
+      if (people.length && !state.previewConfirmPeople) {
+        return showMsg('请先核对新增人员并勾选确认写入成员名录', false);
+      }
+      if (people.some((p) => !String(p.name || '').trim() || !/^\d{6}$/.test(String(p.emp_no || '')))) {
+        return showMsg('新增人员须填写姓名和六位工号', false);
+      }
+      try {
+        await api('/transition-tool/import-batches/' + state.previewBatch.id + '/confirm', {
+          method: 'POST',
+          body: {
+            forceDespiteIssues: state.previewForce,
+            confirmNewChannels: !!pendingCh.length && state.previewConfirmChannels,
+            confirmNewPeople: !!people.length && state.previewConfirmPeople,
+            people,
+          },
+        });
+        $('previewMask').classList.remove('show');
+        await load();
+        showMsg('已确认入库', true);
+      } catch (err) { showMsg(err.message, false); }
+    };
+    $('btnPreviewExport').onclick = () => {
+      if (!state.previewBatch) return;
+      downloadApi(`/transition-tool/import-batches/${state.previewBatch.id}/export.xlsx`, `批次${state.previewBatch.id}.xlsx`)
+        .catch((err) => showMsg(err.message, false));
+    };
+    $('previewMask').addEventListener('click', (e) => { if (e.target === $('previewMask')) $('previewMask').classList.remove('show'); });
+
+    if ($('btnPackVisible')) $('btnPackVisible').onclick = () => exportFilteredCsv();
+    $('viewSplit').addEventListener('click', async (e) => {
+      if (e.target.id !== 'btnSaveOwners') return;
+      const owners = [...document.querySelectorAll('.owner-input')].map((el) => ({
+        projectType: el.getAttribute('data-type'),
+        owner: el.value.trim(),
+      }));
+      try {
+        const ret = await api('/transition-tool/type-owners', { method: 'POST', body: { owners } });
+        state.typeOwners = ret.typeOwners || owners;
+        showMsg('已保存主管分工', true);
+      } catch (err) { showMsg(err.message, false); }
+    });
+    $('btnEditClose').onclick = () => $('editMask').classList.remove('show');
+    $('editMask').addEventListener('click', (e) => { if (e.target === $('editMask')) $('editMask').classList.remove('show'); });
+    $('btnEditSave').onclick = async () => {
+      if (!state.editId) return;
+      try {
+        const payload = collectEdit();
+        delete payload.validation;
+        delete payload.canWriteRow;
+        showMsg('正在保存并留痕…');
+        const ret = await api('/transition-tool/records', { method: 'POST', body: payload });
+        const idx = state.rows.findIndex((r) => r.id === state.editId);
+        if (idx >= 0) state.rows[idx] = ret.row;
+        $('editMask').classList.remove('show');
+        await load();
+        showMsg('已保存并留痕', true);
+      } catch (e) { showMsg(e.message, false); }
+    };
+    $('btnEditDel').onclick = async () => {
+      if (!state.editId) return;
+      if (!confirm('确定删除该项目在总表中的全部信息？删除前会自动备份，可在校验报告撤回。')) return;
+      try {
+        await api('/transition-tool/records/delete', { method: 'POST', body: { id: state.editId } });
+        $('editMask').classList.remove('show');
+        await load();
+        showMsg('已删除', true);
+      } catch (e) { showMsg(e.message, false); }
+    };
 
     if (!token) {
       showMsg('未检测到登录会话，请从平台登录后进入本页', false);
